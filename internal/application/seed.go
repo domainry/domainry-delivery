@@ -24,10 +24,7 @@ func DemoProduct(now time.Time) delivery.Product {
 		Goal: "Make booking, cancellation, capacity control, and exception approval executable and traceable.", Industry: "Fitness and wellness",
 		Engineering: delivery.ProductEngineering{
 			Status: delivery.EngineeringReady, FrontendCodeRevision: "git:demo-engineering", FrontendArtifactRef: "deck-artifact://sha256/demo-engineering",
-			DesignContractRef: "deck-evidence://sha256/demo-design", LoginEntry: "src/pages/Login.tsx", ShellEntry: "src/AppShell.tsx", PreviewEntry: "dist/index.html",
-			BackendCodeRevision: "git:demo-engineering", BackendArtifactRef: "deck-artifact://sha256/demo-backend", APIContractRef: "deck-evidence://sha256/demo-openapi",
-			BackendTestEvidenceRef: "deck-evidence://sha256/demo-backend-tests", ServiceEntry: "backend/src/main.rs", AuthenticationEntry: "backend/src/authentication.rs",
-			AuthorizationEntry: "backend/src/authorization.rs", HealthEntry: "backend/src/health.rs",
+			DesignContractRef: "deck-evidence://sha256/demo-design", LoginEntry: "frontend/src/pages/Login.tsx", ShellEntry: "frontend/src/AppShell.tsx", PreviewEntry: "frontend/dist/index.html",
 		},
 		Status:   delivery.ProductShaping,
 		Revision: 1, CurrentDefinitionRevision: 4, CurrentReleaseRevision: 1,

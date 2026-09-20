@@ -24,8 +24,6 @@ type EngineeringStatus string
 const (
 	EngineeringFrontendQueued       EngineeringStatus = "frontend_queued"
 	EngineeringFrontendInitializing EngineeringStatus = "frontend_initializing"
-	EngineeringFrontendReady        EngineeringStatus = "frontend_ready"
-	EngineeringBackendInitializing  EngineeringStatus = "backend_initializing"
 	EngineeringReady                EngineeringStatus = "ready"
 )
 
@@ -54,25 +52,17 @@ type Product struct {
 // ProductEngineering tracks the one-time technical project initialization
 // that RD performs outside the business Feature lifecycle.
 type ProductEngineering struct {
-	Status                 EngineeringStatus `json:"status"`
-	FrontendCodeRevision   string            `json:"frontend_code_revision,omitempty"`
-	FrontendArtifactRef    string            `json:"frontend_artifact_ref,omitempty"`
-	DesignContractRef      string            `json:"design_contract_ref,omitempty"`
-	LoginEntry             string            `json:"login_entry,omitempty"`
-	ShellEntry             string            `json:"shell_entry,omitempty"`
-	PreviewEntry           string            `json:"preview_entry,omitempty"`
-	BackendCodeRevision    string            `json:"backend_code_revision,omitempty"`
-	BackendArtifactRef     string            `json:"backend_artifact_ref,omitempty"`
-	APIContractRef         string            `json:"api_contract_ref,omitempty"`
-	BackendTestEvidenceRef string            `json:"backend_test_evidence_ref,omitempty"`
-	ServiceEntry           string            `json:"service_entry,omitempty"`
-	AuthenticationEntry    string            `json:"authentication_entry,omitempty"`
-	AuthorizationEntry     string            `json:"authorization_entry,omitempty"`
-	HealthEntry            string            `json:"health_entry,omitempty"`
-	StartedBy              string            `json:"started_by,omitempty"`
-	StartedAt              *time.Time        `json:"started_at,omitempty"`
-	CompletedBy            string            `json:"completed_by,omitempty"`
-	CompletedAt            *time.Time        `json:"completed_at,omitempty"`
+	Status               EngineeringStatus `json:"status"`
+	FrontendCodeRevision string            `json:"frontend_code_revision,omitempty"`
+	FrontendArtifactRef  string            `json:"frontend_artifact_ref,omitempty"`
+	DesignContractRef    string            `json:"design_contract_ref,omitempty"`
+	LoginEntry           string            `json:"login_entry,omitempty"`
+	ShellEntry           string            `json:"shell_entry,omitempty"`
+	PreviewEntry         string            `json:"preview_entry,omitempty"`
+	StartedBy            string            `json:"started_by,omitempty"`
+	StartedAt            *time.Time        `json:"started_at,omitempty"`
+	CompletedBy          string            `json:"completed_by,omitempty"`
+	CompletedAt          *time.Time        `json:"completed_at,omitempty"`
 }
 
 // ProductDeployment is the trusted launch destination of the currently

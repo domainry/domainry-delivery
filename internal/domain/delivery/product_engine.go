@@ -11,8 +11,6 @@ const (
 	commandProductDelete           = "product.delete"
 	commandProductFrontendStart    = "product.engineering.frontend.start"
 	commandProductFrontendFinish   = "product.engineering.frontend.complete"
-	commandProductBackendStart     = "product.engineering.backend.start"
-	commandProductBackendFinish    = "product.engineering.backend.complete"
 	commandFeatureDiscoveryOpen    = "feature.discovery.open"
 	commandFeatureDiscoveryReplace = "feature.discovery.replace"
 	commandFeatureConfirm          = "feature.confirm"
@@ -104,16 +102,6 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 			return Invalid("agent_execution_required", "A local RD Agent must complete Product engineering initialization.")
 		}
 		err = completeProductFrontend(product, command, now)
-	case commandProductBackendStart:
-		if command.Actor.Kind != ActorAgent {
-			return Invalid("agent_execution_required", "A local RD Agent must start Product backend initialization.")
-		}
-		err = startProductBackend(product, command, now)
-	case commandProductBackendFinish:
-		if command.Actor.Kind != ActorAgent {
-			return Invalid("agent_execution_required", "A local RD Agent must complete Product backend initialization.")
-		}
-		err = completeProductBackend(product, command, now)
 	case commandFeatureDiscoveryOpen:
 		if command.Actor.Kind != ActorHuman {
 			return Invalid("actor_unauthorized", "Only an authenticated Product owner can open a Feature discovery workspace.")
@@ -173,65 +161,13 @@ func completeProductFrontend(product *Product, command Command, now time.Time) e
 	if payload.CodeRevision == "" || payload.ArtifactRef == "" || payload.DesignContractRef == "" || payload.LoginEntry == "" || payload.ShellEntry == "" || payload.PreviewEntry == "" {
 		return Invalid("product_frontend_evidence_incomplete", "Frontend initialization requires a code revision, build evidence, design contract evidence, login entry, shell entry, and reviewable preview entry.")
 	}
-	product.Engineering.Status = EngineeringFrontendReady
+	product.Engineering.Status = EngineeringReady
 	product.Engineering.FrontendCodeRevision = payload.CodeRevision
 	product.Engineering.FrontendArtifactRef = payload.ArtifactRef
 	product.Engineering.DesignContractRef = payload.DesignContractRef
 	product.Engineering.LoginEntry = payload.LoginEntry
 	product.Engineering.ShellEntry = payload.ShellEntry
 	product.Engineering.PreviewEntry = payload.PreviewEntry
-	product.Engineering.CompletedBy = command.Actor.ID
-	product.Engineering.CompletedAt = &now
-	return nil
-}
-
-func startProductBackend(product *Product, command Command, now time.Time) error {
-	if product.Engineering.Status != EngineeringFrontendReady {
-		return Invalid("product_backend_not_queued", "Backend initialization can start only after the frontend foundation is reviewable.")
-	}
-	product.Engineering.Status = EngineeringBackendInitializing
-	product.Engineering.StartedBy = command.Actor.ID
-	product.Engineering.StartedAt = &now
-	return nil
-}
-
-func completeProductBackend(product *Product, command Command, now time.Time) error {
-	if product.Engineering.Status != EngineeringBackendInitializing {
-		return Invalid("product_backend_not_initializing", "Only backend initialization in progress can complete.")
-	}
-	var payload struct {
-		CodeRevision        string `json:"code_revision"`
-		ArtifactRef         string `json:"artifact_ref"`
-		APIContractRef      string `json:"api_contract_ref"`
-		TestEvidenceRef     string `json:"test_evidence_ref"`
-		ServiceEntry        string `json:"service_entry"`
-		AuthenticationEntry string `json:"authentication_entry"`
-		AuthorizationEntry  string `json:"authorization_entry"`
-		HealthEntry         string `json:"health_entry"`
-	}
-	if err := decode(command.Payload, &payload); err != nil {
-		return err
-	}
-	payload.CodeRevision = strings.TrimSpace(payload.CodeRevision)
-	payload.ArtifactRef = strings.TrimSpace(payload.ArtifactRef)
-	payload.APIContractRef = strings.TrimSpace(payload.APIContractRef)
-	payload.TestEvidenceRef = strings.TrimSpace(payload.TestEvidenceRef)
-	payload.ServiceEntry = strings.TrimSpace(payload.ServiceEntry)
-	payload.AuthenticationEntry = strings.TrimSpace(payload.AuthenticationEntry)
-	payload.AuthorizationEntry = strings.TrimSpace(payload.AuthorizationEntry)
-	payload.HealthEntry = strings.TrimSpace(payload.HealthEntry)
-	if payload.CodeRevision == "" || payload.ArtifactRef == "" || payload.APIContractRef == "" || payload.TestEvidenceRef == "" || payload.ServiceEntry == "" || payload.AuthenticationEntry == "" || payload.AuthorizationEntry == "" || payload.HealthEntry == "" {
-		return Invalid("product_backend_evidence_incomplete", "Backend initialization requires a code revision, build evidence, API contract, test evidence, service entry, authentication entry, authorization entry, and health entry.")
-	}
-	product.Engineering.Status = EngineeringReady
-	product.Engineering.BackendCodeRevision = payload.CodeRevision
-	product.Engineering.BackendArtifactRef = payload.ArtifactRef
-	product.Engineering.APIContractRef = payload.APIContractRef
-	product.Engineering.BackendTestEvidenceRef = payload.TestEvidenceRef
-	product.Engineering.ServiceEntry = payload.ServiceEntry
-	product.Engineering.AuthenticationEntry = payload.AuthenticationEntry
-	product.Engineering.AuthorizationEntry = payload.AuthorizationEntry
-	product.Engineering.HealthEntry = payload.HealthEntry
 	product.Engineering.CompletedBy = command.Actor.ID
 	product.Engineering.CompletedAt = &now
 	return nil
@@ -489,10 +425,6 @@ func ProductProjectionFor(product Product) ProductProjection {
 			add(commandProductFrontendStart, product.ID, ActorAgent)
 		case EngineeringFrontendInitializing:
 			add(commandProductFrontendFinish, product.ID, ActorAgent)
-		case EngineeringFrontendReady:
-			add(commandProductBackendStart, product.ID, ActorAgent)
-		case EngineeringBackendInitializing:
-			add(commandProductBackendFinish, product.ID, ActorAgent)
 		case EngineeringReady:
 		}
 		nextDelivery := nextFeatureForDelivery(&product)

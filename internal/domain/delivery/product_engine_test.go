@@ -44,17 +44,8 @@ func TestNewProductQueuesEngineeringInitializationBeforeFeatureDelivery(t *testi
 
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
 	projection = delivery.ProductProjectionFor(product)
-	if product.Engineering.Status != delivery.EngineeringFrontendReady || projection.AvailableActions[2].Command != "product.engineering.backend.start" {
-		t.Fatalf("reviewable frontend did not queue backend initialization: %#v %#v", product.Engineering, projection.AvailableActions)
-	}
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.backend.start", map[string]any{})
-	projection = delivery.ProductProjectionFor(product)
-	if product.Engineering.Status != delivery.EngineeringBackendInitializing || projection.AvailableActions[2].Command != "product.engineering.backend.complete" {
-		t.Fatalf("backend initialization was not assigned to RD: %#v %#v", product.Engineering, projection.AvailableActions)
-	}
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.backend.complete", backendEvidence())
-	if product.Engineering.Status != delivery.EngineeringReady || product.Engineering.APIContractRef == "" || product.Engineering.AuthorizationEntry == "" {
-		t.Fatalf("Product engineering did not retain the backend foundation evidence: %#v", product.Engineering)
+	if product.Engineering.Status != delivery.EngineeringReady || projection.AvailableActions[2].Command != "product.delete" {
+		t.Fatalf("frontend foundation did not complete unified workspace initialization: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 }
 
@@ -373,8 +364,6 @@ func newProduct(t *testing.T) delivery.Product {
 	product := newQueuedProduct(t)
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.backend.start", map[string]any{})
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.backend.complete", backendEvidence())
 	return product
 }
 
@@ -382,15 +371,6 @@ func frontendEvidence() map[string]any {
 	return map[string]any{
 		"code_revision": "git:frontend-foundation", "artifact_ref": "deck-artifact://sha256/frontend-foundation",
 		"design_contract_ref": "deck-evidence://sha256/design", "login_entry": "frontend/src/pages/Login.tsx", "shell_entry": "frontend/src/AppShell.tsx", "preview_entry": "frontend/dist/index.html",
-	}
-}
-
-func backendEvidence() map[string]any {
-	return map[string]any{
-		"code_revision": "git:engineering-foundation", "artifact_ref": "deck-artifact://sha256/backend-foundation",
-		"api_contract_ref": "deck-evidence://sha256/openapi", "test_evidence_ref": "deck-evidence://sha256/backend-tests",
-		"service_entry": "backend/src/main.rs", "authentication_entry": "backend/src/authentication.rs",
-		"authorization_entry": "backend/src/authorization.rs", "health_entry": "backend/src/health.rs",
 	}
 }
 
