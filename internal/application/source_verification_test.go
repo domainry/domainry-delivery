@@ -8,6 +8,7 @@ import (
 	"time"
 
 	agentsdk "github.com/domainry/domainry-agent-sdk"
+	identitysdk "github.com/domainry/domainry-identity-sdk"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
@@ -47,11 +48,14 @@ func TestFeatureDiscoveryRequiresExactSourceOwnerReceipt(t *testing.T) {
 }
 
 func TestFeatureDiscoveryAcceptsAgentOwnedSourceAndKeepsDecisionsInDelivery(t *testing.T) {
+	ctx := identitysdk.WithRequestIdentity(t.Context(), identitysdk.RequestIdentity{Principal: identitysdk.Principal{
+		Known: true, WorkspaceID: "workspace-a", UserID: "pm-a", RoleKey: "pm",
+	}})
 	service := NewService(Ports{
 		SourceRuntimeID: "agent-test",
 		Sources: sourceVerifierFunc(func(_ context.Context, request agentsdk.ConversationSourceVerificationRequest) (agentsdk.ConversationSourceVerificationReceipt, error) {
-			if len(request.SourceIDs) != 1 || request.SourceIDs[0] != "conversation://conversation-a/turn/run-a" {
-				t.Fatalf("unexpected Agent-owned sources: %#v", request.SourceIDs)
+			if len(request.SourceIDs) != 1 || request.SourceIDs[0] != "conversation://conversation-a/turn/run-a" || request.Reader.RoleKey != "pm" {
+				t.Fatalf("unexpected Agent-owned source authority: %#v", request)
 			}
 			return agentsdk.ConversationSourceVerificationReceipt{
 				WorkspaceID: request.Reader.WorkspaceID,
@@ -61,7 +65,7 @@ func TestFeatureDiscoveryAcceptsAgentOwnedSourceAndKeepsDecisionsInDelivery(t *t
 			}, nil
 		}),
 	})
-	if err := service.verifyProductCommandSources(t.Context(), "workspace-a", domain.Actor{ID: "pm-a", Kind: domain.ActorAgent}, featureSourceCommand(t)); err != nil {
+	if err := service.verifyProductCommandSources(ctx, "workspace-a", domain.Actor{ID: "pm-a", Kind: domain.ActorAgent}, featureSourceCommand(t)); err != nil {
 		t.Fatal(err)
 	}
 }

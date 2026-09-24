@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agentsdk "github.com/domainry/domainry-agent-sdk"
+	identitysdk "github.com/domainry/domainry-identity-sdk"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
@@ -36,7 +37,7 @@ func (service *Service) verifyProductCommandSources(ctx context.Context, workspa
 		SourceIDs:  source.SourceIDs,
 		Reader: agentsdk.ConversationAuthority{
 			Known: true, RuntimeID: strings.TrimSpace(service.ports.SourceRuntimeID), WorkspaceID: strings.TrimSpace(workspaceID),
-			UserID: strings.TrimSpace(actor.ID), RoleKey: string(actor.Kind),
+			UserID: strings.TrimSpace(actor.ID), RoleKey: sourceReaderRoleKey(ctx, actor),
 		},
 	}
 	receipt, err := service.ports.Sources.VerifyConversationSources(ctx, request)
@@ -47,6 +48,15 @@ func (service *Service) verifyProductCommandSources(ctx context.Context, workspa
 		return domain.Invalid("feature_source_receipt_invalid", "The Agent source verification receipt does not match the submitted Feature lineage.")
 	}
 	return nil
+}
+
+func sourceReaderRoleKey(ctx context.Context, actor domain.Actor) string {
+	if principal, ok := identitysdk.PrincipalFromContext(ctx); ok && strings.TrimSpace(principal.UserID) == strings.TrimSpace(actor.ID) {
+		if roleKey := strings.TrimSpace(principal.RoleKey); roleKey != "" {
+			return roleKey
+		}
+	}
+	return string(actor.Kind)
 }
 
 func normalizedIdentities(values []string) []string {
