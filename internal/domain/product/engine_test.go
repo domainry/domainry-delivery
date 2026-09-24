@@ -208,6 +208,7 @@ func TestFeatureDiscoveryKeepsTurnsMutableAndRanksTheNextQuestion(t *testing.T) 
 	source := second["source"].(map[string]any)
 	source["run_id"] = "run-cancel-2"
 	source["source_ids"] = []string{"source-follow-up"}
+	source["decision_ids"] = []string{}
 	secondDiscovery := second["discovery"].(map[string]any)
 	secondDiscovery["open_questions"] = discovery["open_questions"]
 	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", second)
@@ -229,6 +230,7 @@ func TestFeatureDiscoveryRetainsActorsAndRulesAsFirstClassEvidence(t *testing.T)
 		map[string]any{"id": "evidence-actor", "kind": "actor", "statement": "A receptionist cancels on behalf of a member", "status": "confirmed", "source_ids": []string{"source-actor"}, "related_ids": []string{"cancel-booking"}},
 		map[string]any{"id": "evidence-rule", "kind": "rule", "statement": "A late cancellation consumes one class credit", "status": "confirmed", "source_ids": []string{"source-rule"}, "related_ids": []string{"cancel-booking"}},
 	)
+	payload["source"].(map[string]any)["source_ids"] = []string{"source-interview", "source-actor", "source-rule"}
 
 	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", payload)
 
@@ -283,6 +285,7 @@ func TestOpenBusinessConflictBlocksConfirmation(t *testing.T) {
 		{"id": "evidence-manager", "kind": "correction", "statement": "Location managers can cancel any booking", "status": "stated", "source_ids": []string{"source-manager"}, "related_ids": []string{"cancel-booking"}},
 	}
 	discovery["conflicts"] = []map[string]any{{"id": "conflict-owner", "summary": "Cancellation authority differs by actor", "evidence_ids": []string{"evidence-owner", "evidence-manager"}, "impact": "medium", "status": "open", "resolution": ""}}
+	payload["source"].(map[string]any)["source_ids"] = []string{"source-interview", "source-member", "source-manager"}
 	setOpenQuestion(payload, "Which actor may cancel which booking, and under what exception?")
 	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", payload)
 
@@ -444,6 +447,24 @@ func TestFeatureDraftKeepsResolvedBusinessDecision(t *testing.T) {
 	if len(decisions) != 1 || decisions[0].Resolution != "Cancellation closes two hours before class" {
 		t.Fatalf("resolved Feature decision was not retained: %#v", decisions)
 	}
+}
+
+func TestFeatureSourceMustNameExactlyItsDeliveryDecisions(t *testing.T) {
+	product := newProduct(t)
+	payload := featureDraftPayload("feature-cancel", "F-001")
+	payload["source"].(map[string]any)["decision_ids"] = []string{"decision-other"}
+
+	err := applyProduct(&product, agent("pm-agent"), "feature.discovery.replace", payload)
+	assertCode(t, err, "feature_source_decision_mismatch")
+}
+
+func TestFeatureReferencesOnlyVerifiedConversationSources(t *testing.T) {
+	product := newProduct(t)
+	payload := featureDraftPayload("feature-cancel", "F-001")
+	payload["discovery"].(map[string]any)["evidence"].([]map[string]any)[0]["source_ids"] = []string{"source-unverified"}
+
+	err := applyProduct(&product, agent("pm-agent"), "feature.discovery.replace", payload)
+	assertCode(t, err, "feature_source_reference_unverified")
 }
 
 func TestFeatureRevisionNormalizesCoreCollections(t *testing.T) {

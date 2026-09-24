@@ -35,7 +35,7 @@ func TestFeatureDiscoveryRequiresExactSourceOwnerReceipt(t *testing.T) {
 			captured = request
 			return agentsdk.ConversationSourceVerificationReceipt{
 				WorkspaceID: "workspace-other", References: request.References, SourceIDs: request.SourceIDs,
-				DecisionIDs: request.DecisionIDs, VerifiedAt: time.Now().UTC(),
+				VerifiedAt: time.Now().UTC(),
 			}, nil
 		}),
 	})
@@ -43,6 +43,26 @@ func TestFeatureDiscoveryRequiresExactSourceOwnerReceipt(t *testing.T) {
 	assertDomainCode(t, err, "feature_source_receipt_invalid")
 	if captured.Reader.RuntimeID != "agent-test" || captured.Reader.WorkspaceID != "workspace-a" || captured.Reader.UserID != "pm-a" || captured.References[0].BeforeStep != 3 {
 		t.Fatalf("source owner request lost immutable authority or boundary: %#v", captured)
+	}
+}
+
+func TestFeatureDiscoveryAcceptsAgentOwnedSourceAndKeepsDecisionsInDelivery(t *testing.T) {
+	service := NewService(Ports{
+		SourceRuntimeID: "agent-test",
+		Sources: sourceVerifierFunc(func(_ context.Context, request agentsdk.ConversationSourceVerificationRequest) (agentsdk.ConversationSourceVerificationReceipt, error) {
+			if len(request.SourceIDs) != 1 || request.SourceIDs[0] != "conversation://conversation-a/turn/run-a" {
+				t.Fatalf("unexpected Agent-owned sources: %#v", request.SourceIDs)
+			}
+			return agentsdk.ConversationSourceVerificationReceipt{
+				WorkspaceID: request.Reader.WorkspaceID,
+				References:  request.References,
+				SourceIDs:   request.SourceIDs,
+				VerifiedAt:  time.Now().UTC(),
+			}, nil
+		}),
+	})
+	if err := service.verifyProductCommandSources(t.Context(), "workspace-a", domain.Actor{ID: "pm-a", Kind: domain.ActorAgent}, featureSourceCommand(t)); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -61,7 +81,7 @@ func featureSourceCommand(t *testing.T) domain.Command {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{"source": map[string]any{
 		"conversation_id": "conversation-a", "run_id": "run-a", "before_step": 3,
-		"source_ids": []string{"source-a"}, "decision_ids": []string{"decision-a"},
+		"source_ids": []string{"conversation://conversation-a/turn/run-a"}, "decision_ids": []string{"decision-a"},
 	}})
 	if err != nil {
 		t.Fatal(err)

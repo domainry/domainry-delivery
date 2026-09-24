@@ -105,6 +105,9 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	if err := validateFeatureDiscoveryReferences(payload.Discovery, payload.Decisions); err != nil {
 		return err
 	}
+	if err := validateCurrentFeatureSourceDecisions(payload.Source, payload.Decisions); err != nil {
+		return err
+	}
 	nextQuestion := selectNextFeatureQuestion(payload.Discovery.OpenQuestions)
 	readiness, err := assessFeatureReadiness(payload.Title, payload.Summary, payload.Discovery, payload.Specification, payload.Decisions, nextQuestion, featureAuthorizationPolicyFor(product, payload.FeatureID))
 	if err != nil {
@@ -114,6 +117,15 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 		return Invalid("feature_next_question_required", "Incomplete Feature discovery must retain at least one ranked open business question.")
 	}
 	feature := FindFeature(product, payload.FeatureID)
+	sources := []FeatureSource{}
+	if feature != nil && feature.Draft != nil {
+		sources = clone(feature.Draft.Sources)
+	}
+	sources = appendFeatureSource(sources, payload.Source)
+	sources = reconcileFeatureSourceDecisions(sources, payload.Decisions)
+	if err := validateFeatureLineageReferences(payload.Discovery, payload.Specification, payload.Decisions, sources); err != nil {
+		return err
+	}
 	if feature == nil {
 		for index := range product.Features {
 			if product.Features[index].Code == payload.Code {
@@ -130,12 +142,9 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 		return Invalid("feature_code_immutable", "A Feature code is immutable after creation.")
 	}
 	draftVersion := uint64(1)
-	sources := []FeatureSource{}
 	if feature.Draft != nil {
 		draftVersion = feature.Draft.Version + 1
-		sources = clone(feature.Draft.Sources)
 	}
-	sources = appendFeatureSource(sources, payload.Source)
 	feature.Draft = &FeatureDraftState{
 		Version: draftVersion, Title: payload.Title, Summary: payload.Summary, Priority: payload.Priority,
 		BaselineProductRevision: payload.BaselineProductRevision, Discovery: clone(payload.Discovery),

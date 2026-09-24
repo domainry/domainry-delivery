@@ -2,6 +2,7 @@ package product
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -79,6 +80,81 @@ func appendFeatureSource(sources []FeatureSource, source FeatureSource) []Featur
 		}
 	}
 	return append(sources, source)
+}
+
+// validateCurrentFeatureSourceDecisions keeps Delivery-owned decision identity
+// out of the Agent source-verification contract. The current source declaration
+// must name exactly the decisions whose business evidence points at that source.
+func validateCurrentFeatureSourceDecisions(source FeatureSource, decisions []FeatureDecision) error {
+	expected := featureDecisionIDsForSources(decisions, source.SourceIDs)
+	actual := cleanStrings(source.DecisionIDs)
+	slices.Sort(expected)
+	slices.Sort(actual)
+	if !slices.Equal(expected, actual) {
+		return Invalid("feature_source_decision_mismatch", "A Feature source must identify exactly the Delivery decisions supported by that source.")
+	}
+	return nil
+}
+
+func reconcileFeatureSourceDecisions(sources []FeatureSource, decisions []FeatureDecision) []FeatureSource {
+	for index := range sources {
+		sources[index].DecisionIDs = featureDecisionIDsForSources(decisions, sources[index].SourceIDs)
+	}
+	return sources
+}
+
+func featureDecisionIDsForSources(decisions []FeatureDecision, sourceIDs []string) []string {
+	sourceSet := stringSet(sourceIDs)
+	decisionIDs := make([]string, 0)
+	for _, decision := range decisions {
+		for _, sourceID := range decision.SourceIDs {
+			if sourceSet[sourceID] {
+				decisionIDs = append(decisionIDs, decision.ID)
+				break
+			}
+		}
+	}
+	return cleanStrings(decisionIDs)
+}
+
+// validateFeatureLineageReferences is the Delivery half of provenance
+// verification: Agent proves the Conversation/Run/source identities exist and
+// are readable; Delivery proves every business fact and decision in the draft
+// is closed over those verified source identities.
+func validateFeatureLineageReferences(discovery FeatureDiscovery, specification FeatureSpecification, decisions []FeatureDecision, sources []FeatureSource) error {
+	registered := map[string]bool{}
+	for _, source := range sources {
+		for _, sourceID := range source.SourceIDs {
+			registered[sourceID] = true
+		}
+	}
+	used := make([]string, 0)
+	for _, evidence := range discovery.Evidence {
+		used = append(used, evidence.SourceIDs...)
+	}
+	for _, assumption := range discovery.Assumptions {
+		used = append(used, assumption.SourceIDs...)
+	}
+	for _, role := range specification.Authorization.Roles {
+		used = append(used, role.SourceIDs...)
+	}
+	for _, decision := range decisions {
+		used = append(used, decision.SourceIDs...)
+	}
+	for _, sourceID := range cleanStrings(used) {
+		if !registered[sourceID] {
+			return Invalid("feature_source_reference_unverified", "Every Feature evidence and decision source must belong to a verified Conversation run.")
+		}
+	}
+	return nil
+}
+
+func stringSet(values []string) map[string]bool {
+	result := make(map[string]bool, len(values))
+	for _, value := range cleanStrings(values) {
+		result[value] = true
+	}
+	return result
 }
 
 func normalizeFeatureSource(source FeatureSource) FeatureSource {

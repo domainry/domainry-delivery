@@ -53,7 +53,7 @@ type acceptingSourceVerifier struct{}
 func (acceptingSourceVerifier) VerifyConversationSources(_ context.Context, request agentsdk.ConversationSourceVerificationRequest) (agentsdk.ConversationSourceVerificationReceipt, error) {
 	return agentsdk.ConversationSourceVerificationReceipt{
 		WorkspaceID: request.Reader.WorkspaceID, References: request.References, SourceIDs: request.SourceIDs,
-		DecisionIDs: request.DecisionIDs, VerifiedAt: time.Now().UTC(),
+		VerifiedAt: time.Now().UTC(),
 	}, nil
 }
 func (registrar *migrationRegistrar) Driver() string { return "sqlite" }

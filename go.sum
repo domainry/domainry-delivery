@@ -6,6 +6,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/domainry/domainry-agent-sdk v0.1.28 h1:PgvUsceHeBptbV+llrsDh5VPCywtCjj4C6Jaw01WDfk=
 github.com/domainry/domainry-agent-sdk v0.1.28/go.mod h1:z+U0GfcdR26+YlW9GSA8U5zChfFxFVbgfwa17Ua9VkM=
+github.com/domainry/domainry-agent-sdk v0.1.29 h1:FbXTISjsq0M/fBmFFWH4sTRDY1rqiPT2SRzhNPSUxGI=
+github.com/domainry/domainry-agent-sdk v0.1.29/go.mod h1:z+U0GfcdR26+YlW9GSA8U5zChfFxFVbgfwa17Ua9VkM=
 github.com/domainry/domainry-delivery-sdk v0.1.5 h1:bqbY83aQdZYw/JbU4vxCmXpBxGJsG3H4GsyLLC3CMA8=
 github.com/domainry/domainry-delivery-sdk v0.1.5/go.mod h1:VhpQk9wADgyfOWQvEvCTyAl3iCpDCXvM2txpnyjfpsQ=
 github.com/domainry/domainry-foundation v0.1.40 h1:QSXjeVrjXoX/wcLJWKCKFGiD/9PbScd7A5Jzsz71Gmw=

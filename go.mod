@@ -8,7 +8,7 @@ require (
 )
 
 require (
-	github.com/domainry/domainry-agent-sdk v0.1.28
+	github.com/domainry/domainry-agent-sdk v0.1.29
 	github.com/domainry/domainry-delivery-sdk v0.1.5
 	github.com/domainry/domainry-foundation v0.1.40
 	github.com/domainry/domainry-identity-sdk v0.1.17
