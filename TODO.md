@@ -209,7 +209,7 @@ domainry-delivery/
 - [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql` 和 secret-backed `DELIVERY_MYSQL_DSN`，Identity/Agent 也只引用 Kubernetes Secret，仓库不保存明文密钥；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
 - [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret。Jenkins build #2 已通过只读预检逐一确认三组 Secret 对象全部不存在；Jenkins 全局凭据目录也没有这三组服务配置。本机保留 `eks-verdent-dev` context，但 API 返回未登录，且没有 Secret 值，因此不伪造或输出凭据。
-- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行两次：build #1 成功构建并推送 Delivery 镜像、创建 Argo CD Application，Service/Ingress 同步健康，但 Deployment 因 R10.5 为 Degraded；build #2 复用同一 ECR digest，并在约 100 秒内通过 Secret/key 门禁于 Argo 同步前失败。共享流水线已支持由产品配置声明默认 tag，Delivery 默认值固定为 `v0.1.5`，避免回落到 `v0.0.1`。
+- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行：build #1 成功构建并推送 Delivery 镜像、创建 Argo CD Application，Service/Ingress 同步健康，但 Deployment 因 R10.5 为 Degraded；build #2/#3 复用同一 ECR digest，并在约 100 秒内通过 Secret/key 门禁于 Argo 同步前失败。共享流水线已支持由产品配置声明默认 tag，build #3 后已从 Jenkins 参数页验证 Delivery 默认值确实为 `v0.1.5`，不再回落到 `v0.0.1`。
 - [ ] R10.7 Argo CD 当前已同步 devops `main` 清单且 Deployment image 为 `v0.1.5`，但 Pod 是 `CreateContainerConfigError`，尚不能从集群外执行 `/healthz`、descriptor、Identity 认证、MySQL 写入/重启持久化和 Agent source-verifier 写入旅程。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
