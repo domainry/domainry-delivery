@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/domainry/domainry-delivery/internal/application"
-	"github.com/domainry/domainry-delivery/internal/domain/delivery"
+	delivery "github.com/domainry/domainry-delivery/internal/domain"
 )
 
 func TestDevelopmentIdentityResolvesServerOwnedPrincipal(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDevelopmentIdentityResolvesServerOwnedPrincipal(t *testing.T) {
 	if err != nil || !configured {
 		t.Fatalf("development identity configuration: configured=%t error=%v", configured, err)
 	}
-	service := application.NewService(nil)
+	service := application.NewService(application.Ports{})
 	handler := identity.Authenticate(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		session, err := service.Session(request.Context(), "workspace-local")
 		if err != nil {

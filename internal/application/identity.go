@@ -7,7 +7,7 @@ import (
 
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 
-	"github.com/domainry/domainry-delivery/internal/domain/delivery"
+	delivery "github.com/domainry/domainry-delivery/internal/domain"
 )
 
 func authenticatedSession(ctx context.Context, workspaceID string) (delivery.Session, error) {

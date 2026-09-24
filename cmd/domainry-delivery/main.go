@@ -10,42 +10,48 @@ import (
 	"syscall"
 	"time"
 
+	agentremote "github.com/domainry/domainry-agent-sdk/remote"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	identityhttpmiddleware "github.com/domainry/domainry-identity-sdk/httpmiddleware"
 	identityremote "github.com/domainry/domainry-identity-sdk/remote"
 
-	"github.com/domainry/domainry-delivery/internal/application"
-	"github.com/domainry/domainry-delivery/internal/infrastructure/sqlite"
-	"github.com/domainry/domainry-delivery/internal/transport/httpapi"
+	deliverysaas "github.com/domainry/domainry-delivery/internal/assembly/saas"
+	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
 )
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	databasePath := env("DELIVERY_DB", "data/domainry-delivery.db")
-	store, err := sqlite.Open(databasePath)
+	sourceRuntimeID := env("AGENT_RUNTIME_ID", "")
+	if sourceRuntimeID == "" {
+		logger.Error("configure Agent source owner", "error", "AGENT_RUNTIME_ID is required")
+		os.Exit(1)
+	}
+	sourceVerifier, err := agentremote.NewConversationSourceVerifier(agentremote.ConversationSourceVerifierConfigFromEnvironment())
+	if err != nil {
+		logger.Error("configure Agent source owner", "error", err)
+		os.Exit(1)
+	}
+	databaseDriver := env("DELIVERY_DB_DRIVER", "sqlite")
+	applicationRuntime, err := deliverysaas.Open(context.Background(), deliverysaas.DatabaseConfig{
+		Driver: databaseDriver, MySQLDSN: os.Getenv("DELIVERY_MYSQL_DSN"), SQLitePath: env("DELIVERY_DB", "data/domainry-delivery.db"),
+		SourceRuntimeID: sourceRuntimeID, Sources: sourceVerifier,
+	})
 	if err != nil {
 		logger.Error("open delivery store", "error", err)
 		os.Exit(1)
 	}
-	defer func() { _ = store.Close() }()
+	defer func() { _ = applicationRuntime.Close() }()
 
-	service := application.NewService(store)
-	deliveryHandler := httpapi.New(service, logger)
+	service := applicationRuntime.Service
+	deliveryHandler := httpapi.New(service, logger, env("DELIVERY_RUNTIME_ID", "domainry-delivery-dev"))
 	serverAddr := env("DELIVERY_ADDR", "127.0.0.1:8096")
-	authenticatedHandler, closeIdentity, localDevelopment, err := authenticatedDeliveryHandler(serverAddr, deliveryHandler)
+	authenticatedHandler, closeIdentity, _, err := authenticatedDeliveryHandler(serverAddr, deliveryHandler)
 	if err != nil {
 		logger.Error("configure Delivery identity", "error", err)
 		os.Exit(1)
 	}
 	defer closeIdentity()
-	if localDevelopment && enabled("DELIVERY_DEV_SEED") {
-		if err := service.EnsureProduct(context.Background(), application.DemoProduct(time.Now().UTC())); err != nil {
-			logger.Error("seed local development Product", "error", err)
-			os.Exit(1)
-		}
-	}
-
 	server := &http.Server{
 		Addr:              serverAddr,
 		Handler:           publicDeliveryRoutes(deliveryHandler, authenticatedHandler),
@@ -58,7 +64,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {
-		logger.Info("domainry-delivery listening", "addr", server.Addr, "database", databasePath)
+		logger.Info("domainry-delivery listening", "addr", server.Addr, "database_driver", databaseDriver)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("delivery server stopped", "error", err)
 			os.Exit(1)

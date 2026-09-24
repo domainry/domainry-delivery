@@ -1,37 +1,53 @@
-# Local Agents and Delivery
+# Agent, Deck and Delivery integration
 
-## Runtime relationship
+Deck executes PM, RD, QA and OP as local roles in its embedded runtime. Those
+roles propose typed Delivery commands; they are not independent services and a
+prompt never grants authority. Rust orchestration rereads the current Delivery
+projection, checks `available_actions` and revision, then submits through the
+Delivery SDK. TypeScript is presentation-only.
 
-Deck runs one local in-process Agent Runtime. PM, RD, QA, and OP are four role configurations within that runtime, not four remote services and not a cloud dependency.
+## Source ownership
 
-Delivery is the lifecycle authority shared by those roles:
+Agent owns Conversation, Run, source access, decision provenance and artifact
+bytes. Delivery owns only immutable lineage values:
 
-- PM reads the confirmed Product baseline, the historical Feature catalog, and the current Feature discovery workspace before interpreting each new message. It keeps user-stated evidence distinct from PM inference, reconciles corrections and conflicts, presents consequential options with a recommendation and tradeoffs, and submits the complete updated workspace with exact conversation sources.
-- Delivery validates the workspace, ranks open questions by impact, dependency, uncertainty, and answer cost, and returns the one question PM must ask next. Multiple turns update the same workspace rather than creating fake requirement versions.
-- PM does not design the implementation or create a ProductRevision. RD, QA, and OP own delivery after the Product owner confirms the Feature.
-- An authenticated Product owner confirms a ready Feature, freezing an immutable FeatureRevision against the exact ProductRevision baseline. Confirmation does not silently rewrite the Product definition.
-- RD starts a DeliveryRun for the exact confirmed FeatureRevision and decides whether WorkItems are useful.
-- QA verifies the immutable build against generated TestCases and records real evidence; a failure creates an Issue.
-- OP prepares environment-bound ReleaseChecks.
-- A trusted deployment adapter records Artifact, Revision, Environment, outcome, and Receipt evidence.
-- A successful deployment atomically installs the exact FeatureRevision into Product.
+- `conversation_id` and `run_id`;
+- the optional `before_step` boundary;
+- canonical `source_ids`;
+- exact `decision_ids`.
 
-The same Delivery Binding contract is implemented by an in-process Module and a remote SaaS adapter. Capabilities, state transitions, identity semantics, idempotency, and optimistic concurrency remain identical.
+Delivery never accepts a local path and has no attachment upload/download or
+BLOB table. A source-owner verifier must confirm existence, Workspace scope,
+current reader access and the run boundary before `feature.discovery.replace`
+can commit. Feature confirmation copies the verified lineage into the immutable
+FeatureRevision; it cannot later be replaced.
 
-## Source lineage
+## Delivery lifecycle
 
-Delivery does not copy chat messages and does not own model run state. The mutable discovery workspace aggregates source references while PM and the user refine the requirement. The confirmed FeatureRevision then freezes:
+1. PM updates one mutable Feature discovery workspace and distinguishes user
+   facts, inference, conflicts, assumptions, options and explicit decisions.
+2. A human confirms the ready workspace into an immutable FeatureRevision.
+3. RD starts one DeliveryRun from the exact installed ProductRevision baseline.
+4. DeliveryUnits progress through interaction, model, backend, frontend,
+   contract/gap and journey phases. The verification adapter submits typed
+   Plane-guide evidence for one clean Git revision.
+5. RD records the executable ProductRevision candidate. QA and human business
+   acceptance bind to that same revision.
+6. OP configures release checks; trusted deployment infrastructure records the
+   original provider attempt and reconciles unknown outcomes when necessary.
+7. A successful release atomically appends ProductStory + ProductDefinition as
+   the next ProductRevision, advances current revisions, installs the Feature
+   and completes the run.
 
-- the exact `conversation_id` that formed the requirement;
-- the exact `run_id` and optional `before_step` boundary;
-- business `source_ids` supporting the facts;
-- `decision_ids` that changed the executable definition.
+Quality or acceptance failure routes back to a concrete DeliveryUnit phase.
+Fixes require a new integrated Git revision, which invalidates the old evidence.
 
-The Agent Runtime owns the Conversation, Run, and source bodies. Delivery preserves immutable references and connects them to ProductRevision, FeatureRevision, DeliveryRun, Build, TestRun, Release, and deployment receipt.
+## Authority
 
-## Authority boundary
-
-- An Agent can propose a Feature and advance implementation, test, and release-preparation work only through currently available Agent actions.
-- Feature confirmation, business acceptance, release preparation, release approval, and reconciliation require an authenticated human assigned to the required DeliveryRun role.
-- Deployment outcome and successful installation require a trusted system credential.
-- Identity is resolved server-side. A client cannot declare its actor kind, permissions, or Workspace authority.
+- Agent actors can perform only catalog actions projected for agents.
+- Feature confirmation, acceptance and release ownership require an
+  authenticated human with the relevant assignment.
+- Runtime verification and deployment evidence require a trusted system
+  principal with `delivery_deployment.record`.
+- Identity is resolved server-side; callers cannot declare actor kind,
+  permissions, Workspace, state or status.

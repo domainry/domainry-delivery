@@ -2,11 +2,9 @@ package contracttest
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,22 +12,62 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
-	deliverysdk "github.com/domainry/domainry-delivery"
+	agentsdk "github.com/domainry/domainry-agent-sdk"
+	deliverysdk "github.com/domainry/domainry-delivery-sdk"
+	"github.com/domainry/domainry-delivery-sdk/modulehost"
+	deliveryremote "github.com/domainry/domainry-delivery-sdk/remote"
+	ormdialect "github.com/domainry/domainry-orm/dialect"
+	ormmigration "github.com/domainry/domainry-orm/migration"
+	"github.com/domainry/domainry-orm/sqlhost"
+
 	"github.com/domainry/domainry-delivery/internal/application"
-	"github.com/domainry/domainry-delivery/internal/domain/delivery"
-	"github.com/domainry/domainry-delivery/internal/infrastructure/sqlite"
-	"github.com/domainry/domainry-delivery/internal/transport/httpapi"
+	delivery "github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
+	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
 	deliverymodule "github.com/domainry/domainry-delivery/module"
-	deliveryremote "github.com/domainry/domainry-delivery/remote"
 	_ "modernc.org/sqlite"
 )
 
 const contractWorkspaceID = "workspace-contract"
 
-type databaseHost struct{ database *sql.DB }
+type databaseHost struct {
+	database   *sql.DB
+	dialect    modulehost.Dialect
+	migrations *migrationRegistrar
+}
 
-func (host databaseHost) Database() *sql.DB { return host.database }
+type migrationRegistrar struct{ database *sql.DB }
+
+func (host databaseHost) RuntimeID() string                         { return "delivery-contract-test" }
+func (host databaseHost) Database() sqlhost.Database                { return host.database }
+func (host databaseHost) Dialect() modulehost.Dialect               { return host.dialect }
+func (host databaseHost) Migrations() modulehost.MigrationRegistrar { return host.migrations }
+func (host databaseHost) ConversationSourceVerifier() agentsdk.ConversationSourceVerifier {
+	return acceptingSourceVerifier{}
+}
+
+type acceptingSourceVerifier struct{}
+
+func (acceptingSourceVerifier) VerifyConversationSources(_ context.Context, request agentsdk.ConversationSourceVerificationRequest) (agentsdk.ConversationSourceVerificationReceipt, error) {
+	return agentsdk.ConversationSourceVerificationReceipt{
+		WorkspaceID: request.Reader.WorkspaceID, References: request.References, SourceIDs: request.SourceIDs,
+		DecisionIDs: request.DecisionIDs, VerifiedAt: time.Now().UTC(),
+	}, nil
+}
+func (registrar *migrationRegistrar) Driver() string { return "sqlite" }
+func (registrar *migrationRegistrar) Schema() string { return "" }
+func (registrar *migrationRegistrar) ApplyOwnedMigrations(ctx context.Context, _ string, migrations []ormmigration.Migration) error {
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			if _, err := registrar.database.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 	moduleDatabase, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "module.db"))
@@ -37,7 +75,12 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer moduleDatabase.Close()
-	moduleBinding, err := deliverymodule.Open(t.Context(), databaseHost{database: moduleDatabase})
+	dialect, err := ormdialect.New(ormdialect.SQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := databaseHost{database: moduleDatabase, dialect: dialect.WithSchema(""), migrations: &migrationRegistrar{database: moduleDatabase}}
+	moduleBinding, err := deliverymodule.NewFactory().OpenModule(t.Context(), deliverysdk.ApplicationRef{RuntimeID: "delivery-contract-test"}, host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,10 +90,12 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer saasStore.Close()
-	saasHandler := httpapi.New(application.NewService(saasStore), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	saasHandler := httpapi.New(application.NewService(application.Ports{
+		Products: saasStore, Runs: saasStore, Lifecycle: saasStore, Sources: acceptingSourceVerifier{}, SourceRuntimeID: "delivery-contract-test",
+	}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-contract-test")
 	server := httptest.NewServer(contractAuthentication(saasHandler))
 	defer server.Close()
-	remoteBinding, err := deliveryremote.Open(t.Context(), deliveryremote.Config{BaseURL: server.URL, Client: server.Client()})
+	remoteBinding, err := deliveryremote.Open(t.Context(), deliveryremote.Config{BaseURL: server.URL, RuntimeID: "delivery-contract-test", Client: server.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +135,7 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if session.WorkspaceID != contractWorkspaceID || session.Actor.ID != "owner" || session.Actor.Kind != delivery.ActorHuman {
+			if session.WorkspaceID != contractWorkspaceID || session.Actor.ID != "owner" || session.Actor.Kind != deliverysdk.ActorHuman {
 				t.Fatalf("authenticated session differs: %#v", session)
 			}
 			created, err := testCase.binding.DispatchProduct(testCase.ctx, contractWorkspaceID, "product-contract", productCreateCommand())
@@ -123,33 +168,6 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 				t.Fatalf("Feature discovery differs: %#v", opened.Product.Features)
 			}
 
-			content := []byte("supplier,item,price\nAcme,Widget,120\n")
-			uploaded, err := testCase.binding.UploadFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", deliverysdk.FeatureAttachmentUpload{
-				AttachmentID: "attachment-quote", FileName: "supplier-quote.csv", MediaType: "text/csv", ExpectedRevision: 2, Content: content,
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			expectedDigest := fmt.Sprintf("%x", sha256.Sum256(content))
-			if uploaded.Product.Product.Revision != 3 || uploaded.Attachment.Name != "supplier-quote.csv" || uploaded.Attachment.SHA256 != expectedDigest || uploaded.Attachment.ContentRef != "delivery-attachment://attachment-quote" || uploaded.Attachment.UploadedBy != "owner" {
-				t.Fatalf("attachment upload differs: %#v", uploaded)
-			}
-
-			downloaded, err := testCase.binding.DownloadFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", "attachment-quote")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(downloaded.Attachment, uploaded.Attachment) || !reflect.DeepEqual(downloaded.Content, content) {
-				t.Fatalf("attachment download differs: %#v", downloaded)
-			}
-
-			removed, err := testCase.binding.RemoveFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", "attachment-quote", 3)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if removed.Product.Revision != 4 || len(removed.Product.Features[0].Attachments) != 0 {
-				t.Fatalf("attachment removal differs: %#v", removed.Product.Features[0].Attachments)
-			}
 		})
 	}
 
@@ -175,8 +193,7 @@ func productCreateCommand() deliverysdk.Command {
 	})
 	return deliverysdk.Command{
 		ClientID: "create-product", ExpectedRevision: 0,
-		Actor: deliverysdk.Actor{ID: "spoofed-client", Kind: delivery.ActorSystem},
-		Type:  "product.create", Payload: payload,
+		Type: "product.create", Payload: payload,
 	}
 }
 
@@ -184,8 +201,7 @@ func featureOpenCommand() deliverysdk.Command {
 	payload, _ := json.Marshal(map[string]any{"feature_id": "feature-inquiry"})
 	return deliverysdk.Command{
 		ClientID: "open-feature", ExpectedRevision: 1,
-		Actor: deliverysdk.Actor{ID: "spoofed-client", Kind: delivery.ActorSystem},
-		Type:  "feature.discovery.open", Payload: payload,
+		Type: "feature.discovery.open", Payload: payload,
 	}
 }
 

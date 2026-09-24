@@ -1,0 +1,73 @@
+{
+  "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "checks": {
+    "delivery_unit.model.verify": {
+      "workspace_id": "workspace-demo",
+      "product_id": "product-greenfit",
+      "feature_revision": 1,
+      "repository_identity": "github.com/domainry/plane-backend-fixture",
+      "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "git_status": "clean",
+      "check_suite": "plane-backend-guide",
+      "check_version": "1",
+      "evidence_refs": [
+        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:model.json"
+      ],
+      "model_path": "backend/model.json",
+      "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "single_backend_model": true,
+      "strict_model_validation": true,
+      "cross_references_resolved": true,
+      "go_behavior_registry": true,
+      "no_executable_behavior_json": true
+    },
+    "delivery_unit.contract.verify": {
+      "workspace_id": "workspace-demo",
+      "product_id": "product-greenfit",
+      "feature_revision": 1,
+      "repository_identity": "github.com/domainry/plane-backend-fixture",
+      "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "git_status": "clean",
+      "check_suite": "plane-backend-guide",
+      "check_version": "1",
+      "evidence_refs": [
+        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:contract.json"
+      ],
+      "model_path": "backend/model.json",
+      "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "project_http": true,
+      "handler_unit_of_work": true,
+      "handler_idempotency": true,
+      "definitions_registered": true,
+      "runtime_bootstrap": true,
+      "no_project_schema_sql": true,
+      "backend_go_mod_only": true,
+      "no_root_go_mod": true,
+      "no_go_work": true,
+      "no_compiler_builder": true,
+      "no_generated_runtime_contract": true,
+      "auth_workspace_permission": true,
+      "data_audit_persistence": true,
+      "empty_database_init_passed": true,
+      "same_model_restart_passed": true,
+      "changed_model_rejected": true
+    },
+    "delivery_unit.journey.complete": {
+      "workspace_id": "workspace-demo",
+      "product_id": "product-greenfit",
+      "feature_revision": 1,
+      "repository_identity": "github.com/domainry/plane-backend-fixture",
+      "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "git_status": "clean",
+      "check_suite": "plane-backend-guide",
+      "check_version": "1",
+      "evidence_refs": [
+        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:journey.json"
+      ],
+      "model_path": "backend/model.json",
+      "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "mock_journey_passed": true,
+      "runtime_journey_passed": true
+    }
+  }
+}

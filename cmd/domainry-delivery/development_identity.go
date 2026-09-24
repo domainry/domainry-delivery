@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-delivery/internal/application"
-	"github.com/domainry/domainry-delivery/internal/domain/delivery"
+	delivery "github.com/domainry/domainry-delivery/internal/domain"
 )
 
 const developmentIdentityEnv = "DELIVERY_DEV_IDENTITY"

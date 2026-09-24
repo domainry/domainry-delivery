@@ -1,12 +1,10 @@
 # HTTP API v1
 
-All responses use JSON. Error responses contain a stable code, localized presentation message, and optional details:
-
-```json
-{"code":"revision_conflict","message":"The revision changed; read the resource again before submitting.","details":{"actual_revision":2}}
-```
-
-Every Workspace route requires `Authorization: Bearer ...`. Clients may send `Accept-Language`; unsupported languages fall back to English. Supported locales are `en`, `ja`, `ko`, `es`, `pt`, `fr`, `de`, `it`, and `tr`. Identity middleware resolves the principal and the application overwrites any actor value. In fact, actor is not part of the accepted command JSON.
+All Workspace routes require `Authorization: Bearer ...`. Identity middleware
+resolves the principal and Workspace; command JSON cannot declare an actor.
+Errors contain a stable code, localized presentation message, and optional
+details. Supported locales are `en`, `ja`, `ko`, `es`, `pt`, `fr`, `de`, `it`,
+and `tr`.
 
 ## Discovery
 
@@ -16,9 +14,7 @@ GET /api/v1/delivery/descriptor
 GET /api/v1/workspaces/{workspace_id}/session
 ```
 
-The descriptor exposes protocol version, deployment mode, capabilities, and supported locales. Session exposes only non-secret authenticated identity facts required for human role assignment.
-
-## Product
+## Product and Feature
 
 ```text
 GET  /api/v1/workspaces/{workspace_id}/products
@@ -28,14 +24,20 @@ POST /api/v1/workspaces/{workspace_id}/products/{product_id}/commands
 POST /api/v1/workspaces/{workspace_id}/products/{product_id}/delivery-runs/{delivery_run_id}
 ```
 
-Product commands:
+Product commands come from the typed command catalog:
 
-- `product.create`: creates Story, Definition, and Decisions atomically with `expected_revision: 0`.
-- `feature.discovery.replace`: replaces one mutable Feature discovery workspace with evidence, scenarios, assumptions, conflicts, options, decisions, the derived specification, and exact conversation sources. Delivery validates the complete state and selects the highest-value next question.
-- `feature.confirm`: authenticated human confirmation that freezes the current discovery workspace as an immutable FeatureRevision against its exact ProductRevision baseline.
-- `feature.delivery.start`: local RD workload starts a DeliveryRun bound to the exact confirmed FeatureRevision.
+- `product.create`, `product.delete`
+- `product.engineering.frontend.start`,
+  `product.engineering.frontend.complete`
+- `product.engineering.foundation.started`,
+  `product.engineering.foundation.completed`,
+  `product.engineering.foundation.failed`
+- `feature.discovery.open`, `feature.discovery.replace`, `feature.confirm`
+- `feature.delivery.start` through the DeliveryRun creation endpoint
 
-Product detail returns server-owned `available_actions`. Agent Context includes only actions currently available to an Agent and explicitly lists human/system boundaries.
+Feature confirmation freezes the complete discovery and specification as one
+immutable FeatureRevision against its exact ProductRevision baseline. Starting
+a run rejects stale baselines rather than silently rebasing the requirement.
 
 ## DeliveryRun
 
@@ -46,41 +48,50 @@ GET  /api/v1/workspaces/{workspace_id}/delivery-runs/{delivery_run_id}/agent-con
 POST /api/v1/workspaces/{workspace_id}/delivery-runs/{delivery_run_id}/commands
 ```
 
-The complete projection includes `workflow.available_actions` and `workflow.release_gates`. Deck renders these fields and does not recreate lifecycle conditions.
-
 Agent commands:
 
-- `work.plan.replace`, `work.start`, `work.complete`
-- `build.create`, `build.deploy_to_test`
-- `test.record`
-- `issue.start_fix`, `issue.complete_fix`
+- `delivery_unit.interaction.complete`
+- `delivery_unit.model.complete`
+- `delivery_unit.backend.complete`
+- `delivery_unit.frontend.complete`
+- `product_revision.record`
+- `quality.record`
 - `release_checks.replace`, `release_check.record`
+
+Trusted system commands:
+
+- `delivery_unit.model.verify`
+- `delivery_unit.contract.verify`
+- `delivery_unit.gap.report`
+- `delivery_unit.journey.complete`
+- `release.deploy_result`
 
 Human commands:
 
-- `acceptance.record`
-- `release.prepare`, `release.approve`
-- `release.reconcile`
+- `acceptance.confirm`
+- `release.prepare`, `release.approve`, `release.reconcile`
 
-Trusted system command:
+The server projection is authoritative for `available_actions` and
+`release_gates`. Clients must reread it immediately before a mutation and must
+not reproduce the state machine.
 
-- `release.deploy_result`
-
-A successful `release.deploy_result` must include the trusted deployment
-receipt and the absolute HTTP(S) `launch_url` of the deployed SaaS product.
-After installation, Product projections expose that destination as
-`product.current_deployment`; clients must not derive a URL from
-`environment_ref`.
-
-## Command envelope
+## Command envelope and replay
 
 ```json
 {
   "client_id": "0199...",
   "expected_revision": 7,
-  "type": "work.start",
-  "payload": {"work_item_id":"DEV-01"}
+  "type": "delivery_unit.backend.complete",
+  "payload": {}
 }
 ```
 
-Every write requires a unique `client_id` and current `expected_revision`. Retrying the same command with the same client ID returns its original receipt. Reusing that ID for a different command fails. Revision conflicts return HTTP 409 and the actual revision.
+Every write requires `client_id` and `expected_revision`. The command
+fingerprint includes the authenticated actor, command, canonical payload,
+Workspace and resource identities from the URL. An exact retry returns the
+original terminal receipt. Reusing the ID with any changed fact fails;
+optimistic revision conflicts return HTTP 409 with the actual revision.
+
+A successful deployment result includes the trusted provider receipt, exact
+environment and an absolute HTTP(S) `launch_url`. Installation is part of the
+same transaction that commits the live run and new ProductRevision.
