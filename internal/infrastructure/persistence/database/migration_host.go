@@ -23,7 +23,12 @@ const migrationLedgerTable = "_schema_migrations"
 type directMigrationRegistrar struct {
 	database sqlhost.Database
 	renderer query.Renderer
+	driver   string
 }
+
+func (registrar directMigrationRegistrar) Driver() string { return registrar.driver }
+
+func (directMigrationRegistrar) Schema() string { return "" }
 
 func (registrar directMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []ormmigration.Migration) error {
 	owner = strings.TrimSpace(owner)

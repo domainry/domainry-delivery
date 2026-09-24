@@ -1,6 +1,6 @@
 # Domainry Delivery 架构重构 TODO
 
-状态：代码重构与测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；Delivery 已删除对 Agent 服务的反向运行依赖。dev 发布已完成构建、推镜像和 Argo 同步，但环境侧 MySQL 与 Identity 运行配置尚未提供。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
+状态：代码重构与测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；Delivery 已删除对 Agent 服务的反向运行依赖，并嵌入 Identity Bridge 对接 Verdent 登录。dev 发布仍缺环境侧 Delivery 专用 MySQL 运行配置。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
 
 本清单是后续重构的唯一执行顺序。只有代码、架构门禁、定向测试和跨仓消费者同时完成，任务才能勾选；不保留旧命令、旧数据库、旧 HTTP 合同或双运行分支。
 
@@ -39,7 +39,7 @@
 | `domainry-agent-sdk` | Conversation/Run/source/artifact 的发布与访问合同、canonical source identity | Delivery decision DTO、领域状态机、Delivery host port |
 | `domainry-agent` | Conversation、Run、source/artifact 归属、访问控制与可读性 | Product/Feature/DeliveryRun 状态和 Feature decision identity |
 | `domainry-deck` | 本地 PM/RD/QA/OP Agent Runtime roles、项目源码/缓存/outbox/thread state、Runtime/Mock/journey 真实检查与 evidence 生成 | Delivery 状态转换、Delivery 持久化、伪造系统验证结果 |
-| `devops` | Jenkins job、镜像发布、Argo CD/Kubernetes dev 部署与 MySQL/Identity/Agent secret 引用 | Delivery 业务逻辑和密钥明文 |
+| `devops` | Jenkins job、镜像发布、Argo CD/Kubernetes dev 部署与 MySQL 运行配置引用 | Delivery 业务逻辑和密钥明文 |
 
 关键调用方向：`Deck -> Agent (publish source/artifact)`，`Deck -> Delivery (command/evidence reference)`；`devops -> Delivery SaaS` 只负责组装和发布。Delivery 不反向调用 Agent：它保存生产者提交的精确不可变引用并验证自己的业务闭包，不能因为要验收一个事实，就依赖产生该事实的服务在线。
 
@@ -206,17 +206,29 @@ domainry-delivery/
 
 - [x] R10.1 Delivery 提供多阶段 `Dockerfile` 和 `.dockerignore`，镜像运行非 root 静态 Linux 二进制，本地已通过 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build`。
 - [x] R10.2 在独立 `devops` 仓库增加 `jenkins-configs/domainry-delivery-dev.yaml` 和 `domainry-delivery/k8s/dev/Jenkinsfile`，复用现有 shared library、ECR 和 Argo CD 流程。
-- [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql`。参照 Japan Office 当前的环境配置所有权模式，由环境侧维护 `domainry-delivery-dev-config/runtime.env`，Pod 启动时从九个 `MYSQL_*` 字段组装 DSN；数据库必须由平台预先创建，应用与 Pod 不创建或改写数据库。Delivery 只复用该模式，不复用 Japan Office 的数据库、数据或凭据。Identity 引用独立 Kubernetes Secret；Delivery 没有 Agent endpoint/token 配置。仓库不保存明文配置；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
+- [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql`。参照 Japan Office 当前的环境配置所有权模式，由环境侧维护 `domainry-delivery-dev-config/runtime.env`，Pod 启动时从九个 `MYSQL_*` 字段组装 DSN；数据库必须由平台预先创建，应用与 Pod 不创建或改写数据库。Delivery 只复用该模式，不复用 Japan Office 的数据库、数据或凭据。Identity Bridge 的 Verdent provider contract 随镜像发布，不需要远端 Identity Secret；Delivery 也没有 Agent endpoint/token 配置。仓库不保存数据库明文配置；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
-- [ ] R10.5 在 `verdent-dev` 创建环境所有的 `domainry-delivery-dev-config` ConfigMap 和 `domainry-delivery-identity` Secret。ConfigMap 必须选择平台预先创建的 Delivery 专用 MySQL database；不允许指向 Japan Office 业务库。此前 Jenkins build 已确认环境中没有可复用的 MySQL/Identity 配置；`kb-wiki-database` 是 PostgreSQL，不能通过改名称复用。本机 `eks-verdent-dev` context 未登录且没有真实值，不能伪造配置。
-- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行：build #1 成功构建并推送 Delivery 镜像、创建 Argo CD Application，Service/Ingress 同步健康，但 Deployment 因 R10.5 为 Degraded；build #2/#3/#4 复用同一 ECR digest，并在约 100 秒内通过 Secret/key 门禁于 Argo 同步前失败。共享流水线已支持由产品配置声明默认 tag，build #3 后已从 Jenkins 参数页验证 Delivery 默认值确实为 `v0.1.5`，不再回落到 `v0.0.1`。
-- [ ] R10.7 Argo CD 当前已同步 devops `main` 清单且 Deployment image 为 `v0.1.5`，但 Pod 是 `CreateContainerConfigError`，尚不能从集群外执行 `/healthz`、descriptor、Identity 认证和 MySQL 写入/重启持久化旅程。
+- [ ] R10.5 在 `verdent-dev` 创建环境所有的 `domainry-delivery-dev-config` ConfigMap。ConfigMap 必须选择平台预先创建的 Delivery 专用 MySQL database；不允许指向 Japan Office 业务库。此前 Jenkins build 已确认环境中没有可复用的 MySQL 配置；`kb-wiki-database` 是 PostgreSQL，不能通过改名称复用。本机 `eks-verdent-dev` context 未登录且没有真实值，不能伪造配置。
+- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已用 immutable tag `v0.1.6` 执行。build #6 checkout 精确 tag/commit `1036f0f`，镜像构建、Trivy（CRITICAL=0、HIGH=0）和 ECR 推送成功，digest 为 `sha256:bac9887ada769b7e1b97b9c57aab93dd4f5eaf5b79c96527aa6759bc09df3061`；preDeployHook 只报告缺少 `domainry-delivery-dev-config` 与 `domainry-delivery-identity`，不再要求 Agent 配置，并在 Argo 同步前停止。build #5 曾暴露 Jenkins Groovy 对 JSONPath 反斜杠的解析错误，已改用无转义的 Go template 并由 build #6 证明修复。产品配置默认 tag 已更新为 `v0.1.6`。
+- [ ] R10.7 Argo CD 仍未把新版本同步为可运行 dev Deployment：R10.5 的 MySQL 前置配置缺失时流水线会在同步前失败。集群外 `/healthz`、descriptor、Verdent Identity Bridge 认证和 MySQL 写入/重启持久化旅程尚不能执行。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
 
+### R11：Verdent 登录与 Identity Bridge
+
+- [x] R11.1 Delivery SaaS 直接嵌入 `domainry-identity-bridge`，与 Delivery 共用数据库连接和唯一 migration ledger；不再依赖远端 Identity endpoint、workspace 或 service token。
+- [x] R11.2 Bridge 通过严格配置调用 Verdent Passport token validation；provider 域名、路径、响应字段和检查规则不进入 Go 业务代码。
+- [x] R11.3 Verdent 用户首次访问时，在一个事务内创建个人 `delivery_workspaces`、外部身份 ownership 和 `delivery_owner` 初始角色；重启后复用同一 Workspace，不共享跨用户数据。
+- [x] R11.4 Delivery 发布五个真实权限并由 Bridge 生成授权包；所有业务请求继续校验 token 中的 Workspace 和 permission。PM/RD/QA/OP/System 是 Deck 本地执行角色，不再映射成多套远端 workload token。
+- [x] R11.5 Deck Rust 实现 Verdent desktop PKCE：随机 state/verifier、SHA-256 challenge、loopback callback、一次性 code exchange 和 refresh rotation。access/refresh token 只存在 Rust 内存；TypeScript 只获得 Delivery Session。
+- [x] R11.6 Delivery 外部身份集成测试覆盖两用户隔离、权限分配和重启稳定性；Deck 129 个 Rust 单测、TypeScript boundary/check 与 2 个前端测试通过。
+- [ ] R11.7 dev 环境真实 Verdent 登录与 Delivery 写入旅程等待 R10.5 的专用 MySQL 配置和新镜像部署完成后验收。
+
+完成标准：Deck 登录 Verdent 后从 Bridge 获取服务端分配的 Workspace，并只用同一用户 bearer credential 调用 Delivery；前端代码、环境变量和本地角色均不持有额外 Delivery token。
+
 ## 4. 当前不得假装完成的缺口
 
-1. **外部 dev 发布的根阻塞只剩环境拥有的 MySQL 与 Identity，不是 Agent、代码、镜像或 Argo 配置。** Japan Office 解决的是“配置由环境拥有”的模式，不会为 Delivery 提供可复用的数据库或身份。当前数据库候选是 PostgreSQL，也没有可安全复用的 Domainry Identity 配置。需要平台先提供 Delivery 专用 MySQL database 和已登记的 Identity workspace/application/service credential，再创建一组 ConfigMap 和一组 Secret。本机 Kubernetes context 未登录、AWS CLI 无身份，Jenkins 也没有对应配置，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
+1. **外部 dev 发布的根阻塞只剩环境拥有的 MySQL，不是 Identity、Agent、代码、镜像或 Argo 配置。** Japan Office 解决的是“配置由环境拥有”的模式，不会为 Delivery 提供可复用的数据库。当前数据库候选是 PostgreSQL，不能改名冒充 Delivery MySQL。需要平台先提供 Delivery 专用 MySQL database，再创建 `domainry-delivery-dev-config` ConfigMap。本机 Kubernetes context 未登录、AWS CLI 无身份，Jenkins 也没有对应配置，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
 ## 5. 推荐落地批次
 
 1. **批次一：R00 + R01 + R03** — 先消灭双状态机并闭合 ProductRevision。这是当前会制造错误业务状态的根因。

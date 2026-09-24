@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	identitysdk "github.com/domainry/domainry-identity-sdk"
+	actioncontract "github.com/domainry/domainry-foundation/action"
+	"github.com/domainry/domainry-foundation/modulehttp"
+	bridgemodule "github.com/domainry/domainry-identity-bridge/module"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	identityhttpmiddleware "github.com/domainry/domainry-identity-sdk/httpmiddleware"
-	identityremote "github.com/domainry/domainry-identity-sdk/remote"
 
 	deliverysaas "github.com/domainry/domainry-delivery/internal/assembly/saas"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
@@ -34,7 +35,7 @@ func main() {
 	service := applicationRuntime.Service
 	deliveryHandler := httpapi.New(service, logger, env("DELIVERY_RUNTIME_ID", "domainry-delivery-dev"))
 	serverAddr := env("DELIVERY_ADDR", "127.0.0.1:8096")
-	authenticatedHandler, closeIdentity, _, err := authenticatedDeliveryHandler(serverAddr, deliveryHandler)
+	authenticatedHandler, identityRoutes, closeIdentity, _, err := authenticatedDeliveryHandler(context.Background(), serverAddr, applicationRuntime, deliveryHandler)
 	if err != nil {
 		logger.Error("configure Delivery identity", "error", err)
 		os.Exit(1)
@@ -42,7 +43,7 @@ func main() {
 	defer closeIdentity()
 	server := &http.Server{
 		Addr:              serverAddr,
-		Handler:           publicDeliveryRoutes(deliveryHandler, authenticatedHandler),
+		Handler:           publicDeliveryRoutes(deliveryHandler, authenticatedHandler, identityRoutes),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -67,26 +68,23 @@ func main() {
 	}
 }
 
-func authenticatedDeliveryHandler(serverAddr string, handler http.Handler) (http.Handler, func(), bool, error) {
+func authenticatedDeliveryHandler(ctx context.Context, serverAddr string, applicationRuntime *deliverysaas.Application, handler http.Handler) (http.Handler, map[string]http.Handler, func(), bool, error) {
 	development, enabled, err := developmentIdentityFromEnvironment(serverAddr)
 	if err != nil {
-		return nil, func() {}, false, err
+		return nil, nil, func() {}, false, err
 	}
 	if enabled {
-		return development.Authenticate(handler), func() {}, true, nil
+		return development.Authenticate(handler), nil, func() {}, true, nil
 	}
-	identityConfig := identityremote.ConfigFromEnvironment()
-	identityBinding, err := identityremote.NewFactory(identityConfig).Open(context.Background(), identitysdk.ApplicationRef{
-		WorkspaceID:    identitysdk.WorkspaceID(identityConfig.WorkspaceID),
-		ApplicationKey: identitysdk.ApplicationKey(identityConfig.Audience),
-	})
+	external, err := applicationRuntime.OpenExternalIdentity(ctx, bridgemodule.ConfigPathFromEnvironment())
 	if err != nil {
-		return nil, func() {}, false, err
+		return nil, nil, func() {}, false, err
 	}
+	identityBinding := external.Binding
 	authenticator, err := identityprincipal.NewAuthenticator(identityBinding, identityprincipal.Options{})
 	if err != nil {
 		_ = identityBinding.Close(context.Background())
-		return nil, func() {}, false, err
+		return nil, nil, func() {}, false, err
 	}
 	identityMiddleware, err := identityhttpmiddleware.New(
 		authenticator,
@@ -95,16 +93,54 @@ func authenticatedDeliveryHandler(serverAddr string, handler http.Handler) (http
 	)
 	if err != nil {
 		_ = identityBinding.Close(context.Background())
-		return nil, func() {}, false, err
+		return nil, nil, func() {}, false, err
+	}
+	provider, ok := identityBinding.(modulehttp.Provider)
+	if !ok {
+		_ = identityBinding.Close(context.Background())
+		return nil, nil, func() {}, false, errors.New("external Identity HTTP adapter is required")
+	}
+	identityRoutes, err := externalIdentityRoutes(provider, identityMiddleware)
+	if err != nil {
+		_ = identityBinding.Close(context.Background())
+		return nil, nil, func() {}, false, err
 	}
 	closeIdentity := func() { _ = identityBinding.Close(context.Background()) }
-	return identityMiddleware.Authenticate(identityMiddleware.RequirePasswordChanged(handler)), closeIdentity, false, nil
+	return identityMiddleware.Authenticate(handler), identityRoutes, closeIdentity, false, nil
 }
 
-func publicDeliveryRoutes(public, authenticated http.Handler) http.Handler {
+func externalIdentityRoutes(provider modulehttp.Provider, middleware *identityhttpmiddleware.Middleware) (map[string]http.Handler, error) {
+	result := map[string]http.Handler{}
+	for _, adapter := range provider.HTTPAdapters() {
+		if err := modulehttp.ValidateAdapter(adapter); err != nil {
+			return nil, err
+		}
+		for _, route := range adapter.Routes() {
+			pattern := route.Pattern()
+			if pattern == "" || result[pattern] != nil {
+				return nil, errors.New("external Identity route is invalid or duplicated")
+			}
+			switch route.Action.Authorization.Strategy {
+			case actioncontract.AuthorizationAnonymous:
+				result[pattern] = adapter.Handler()
+			case actioncontract.AuthorizationAuthenticated:
+				result[pattern] = middleware.Authenticate(adapter.Handler())
+			default:
+				return nil, errors.New("external Identity route has an unsupported authorization strategy")
+			}
+		}
+	}
+	return result, nil
+}
+
+func publicDeliveryRoutes(public, authenticated http.Handler, identityRoutes map[string]http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path == "/healthz" || request.URL.Path == "/api/v1/delivery/descriptor" {
 			public.ServeHTTP(writer, request)
+			return
+		}
+		if identityRoute := identityRoutes[request.Method+" "+request.URL.Path]; identityRoute != nil {
+			identityRoute.ServeHTTP(writer, request)
 			return
 		}
 		authenticated.ServeHTTP(writer, request)

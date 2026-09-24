@@ -8,6 +8,8 @@ github.com/domainry/domainry-delivery-sdk v0.1.6 h1:SpJieT8CGALEjJoLeJUd1xaqz0Vj
 github.com/domainry/domainry-delivery-sdk v0.1.6/go.mod h1:uXH2qWTPocfoXfym8gntMeELNSnUfaK4KM8ZGoo9kKA=
 github.com/domainry/domainry-foundation v0.1.40 h1:QSXjeVrjXoX/wcLJWKCKFGiD/9PbScd7A5Jzsz71Gmw=
 github.com/domainry/domainry-foundation v0.1.40/go.mod h1:ccnHN+6FE4EKc6XP1ycz+ckU3XfgI9WDYKFyXuD+3/Q=
+github.com/domainry/domainry-identity-bridge v0.1.7 h1:sPWvAzQtHZZ7nmeCb6y37Rm6FKI/idq86IgFCuZwpAI=
+github.com/domainry/domainry-identity-bridge v0.1.7/go.mod h1:TF/WXY6QiEkmUkmpCZ3hASpd0EH+1bQhgTRq3n5TNuw=
 github.com/domainry/domainry-identity-sdk v0.1.17 h1:JHxYN539t/tOCQ7vizVewYeW81miVKH/ZCCm/+J1lBg=
 github.com/domainry/domainry-identity-sdk v0.1.17/go.mod h1:EOGhrsmOMOGBI67bSGOznYxK+KDMrAgO2Xj6Q30qMBo=
 github.com/domainry/domainry-orm v0.1.31 h1:fovrAVD9kj4nPUgXt0ReDe7oKd3cnM03mhh+Q51SkLI=

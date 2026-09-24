@@ -66,12 +66,17 @@ Environment:
 - `DELIVERY_DB_DRIVER`: `sqlite` for local development or `mysql`.
 - `DELIVERY_DB`: SQLite path when the driver is `sqlite`.
 - `DELIVERY_MYSQL_DSN`: Go MySQL driver DSN when the driver is `mysql`.
-- `IDENTITY_*`: the remote Identity SDK configuration. Development identity is
-  deliberately restricted to loopback listeners.
+- `DOMAINRY_IDENTITY_BRIDGE_CONFIG_FILE`: strict external-provider bridge
+  configuration, default `config/identity-external.json`. The packaged
+  configuration validates Verdent Passport access tokens and creates one
+  personal Delivery Workspace per verified user. Delivery does not require a
+  remote Identity service or service credential.
+- `DELIVERY_DEV_IDENTITY`: optional local-only test identity, deliberately
+  restricted to loopback listeners and never used by the dev deployment.
 The dev Kubernetes configuration lives in the separate devops repository at
 `domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
-Identity configuration, Jenkins image builds, ECR, and Argo CD; no environment
-values are committed.
+the packaged Identity Bridge configuration, Jenkins image builds, ECR, and
+Argo CD; no database values are committed.
 
 ## Verify
 

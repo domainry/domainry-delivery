@@ -50,9 +50,9 @@ func executeMutation[T any](
 		return zero, domain.Invalid("command_unknown")
 	}
 	var forcedKind *domain.ActorKind
-	if len(definition.AllowedActors) == 1 && definition.AllowedActors[0] == domain.ActorSystem {
-		systemKind := domain.ActorSystem
-		forcedKind = &systemKind
+	if len(definition.AllowedActors) == 1 && (definition.AllowedActors[0] == domain.ActorAgent || definition.AllowedActors[0] == domain.ActorSystem) {
+		executionKind := definition.AllowedActors[0]
+		forcedKind = &executionKind
 	}
 	actor, err := authenticatedActor(ctx, scope.WorkspaceID, definition.Permission, forcedKind)
 	if err != nil {

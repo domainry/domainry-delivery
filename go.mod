@@ -10,6 +10,7 @@ require (
 require (
 	github.com/domainry/domainry-delivery-sdk v0.1.6
 	github.com/domainry/domainry-foundation v0.1.40
+	github.com/domainry/domainry-identity-bridge v0.1.7
 	github.com/domainry/domainry-identity-sdk v0.1.17
 	github.com/domainry/domainry-orm v0.1.31
 )

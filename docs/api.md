@@ -2,6 +2,15 @@
 
 All Workspace routes require `Authorization: Bearer ...`. Identity middleware
 resolves the principal and Workspace; command JSON cannot declare an actor.
+In SaaS mode, the embedded external Identity Bridge validates that bearer token
+with Verdent Passport. `GET /auth/external/session` provisions (on first
+access) and returns the verified user's personal Workspace. Deck uses that
+server-issued `workspace_id` for subsequent Workspace routes; neither Deck nor
+request JSON may choose it.
+
+The public bridge discovery endpoints are `GET /auth/external/config` and
+`GET /auth/external/client.js`. `GET /auth/external/session` is authenticated.
+Delivery stores no Verdent password and issues no replacement browser session.
 Errors contain a stable code, localized presentation message, and optional
 details. Supported locales are `en`, `zh`, `zh-hant`, `ja`, `ko`, `es`, `pt`,
 `fr`, `de`, `it`, `tr`, and `ar`.
