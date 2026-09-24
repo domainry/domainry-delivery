@@ -22,18 +22,18 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 		return DeliveryRun{}, err
 	}
 	if actor.Kind != ActorAgent {
-		return DeliveryRun{}, Invalid("agent_execution_required", "A local Agent Runtime must create a DeliveryRun.")
+		return DeliveryRun{}, Invalid("agent_execution_required")
 	}
 	feature := findFeature(&product, strings.TrimSpace(featureID))
 	if feature == nil {
 		return DeliveryRun{}, NotFound("Feature", featureID)
 	}
 	if feature.Status != FeatureConfirmed || feature.ConfirmedRevision != featureRevision || feature.CurrentRevision != featureRevision {
-		return DeliveryRun{}, Invalid("feature_not_confirmed", "A DeliveryRun must bind the currently confirmed FeatureRevision.")
+		return DeliveryRun{}, Invalid("feature_not_confirmed")
 	}
 	featureRevisionValue := feature.Revisions[len(feature.Revisions)-1]
 	if featureRevisionValue.BaselineProductRevision != product.CurrentReleaseRevision || featureRevisionValue.BaselineProductRevision != product.CurrentDefinitionRevision {
-		return DeliveryRun{}, Invalid("feature_baseline_stale", "The confirmed FeatureRevision no longer matches the current Product baseline; reconfirm the requirement against the current ProductRevision.")
+		return DeliveryRun{}, Invalid("feature_baseline_stale")
 	}
 	if err := validateDeliveryRunSpec(spec); err != nil {
 		return DeliveryRun{}, err
@@ -109,23 +109,23 @@ func formatAcceptanceScenario(scenario FeatureAcceptanceScenario) string {
 
 func validateDeliveryRunSpec(spec DeliveryRunSpec) error {
 	if strings.TrimSpace(spec.ID) == "" || strings.TrimSpace(spec.Name) == "" || strings.TrimSpace(spec.Code) == "" || strings.TrimSpace(spec.Goal) == "" {
-		return Invalid("delivery_run_incomplete", "A DeliveryRun requires an ID, name, code, and goal.")
+		return Invalid("delivery_run_incomplete")
 	}
 	members := map[string]bool{}
 	roles := map[string]bool{}
 	for _, member := range spec.Members {
 		if strings.TrimSpace(member.ID) == "" || strings.TrimSpace(member.Name) == "" || len(member.Roles) == 0 {
-			return Invalid("delivery_member_incomplete", "Every DeliveryRun member requires an ID, a name, and at least one role.")
+			return Invalid("delivery_member_incomplete")
 		}
 		if members[member.ID] {
-			return Invalid("delivery_member_duplicate", "DeliveryRun member IDs must be unique.")
+			return Invalid("delivery_member_duplicate")
 		}
 		members[member.ID] = true
 		memberRoles := map[string]bool{}
 		for _, role := range member.Roles {
 			role = strings.TrimSpace(role)
 			if role == "" || memberRoles[role] {
-				return Invalid("delivery_member_role_invalid", "Member roles must be non-empty and unique.")
+				return Invalid("delivery_member_role_invalid")
 			}
 			memberRoles[role] = true
 			roles[role] = true
@@ -133,7 +133,7 @@ func validateDeliveryRunSpec(spec DeliveryRunSpec) error {
 	}
 	for _, role := range []string{RoleProductOwner, RoleBusinessAcceptor, RoleReleaseApprover} {
 		if !roles[role] {
-			return Invalid("delivery_role_missing", "DeliveryRun is missing required role: "+role)
+			return Invalid("delivery_role_missing")
 		}
 	}
 	return nil

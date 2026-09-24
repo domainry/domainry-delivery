@@ -1,7 +1,6 @@
 package product
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -10,33 +9,33 @@ func validateFeatureDecisions(decisions []FeatureDecision) error {
 	ids := map[string]bool{}
 	for _, decision := range decisions {
 		if decision.ID == "" || decision.Title == "" || decision.Question == "" || !discoveryLevels[decision.Impact] || decision.Rationale == "" || len(decision.SourceIDs) == 0 {
-			return Invalid("feature_decision_incomplete", "A Feature decision requires an ID, title, question, impact, rationale, and source references.")
+			return Invalid("feature_decision_incomplete")
 		}
 		if decision.Status != "open" && decision.Status != "resolved" {
-			return Invalid("feature_decision_status_invalid", "A Feature decision status must be open or resolved.")
+			return Invalid("feature_decision_status_invalid")
 		}
 		if ids[decision.ID] {
-			return Invalid("feature_decision_duplicate", "Feature decision IDs must be unique.")
+			return Invalid("feature_decision_duplicate")
 		}
 		ids[decision.ID] = true
 		optionIDs := map[string]bool{}
 		for _, option := range decision.Options {
 			if option.ID == "" || option.Label == "" || option.Description == "" {
-				return Invalid("feature_decision_option_incomplete", "Every Feature decision option requires an ID, label, and description.")
+				return Invalid("feature_decision_option_incomplete")
 			}
 			if optionIDs[option.ID] {
-				return Invalid("feature_decision_option_duplicate", "Feature decision option IDs must be unique within a decision.")
+				return Invalid("feature_decision_option_duplicate")
 			}
 			optionIDs[option.ID] = true
 		}
 		if len(decision.Options) < 2 {
-			return Invalid("feature_decision_options_missing", "A Feature decision must retain at least two explicit business options.")
+			return Invalid("feature_decision_options_missing")
 		}
 		if decision.RecommendedOptionID != "" && !optionIDs[decision.RecommendedOptionID] {
-			return Invalid("feature_decision_recommendation_invalid", "A Feature recommendation must reference one of its options.")
+			return Invalid("feature_decision_recommendation_invalid")
 		}
 		if decision.Status == "resolved" && (decision.Resolution == "" || !optionIDs[decision.SelectedOptionID]) {
-			return Invalid("feature_decision_resolution_incomplete", "A resolved Feature decision requires a selected option and resolution.")
+			return Invalid("feature_decision_resolution_incomplete")
 		}
 	}
 	return nil
@@ -91,7 +90,7 @@ func validateCurrentFeatureSourceDecisions(source FeatureSource, decisions []Fea
 	slices.Sort(expected)
 	slices.Sort(actual)
 	if !slices.Equal(expected, actual) {
-		return Invalid("feature_source_decision_mismatch", "A Feature source must identify exactly the Delivery decisions supported by that source.")
+		return Invalid("feature_source_decision_mismatch")
 	}
 	return nil
 }
@@ -143,7 +142,7 @@ func validateFeatureLineageReferences(discovery FeatureDiscovery, specification 
 	}
 	for _, sourceID := range cleanStrings(used) {
 		if !registered[sourceID] {
-			return Invalid("feature_source_reference_unverified", "Every Feature evidence and decision source must belong to a verified Conversation run.")
+			return Invalid("feature_source_reference_unverified")
 		}
 	}
 	return nil
@@ -167,20 +166,20 @@ func normalizeFeatureSource(source FeatureSource) FeatureSource {
 
 func validateActor(actor Actor) error {
 	if strings.TrimSpace(actor.ID) == "" {
-		return Invalid("actor_required", "An authenticated actor is required.")
+		return Invalid("actor_required")
 	}
 	if actor.Kind != ActorHuman && actor.Kind != ActorAgent && actor.Kind != ActorSystem {
-		return Invalid("actor_kind_invalid", "The actor kind is invalid.")
+		return Invalid("actor_kind_invalid")
 	}
 	return nil
 }
 
 func validateFeatureSource(source FeatureSource) error {
 	if strings.TrimSpace(source.ConversationID) == "" || strings.TrimSpace(source.RunID) == "" || source.BeforeStep < 0 {
-		return Invalid("feature_source_incomplete", "Feature discovery must bind an exact Conversation, Run, and valid step boundary.")
+		return Invalid("feature_source_incomplete")
 	}
 	if len(cleanStrings(source.SourceIDs)) == 0 {
-		return Invalid("feature_evidence_missing", "Feature discovery must retain at least one business source.")
+		return Invalid("feature_evidence_missing")
 	}
 	return nil
 }
@@ -190,7 +189,7 @@ func ValidateProductRevisionContent(content ProductRevisionContent, requireResol
 	content.Story.Summary = strings.TrimSpace(content.Story.Summary)
 	content.Story.Narrative = strings.TrimSpace(content.Story.Narrative)
 	if content.Story.Title == "" || content.Story.Summary == "" || content.Story.Narrative == "" {
-		return Invalid("product_story_incomplete", "A ProductStory requires a title, summary, and complete narrative.")
+		return Invalid("product_story_incomplete")
 	}
 	if err := validateProductDefinition(content.Definition); err != nil {
 		return err
@@ -198,14 +197,14 @@ func ValidateProductRevisionContent(content ProductRevisionContent, requireResol
 	decisionIDs := map[string]bool{}
 	for _, decision := range content.Decisions {
 		if strings.TrimSpace(decision.ID) == "" || strings.TrimSpace(decision.Title) == "" || strings.TrimSpace(decision.Question) == "" {
-			return Invalid("product_decision_incomplete", "A Product decision requires an ID, title, and question.")
+			return Invalid("product_decision_incomplete")
 		}
 		if decisionIDs[decision.ID] {
-			return Invalid("product_decision_duplicate", "Product decision IDs must be unique.")
+			return Invalid("product_decision_duplicate")
 		}
 		decisionIDs[decision.ID] = true
 		if decision.Status != "open" && decision.Status != "resolved" {
-			return Invalid("product_decision_status_invalid", "A Product decision status must be open or resolved.")
+			return Invalid("product_decision_status_invalid")
 		}
 		optionIDs := map[string]bool{}
 		for _, option := range decision.Options {
@@ -213,14 +212,14 @@ func ValidateProductRevisionContent(content ProductRevisionContent, requireResol
 				return err
 			}
 			if strings.TrimSpace(option.Label) == "" {
-				return Invalid("product_decision_option_incomplete", "A decision option requires a label.")
+				return Invalid("product_decision_option_incomplete")
 			}
 		}
 		if requireResolvedDecisions && decision.Status != "resolved" {
-			return Invalid("product_decision_open", "All Product decisions must be resolved before confirming a Feature.")
+			return Invalid("product_decision_open")
 		}
 		if decision.Status == "resolved" && !decisionHasOption(decision) {
-			return Invalid("product_decision_selection_invalid", "A resolved decision must select a valid option.")
+			return Invalid("product_decision_selection_invalid")
 		}
 	}
 	return nil
@@ -228,7 +227,7 @@ func ValidateProductRevisionContent(content ProductRevisionContent, requireResol
 
 func validateProductDefinition(definition ProductDefinition) error {
 	if definition.SchemaVersion != 2 {
-		return Invalid("product_definition_schema_invalid", "ProductDefinition schema_version must be 2.")
+		return Invalid("product_definition_schema_invalid")
 	}
 	actors := map[string]bool{}
 	for _, actor := range definition.Actors {
@@ -236,7 +235,7 @@ func validateProductDefinition(definition ProductDefinition) error {
 			return err
 		}
 		if strings.TrimSpace(actor.Name) == "" || strings.TrimSpace(actor.Responsibility) == "" {
-			return Invalid("product_actor_incomplete", "An Actor requires a name and responsibility.")
+			return Invalid("product_actor_incomplete")
 		}
 	}
 	scenarios := map[string]bool{}
@@ -245,7 +244,7 @@ func validateProductDefinition(definition ProductDefinition) error {
 			return err
 		}
 		if strings.TrimSpace(scenario.Title) == "" || strings.TrimSpace(scenario.Trigger) == "" || strings.TrimSpace(scenario.Outcome) == "" {
-			return Invalid("product_scenario_incomplete", "A Scenario requires a title, trigger, and outcome.")
+			return Invalid("product_scenario_incomplete")
 		}
 		steps := map[string]bool{}
 		for _, step := range scenario.Steps {
@@ -253,17 +252,17 @@ func validateProductDefinition(definition ProductDefinition) error {
 				return err
 			}
 			if strings.TrimSpace(step.Title) == "" || (step.ActorID != "" && !actors[step.ActorID]) {
-				return Invalid("product_step_invalid", "A Scenario step requires a title and must reference a valid Actor.")
+				return Invalid("product_step_invalid")
 			}
 		}
 	}
 	objects := map[string]BusinessObject{}
 	for _, object := range definition.Objects {
 		if strings.TrimSpace(object.ID) == "" || strings.TrimSpace(object.Name) == "" {
-			return Invalid("business_object_incomplete", "A business object requires an ID and name.")
+			return Invalid("business_object_incomplete")
 		}
 		if _, exists := objects[object.ID]; exists {
-			return Invalid("business_object_duplicate", "Business object IDs must be unique.")
+			return Invalid("business_object_duplicate")
 		}
 		fields := map[string]bool{}
 		for _, field := range object.Fields {
@@ -271,7 +270,7 @@ func validateProductDefinition(definition ProductDefinition) error {
 				return err
 			}
 			if strings.TrimSpace(field.Label) == "" || strings.TrimSpace(field.Type) == "" {
-				return Invalid("business_field_incomplete", "A business field requires a label and type.")
+				return Invalid("business_field_incomplete")
 			}
 		}
 		states := map[string]bool{}
@@ -280,29 +279,29 @@ func validateProductDefinition(definition ProductDefinition) error {
 				return err
 			}
 			if strings.TrimSpace(state.Label) == "" {
-				return Invalid("business_state_incomplete", "A business state requires a label.")
+				return Invalid("business_state_incomplete")
 			}
 		}
 		if !fields[object.PrimaryFieldKey] || !fields[object.StateFieldKey] || !states[object.InitialState] {
-			return Invalid("business_object_reference_invalid", "A business object must reference a valid primary field, state field, and initial state.")
+			return Invalid("business_object_reference_invalid")
 		}
 		objects[object.ID] = object
 	}
 	rules := map[string]BusinessRule{}
 	for _, rule := range definition.Rules {
 		if strings.TrimSpace(rule.ID) == "" || strings.TrimSpace(rule.Title) == "" || strings.TrimSpace(rule.Statement) == "" {
-			return Invalid("business_rule_incomplete", "A business rule requires an ID, title, and statement.")
+			return Invalid("business_rule_incomplete")
 		}
 		if _, exists := rules[rule.ID]; exists {
-			return Invalid("business_rule_duplicate", "Business rule IDs must be unique.")
+			return Invalid("business_rule_duplicate")
 		}
 		if rule.Condition != nil && rule.ObjectID == "" {
-			return Invalid("business_rule_reference_invalid", "A field-based business rule must reference a business object.")
+			return Invalid("business_rule_reference_invalid")
 		}
 		if rule.ObjectID != "" {
 			object, exists := objects[rule.ObjectID]
 			if !exists || (rule.Condition != nil && (!objectHasField(object, rule.Condition.FieldKey) || !validRuleOperator(rule.Condition.Operator))) {
-				return Invalid("business_rule_reference_invalid", "A business rule must reference a valid object and field.")
+				return Invalid("business_rule_reference_invalid")
 			}
 		}
 		rules[rule.ID] = rule
@@ -311,28 +310,28 @@ func validateProductDefinition(definition ProductDefinition) error {
 	for _, action := range definition.Actions {
 		object, exists := objects[action.ObjectID]
 		if strings.TrimSpace(action.ID) == "" || strings.TrimSpace(action.Label) == "" || !validActionKind(action.Kind) || !exists {
-			return Invalid("product_action_incomplete", "A Product action requires an ID, label, kind, and valid object reference.")
+			return Invalid("product_action_incomplete")
 		}
 		if _, duplicate := actions[action.ID]; duplicate {
-			return Invalid("product_action_duplicate", "Product action IDs must be unique.")
+			return Invalid("product_action_duplicate")
 		}
 		for _, fieldKey := range action.RequiredFieldKeys {
 			if !objectHasField(object, fieldKey) {
-				return Invalid("product_action_field_invalid", "A Product action references an invalid field.")
+				return Invalid("product_action_field_invalid")
 			}
 		}
 		for _, ruleID := range action.RuleIDs {
 			if _, exists := rules[ruleID]; !exists {
-				return Invalid("product_action_rule_invalid", "A Product action references an invalid rule.")
+				return Invalid("product_action_rule_invalid")
 			}
 		}
 		for _, state := range action.FromStates {
 			if !objectHasState(object, state) {
-				return Invalid("product_action_state_invalid", "A Product action references an invalid source state.")
+				return Invalid("product_action_state_invalid")
 			}
 		}
 		if action.ToState != "" && !objectHasState(object, action.ToState) {
-			return Invalid("product_action_state_invalid", "A Product action references an invalid target state.")
+			return Invalid("product_action_state_invalid")
 		}
 		actions[action.ID] = action
 	}
@@ -343,17 +342,17 @@ func validateProductDefinition(definition ProductDefinition) error {
 			return err
 		}
 		if strings.TrimSpace(page.Title) == "" || !validPageKind(page.Kind) || !exists {
-			return Invalid("product_page_incomplete", "A Product page requires a title, kind, and valid object reference.")
+			return Invalid("product_page_incomplete")
 		}
 		for _, fieldKey := range page.VisibleFieldKeys {
 			if !objectHasField(object, fieldKey) {
-				return Invalid("product_page_field_invalid", "A Product page references an invalid field.")
+				return Invalid("product_page_field_invalid")
 			}
 		}
 		if page.CreateActionID != "" {
 			action, exists := actions[page.CreateActionID]
 			if !exists || action.ObjectID != page.ObjectID {
-				return Invalid("product_page_action_invalid", "A Product page must reference a valid create action for the same business object.")
+				return Invalid("product_page_action_invalid")
 			}
 		}
 	}
@@ -363,10 +362,10 @@ func validateProductDefinition(definition ProductDefinition) error {
 			return err
 		}
 		if strings.TrimSpace(exception.ID) == "" || strings.TrimSpace(exception.Title) == "" || strings.TrimSpace(exception.Trigger) == "" || strings.TrimSpace(exception.Handling) == "" {
-			return Invalid("business_exception_incomplete", "A business exception requires an ID, title, trigger, and handling instruction.")
+			return Invalid("business_exception_incomplete")
 		}
 		if exception.ScenarioID != "" && !scenarios[exception.ScenarioID] {
-			return Invalid("business_exception_scenario_invalid", "A business exception references an invalid Scenario.")
+			return Invalid("business_exception_scenario_invalid")
 		}
 	}
 	return validateProductDefinitionExtensions(definition, actors)
@@ -384,10 +383,10 @@ func decisionHasOption(decision ProductDecision) bool {
 func addUniqueID(ids map[string]bool, id, label string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return Invalid("product_definition_id_missing", fmt.Sprintf("%s ID cannot be empty.", label))
+		return Invalid("product_definition_id_missing")
 	}
 	if ids[id] {
-		return Invalid("product_definition_id_duplicate", fmt.Sprintf("%s IDs must be unique.", label))
+		return Invalid("product_definition_id_duplicate")
 	}
 	ids[id] = true
 	return nil

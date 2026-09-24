@@ -76,7 +76,7 @@ func (store *Store) CreateProduct(
 		var existingProductID string
 		err = transaction.QueryRowContext(ctx, `SELECT product_id FROM delivery_products WHERE workspace_id = ? AND code = ?`, workspaceID, product.Code).Scan(&existingProductID)
 		if err == nil {
-			return productdomain.Product{}, domain.Invalid("product_code_duplicate", "A Product code must be unique within a Workspace.")
+			return productdomain.Product{}, domain.Invalid("product_code_duplicate")
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return productdomain.Product{}, storageError(err)

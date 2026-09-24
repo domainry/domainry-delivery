@@ -38,10 +38,13 @@ func ProjectionForLocale(run DeliveryRun, locale string) Projection {
 }
 
 func LocalizeError(err *Error, locale string) *Error {
-	if err == nil || NormalizeLocale(locale) == "en" {
+	if err == nil {
 		return err
 	}
 	locale = NormalizeLocale(locale)
+	if locale == "en" && strings.TrimSpace(err.Message) != "" {
+		return err
+	}
 	kind := "validation"
 	switch err.Code {
 	case "authentication_required":
@@ -77,6 +80,7 @@ var releaseGateLabels = map[string]map[string]string{
 }
 
 var errorMessages = map[string]map[string]string{
+	"en":      {"authentication": "An authenticated identity is required.", "permission": "You are not allowed to perform this operation.", "not_found": "The requested resource was not found.", "conflict": "The resource changed; read it again before submitting.", "internal": "The server could not process the request.", "validation": "The request does not satisfy the current Delivery rules."},
 	"zh":      {"authentication": "需要经过认证的身份。", "permission": "你没有权限执行此操作。", "not_found": "没有找到请求的资源。", "conflict": "资源已经发生变化，请刷新后重新提交。", "internal": "服务器无法处理本次请求。", "validation": "本次请求不符合当前 Delivery 规则。"},
 	"zh-hant": {"authentication": "需要經過驗證的身分。", "permission": "你沒有權限執行此操作。", "not_found": "找不到要求的資源。", "conflict": "資源已經發生變化，請重新整理後再提交。", "internal": "伺服器無法處理本次要求。", "validation": "本次要求不符合目前的 Delivery 規則。"},
 	"ja":      {"authentication": "認証済みの Identity が必要です。", "permission": "この操作を実行する権限がありません。", "not_found": "要求されたリソースが見つかりません。", "conflict": "リソースが変更されました。再読み込みしてから再送信してください。", "internal": "サーバーが要求を処理できませんでした。", "validation": "要求は現在の Delivery ルールを満たしていません。"},

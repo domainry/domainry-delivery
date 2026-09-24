@@ -3,8 +3,8 @@
 All Workspace routes require `Authorization: Bearer ...`. Identity middleware
 resolves the principal and Workspace; command JSON cannot declare an actor.
 Errors contain a stable code, localized presentation message, and optional
-details. Supported locales are `en`, `ja`, `ko`, `es`, `pt`, `fr`, `de`, `it`,
-and `tr`.
+details. Supported locales are `en`, `zh`, `zh-hant`, `ja`, `ko`, `es`, `pt`,
+`fr`, `de`, `it`, `tr`, and `ar`.
 
 ## Discovery
 

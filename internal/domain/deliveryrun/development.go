@@ -111,7 +111,7 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	}
 	unit := activeDeliveryUnit(run)
 	if unit == nil {
-		return true, Invalid("delivery_unit_inactive", "The DeliveryRun has no active DeliveryUnit.")
+		return true, Invalid("delivery_unit_inactive")
 	}
 	expectedCommand, expectedActor := commandForPhase(unit.Phase)
 	if command.Type == commandGapReport && phaseCanReportGap(unit.Phase) {
@@ -119,10 +119,10 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 		expectedActor = ActorSystem
 	}
 	if command.Type != expectedCommand {
-		return true, Invalid("delivery_unit_command_invalid", "The command does not match the active DeliveryUnit phase.")
+		return true, Invalid("delivery_unit_command_invalid")
 	}
 	if command.Actor.Kind != expectedActor {
-		return true, Invalid("delivery_unit_actor_invalid", "The active DeliveryUnit phase requires a different trusted actor kind.")
+		return true, Invalid("delivery_unit_actor_invalid")
 	}
 	payload, err := decodeDeliveryUnitResult(command.Type, command.Payload)
 	if err != nil {
@@ -139,10 +139,10 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 		return true, err
 	}
 	if unit.Phase == DeliveryUnitJourneyTesting && strings.TrimSpace(payload.GitRevision) != unit.IntegratedGitRevision {
-		return true, Invalid("delivery_unit_integrated_revision_conflict", "Journey evidence must match the integrated Git revision that passed contract verification.")
+		return true, Invalid("delivery_unit_integrated_revision_conflict")
 	}
 	if command.Type == commandContractVerify && strings.TrimSpace(payload.GitRevision) == unit.InvalidatedIntegratedGitRevision {
-		return true, Invalid("delivery_unit_revision_not_advanced", "A repaired DeliveryUnit must produce a new integrated Git revision before contract verification can pass again.")
+		return true, Invalid("delivery_unit_revision_not_advanced")
 	}
 	status := DeliveryGatePassed
 	if command.Type == commandGapReport {
@@ -189,22 +189,22 @@ func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, e
 			Diagnostics: payload.Diagnostics, FailureOwner: payload.FailureOwner,
 		}, nil
 	default:
-		return deliveryUnitResult{}, Invalid("delivery_unit_command_invalid", "The command is not a DeliveryUnit transition.")
+		return deliveryUnitResult{}, Invalid("delivery_unit_command_invalid")
 	}
 }
 
 func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command Command, payload deliveryUnitResult) error {
 	if strings.TrimSpace(payload.DeliveryUnitID) != unit.ID || payload.Phase != unit.Phase {
-		return Invalid("delivery_unit_phase_conflict", "The submitted DeliveryUnit identity or phase is stale.")
+		return Invalid("delivery_unit_phase_conflict")
 	}
 	payload.GitRevision = strings.TrimSpace(payload.GitRevision)
 	payload.Summary = strings.TrimSpace(payload.Summary)
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
 	if !validGitRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 {
-		return Invalid("delivery_unit_gate_invalid", "A phase result requires a Git revision and a bounded summary.")
+		return Invalid("delivery_unit_gate_invalid")
 	}
 	if len(payload.Diagnostics) > 100 {
-		return Invalid("delivery_unit_diagnostics_invalid", "A phase result cannot contain more than 100 diagnostics.")
+		return Invalid("delivery_unit_diagnostics_invalid")
 	}
 	for _, diagnostic := range payload.Diagnostics {
 		diagnostic.Code = strings.TrimSpace(diagnostic.Code)
@@ -215,15 +215,15 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 		diagnostic.Category = strings.TrimSpace(diagnostic.Category)
 		diagnostic.Remediation = strings.TrimSpace(diagnostic.Remediation)
 		if diagnostic.Code == "" || len(diagnostic.Code) > 128 || diagnostic.Severity != "error" || diagnostic.Path == "" || len(diagnostic.Path) > 1024 || diagnostic.Message == "" || len(diagnostic.Message) > 2000 || diagnostic.Owner == "" || len(diagnostic.Owner) > 128 || diagnostic.Category == "" || len(diagnostic.Category) > 128 || len(diagnostic.Remediation) > 2000 {
-			return Invalid("delivery_unit_diagnostics_invalid", "Every phase diagnostic requires a bounded code, error severity, path, message, owner, and category.")
+			return Invalid("delivery_unit_diagnostics_invalid")
 		}
 	}
 	if command.Type == commandGapReport {
 		if !validDeliveryGapOwner(payload.FailureOwner) || len(payload.Diagnostics) == 0 {
-			return Invalid("delivery_unit_gap_invalid", "A failed verification requires an owner and at least one diagnostic.")
+			return Invalid("delivery_unit_gap_invalid")
 		}
 	} else if payload.FailureOwner != "" {
-		return Invalid("delivery_unit_gap_invalid", "A passing phase result cannot declare a failure owner.")
+		return Invalid("delivery_unit_gap_invalid")
 	}
 	if err := validateBackendGuideEvidence(command.Type, payload.BackendGuide); err != nil {
 		return err
@@ -235,7 +235,7 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 		}
 		if (command.Type == commandContractVerify || command.Type == commandJourneyComplete) &&
 			(unit.ModelEvidence == nil || !strings.EqualFold(strings.TrimSpace(evidence.ModelSHA256), strings.TrimSpace(unit.ModelEvidence.ModelSHA256))) {
-			return Invalid("backend_evidence_model_mismatch", "Every backend guide gate must bind the normalized model hash accepted by model verification.")
+			return Invalid("backend_evidence_model_mismatch")
 		}
 	}
 	return nil
@@ -250,10 +250,10 @@ func validateBackendGuideEvidenceForRun(run *DeliveryRun, command string, eviden
 	}
 	gitRevision = strings.TrimSpace(gitRevision)
 	if strings.TrimSpace(evidence.WorkspaceID) != run.WorkspaceID || strings.TrimSpace(evidence.ProductID) != run.Product.ID || evidence.FeatureRevision != run.Feature.Source.FeatureRevision || strings.TrimSpace(evidence.GitRevision) != gitRevision {
-		return Invalid("backend_evidence_scope_invalid", "Backend verification evidence must bind the exact Workspace, Product, FeatureRevision, and Git revision.")
+		return Invalid("backend_evidence_scope_invalid")
 	}
 	if strings.TrimSpace(evidence.RepositoryIdentity) == "" || strings.TrimSpace(evidence.GitStatus) != "clean" || strings.TrimSpace(evidence.CheckSuite) == "" || strings.TrimSpace(evidence.CheckVersion) == "" || strings.TrimSpace(evidence.ExecutedBy) == "" || evidence.OccurredAt.IsZero() || len(evidence.EvidenceRefs) == 0 || !evidenceRefsMatchRevision(evidence.EvidenceRefs, gitRevision) {
-		return Invalid("backend_evidence_provenance_invalid", "Backend verification evidence requires a clean canonical repository revision, trusted executor, check suite/version, occurrence time, and Git-bound immutable evidence references.")
+		return Invalid("backend_evidence_provenance_invalid")
 	}
 	return nil
 }
@@ -262,24 +262,24 @@ func validateBackendGuideEvidence(command string, evidence *BackendGuideEvidence
 	switch command {
 	case commandModelVerify:
 		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.SingleBackendModel || !evidence.StrictModelValidation || !evidence.CrossReferencesResolved || !evidence.GoBehaviorRegistry || !evidence.NoExecutableBehaviorJSON {
-			return Invalid("backend_model_evidence_invalid", "Model verification requires one strict backend/model.json, resolved model/registry references, a model SHA-256, and proof that executable behavior remains in Go.")
+			return Invalid("backend_model_evidence_invalid")
 		}
 	case commandContractVerify:
 		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.ProjectHTTP || !evidence.HandlerUnitOfWork || !evidence.HandlerIdempotency || !evidence.DefinitionsRegistered || !evidence.RuntimeBootstrap || !evidence.NoProjectSchemaSQL || !evidence.BackendGoModOnly || !evidence.NoRootGoMod || !evidence.NoGoWork || !evidence.NoCompilerBuilder || !evidence.NoGeneratedRuntimeContract || !evidence.AuthWorkspacePermission || !evidence.DataAuditPersistence || !evidence.EmptyDatabaseInitPassed || !evidence.SameModelRestartPassed || !evidence.ChangedModelRejected {
-			return Invalid("backend_contract_evidence_invalid", "Contract verification requires ProjectHTTP, transactional typed handlers, registered definitions, direct Runtime bootstrap, compliant topology, security, audit/persistence, empty-database initialization, restart, and changed-model rejection.")
+			return Invalid("backend_contract_evidence_invalid")
 		}
 	case commandJourneyComplete:
 		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.MockJourneyPassed || !evidence.RuntimeJourneyPassed {
-			return Invalid("backend_journey_evidence_invalid", "Journey verification must pass the same journey against Mock and Runtime backends.")
+			return Invalid("backend_journey_evidence_invalid")
 		}
 	case commandGapReport:
 		// Failed gates carry diagnostics; passing evidence is intentionally absent.
 		if evidence != nil {
-			return Invalid("backend_guide_evidence_unexpected", "A failed verification cannot carry passing backend guide evidence.")
+			return Invalid("backend_guide_evidence_unexpected")
 		}
 	default:
 		if evidence != nil {
-			return Invalid("backend_guide_evidence_unexpected", "Only trusted model, contract, and journey gates accept backend guide evidence.")
+			return Invalid("backend_guide_evidence_unexpected")
 		}
 	}
 	return nil

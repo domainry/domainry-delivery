@@ -124,6 +124,57 @@ func TestDomainAndApplicationDoNotChooseConcreteIO(t *testing.T) {
 	}
 }
 
+func TestDomainErrorsRemainSemantic(t *testing.T) {
+	root := repositoryRoot(t)
+	err := filepath.WalkDir(filepath.Join(root, "internal", "domain"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return walkErr
+		}
+		files := token.NewFileSet()
+		parsed, err := parser.ParseFile(files, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			switch current := node.(type) {
+			case *ast.CallExpr:
+				name := ""
+				switch function := current.Fun.(type) {
+				case *ast.Ident:
+					name = function.Name
+				case *ast.SelectorExpr:
+					name = function.Sel.Name
+				}
+				if name == "Invalid" && len(current.Args) != 1 {
+					position := files.Position(current.Pos())
+					t.Errorf("%s:%d domain errors must carry only a stable code", strings.TrimPrefix(path, root+string(filepath.Separator)), position.Line)
+				}
+			case *ast.CompositeLit:
+				identifier, ok := current.Type.(*ast.Ident)
+				if !ok || identifier.Name != "Error" {
+					return true
+				}
+				for _, element := range current.Elts {
+					field, ok := element.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					key, keyOK := field.Key.(*ast.Ident)
+					if keyOK && key.Name == "Message" {
+						position := files.Position(field.Pos())
+						t.Errorf("%s:%d domain errors must not choose presentation messages", strings.TrimPrefix(path, root+string(filepath.Separator)), position.Line)
+					}
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	expected := []string{
 		commanddomain.AcceptanceConfirm,
@@ -166,6 +217,25 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	}
 	if !slices.Equal(actual, expected) {
 		t.Fatalf("command inventory changed without updating the architecture gate:\nactual=%v\nexpected=%v", actual, expected)
+	}
+}
+
+func TestHTTPDocumentationCoversTheTypedCommandCatalogAndLocales(t *testing.T) {
+	root := repositoryRoot(t)
+	documentation, err := os.ReadFile(filepath.Join(root, "docs", "api.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(documentation)
+	for _, definition := range commanddomain.Definitions() {
+		if !strings.Contains(text, "`"+definition.Key+"`") {
+			t.Errorf("docs/api.md does not list typed command %s", definition.Key)
+		}
+	}
+	for _, locale := range []string{"en", "zh", "zh-hant", "ja", "ko", "es", "pt", "fr", "de", "it", "tr", "ar"} {
+		if !strings.Contains(text, "`"+locale+"`") {
+			t.Errorf("docs/api.md does not list supported locale %s", locale)
+		}
 	}
 }
 

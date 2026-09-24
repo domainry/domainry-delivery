@@ -54,7 +54,7 @@ func catalogAction(key, targetID string) AvailableAction {
 	return action
 }
 
-func Invalid(code, message string) error             { return domain.Invalid(code, message) }
+func Invalid(code string) error                      { return domain.Invalid(code) }
 func NotFound(entity, id string) error               { return domain.NotFound(entity, id) }
 func Conflict(actual uint64) error                   { return domain.Conflict(actual) }
 func validateActor(actor Actor) error                { return commanddomain.ValidateIdentity(actor) }
@@ -119,7 +119,7 @@ func decode(payload json.RawMessage, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(payload)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return Invalid("payload_invalid", "The command payload is invalid: "+err.Error())
+		return Invalid("payload_invalid")
 	}
 	return nil
 }

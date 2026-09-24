@@ -24,7 +24,7 @@ var sha256ValuePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func Apply(run *DeliveryRun, command Command, now time.Time) error {
 	if runIsLive(run) {
-		return Invalid("delivery_run_live", "A live DeliveryRun is immutable; create a new Feature for a new requirement or fix.")
+		return Invalid("delivery_run_live")
 	}
 	if err := validateCommandActor(command, CommandTargetDeliveryRun); err != nil {
 		return err
@@ -64,7 +64,7 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 	case commandReleaseReconcile:
 		err = reconcileDeployment(run, command, now)
 	default:
-		err = Invalid("command_unknown", "The DeliveryRun command is not supported.")
+		err = Invalid("command_unknown")
 	}
 	if err != nil {
 		return err
@@ -76,7 +76,7 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 
 func recordExecutableRevision(run *DeliveryRun, command Command, now time.Time) error {
 	if !canRecordExecutableRevision(run) {
-		return Invalid("product_revision_record_not_allowed", "The executable ProductRevision can be recorded only after every DeliveryUnit Journey passes and before QA starts.")
+		return Invalid("product_revision_record_not_allowed")
 	}
 	var payload struct {
 		Content      ProductRevisionContent `json:"content"`
@@ -96,14 +96,14 @@ func recordExecutableRevision(run *DeliveryRun, command Command, now time.Time) 
 	payload.ModelSHA256 = strings.ToLower(strings.TrimSpace(payload.ModelSHA256))
 	verifiedRevision, ready := verifiedJourneyRevision(run)
 	if !ready || payload.CodeRevision != verifiedRevision || !evidenceRefsMatchRevision([]string{payload.EvidenceRef}, verifiedRevision) || !sha256ValuePattern.MatchString(payload.ModelSHA256) || !deliveryUnitsMatchModelHash(run, payload.ModelSHA256) {
-		return Invalid("product_revision_evidence_invalid", "An executable ProductRevision requires the verified Git revision, Git-bound evidence, and backend/model.json SHA-256.")
+		return Invalid("product_revision_evidence_invalid")
 	}
 	if err := validateProductRevisionContent(payload.Content, true); err != nil {
 		return err
 	}
 	baseRevision := run.Feature.BaselineProductRevision
 	if baseRevision == 0 || baseRevision != run.Product.ProductRevision || run.Feature.Source.ProductRevision != baseRevision {
-		return Invalid("product_revision_baseline_invalid", "The executable ProductRevision must extend the frozen DeliveryRun Product baseline.")
+		return Invalid("product_revision_baseline_invalid")
 	}
 	run.ExecutableRevision = &ExecutableProductRevision{
 		BaseRevision: baseRevision, TargetRevision: baseRevision + 1,
@@ -134,10 +134,10 @@ func canRecordExecutableRevision(run *DeliveryRun) bool {
 
 func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) error {
 	if run.Stage != StageRelease {
-		return Invalid("release_checks_stage_invalid", "ReleaseChecks can be configured only after business acceptance passes.")
+		return Invalid("release_checks_stage_invalid")
 	}
 	if activeRelease(run) {
-		return Invalid("release_checks_locked", "ReleaseChecks cannot be replaced after the release process starts.")
+		return Invalid("release_checks_locked")
 	}
 	var payload struct {
 		EnvironmentRef string `json:"environment_ref"`
@@ -152,10 +152,10 @@ func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) erro
 	}
 	payload.EnvironmentRef = strings.TrimSpace(payload.EnvironmentRef)
 	if payload.EnvironmentRef == "" {
-		return Invalid("environment_ref_required", "Release checks must be bound to a target environment.")
+		return Invalid("environment_ref_required")
 	}
 	if len(payload.Checks) == 0 {
-		return Invalid("release_checks_empty", "At least one ReleaseCheck is required before release.")
+		return Invalid("release_checks_empty")
 	}
 	seen := map[string]bool{}
 	checks := make([]ReleaseCheck, 0, len(payload.Checks))
@@ -163,10 +163,10 @@ func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) erro
 		input.ID = strings.TrimSpace(input.ID)
 		input.Title = strings.TrimSpace(input.Title)
 		if input.ID == "" || input.Title == "" {
-			return Invalid("release_check_incomplete", "A ReleaseCheck requires an ID and title.")
+			return Invalid("release_check_incomplete")
 		}
 		if seen[input.ID] {
-			return Invalid("release_check_duplicate", "ReleaseCheck IDs must be unique.")
+			return Invalid("release_check_duplicate")
 		}
 		seen[input.ID] = true
 		checks = append(checks, ReleaseCheck{ID: input.ID, Title: input.Title, EnvironmentRef: payload.EnvironmentRef, Required: input.Required, Status: ReleaseCheckPending, EvidenceRefs: []string{}})
@@ -178,10 +178,10 @@ func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) erro
 
 func recordReleaseCheck(run *DeliveryRun, command Command, now time.Time) error {
 	if run.Stage != StageRelease {
-		return Invalid("release_checks_stage_invalid", "ReleaseChecks can be recorded only after business acceptance passes.")
+		return Invalid("release_checks_stage_invalid")
 	}
 	if activeRelease(run) {
-		return Invalid("release_checks_locked", "ReleaseCheck results cannot change after the release process starts.")
+		return Invalid("release_checks_locked")
 	}
 	var payload struct {
 		CheckID      string             `json:"check_id"`
@@ -199,11 +199,11 @@ func recordReleaseCheck(run *DeliveryRun, command Command, now time.Time) error 
 	payload.Note = strings.TrimSpace(payload.Note)
 	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
 	if payload.Status != ReleaseCheckPassed && payload.Status != ReleaseCheckFailed {
-		return Invalid("release_check_status_invalid", "A ReleaseCheck result must be passed or failed.")
+		return Invalid("release_check_status_invalid")
 	}
 	revision, ready := verifiedJourneyRevision(run)
 	if payload.Note == "" || !ready || !evidenceRefsMatchRevision(payload.EvidenceRefs, revision) {
-		return Invalid("release_check_evidence_missing", "A ReleaseCheck requires a conclusion and evidence bound to the verified Git revision.")
+		return Invalid("release_check_evidence_missing")
 	}
 	check.Status, check.Note, check.EvidenceRefs = payload.Status, payload.Note, payload.EvidenceRefs
 	check.UpdatedBy, check.UpdatedAt = command.Actor.ID, &now
@@ -223,7 +223,7 @@ func approveRelease(run *DeliveryRun, command Command, now time.Time) error {
 		return NotFound("Release", payload.ReleaseID)
 	}
 	if release.Status != ReleaseDraft {
-		return Invalid("release_not_draft", "Only a draft Release can be approved.")
+		return Invalid("release_not_draft")
 	}
 	if err := ensureReleaseStillValid(run, release); err != nil {
 		return err
@@ -249,14 +249,14 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 		return NotFound("Release", payload.ReleaseID)
 	}
 	if release.Status != ReleaseApproved || release.DeploymentAttempt != nil {
-		return Invalid("release_not_deployable", "The Release is not approved or already has a deployment attempt.")
+		return Invalid("release_not_deployable")
 	}
 	if err := ensureReleaseStillValid(run, release); err != nil {
 		return err
 	}
 	payload.EnvironmentRef = strings.TrimSpace(payload.EnvironmentRef)
 	if !validOutcome(payload.Outcome) || payload.EnvironmentRef == "" || payload.EnvironmentRef != release.EnvironmentRef || strings.TrimSpace(payload.ReceiptRef) == "" {
-		return Invalid("deployment_receipt_missing", "A deployment result must match the target environment and include a valid outcome and execution receipt.")
+		return Invalid("deployment_receipt_missing")
 	}
 	launchURL, err := normalizeLaunchURL(payload.LaunchURL, payload.Outcome == DeploymentSuccess)
 	if err != nil {
@@ -290,14 +290,14 @@ func reconcileDeployment(run *DeliveryRun, command Command, now time.Time) error
 		return err
 	}
 	if payload.Outcome != DeploymentSuccess && payload.Outcome != DeploymentFailure {
-		return Invalid("reconciliation_unresolved", "Reconciliation requires a definitive success or failure outcome.")
+		return Invalid("reconciliation_unresolved")
 	}
 	release := findRelease(run, strings.TrimSpace(payload.ReleaseID))
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
 	if release.Status != ReleaseNeedsReconciliation || release.DeploymentAttempt == nil {
-		return Invalid("release_not_reconcilable", "Only an original deployment attempt with an unknown outcome can be reconciled.")
+		return Invalid("release_not_reconcilable")
 	}
 	launchURL := strings.TrimSpace(payload.LaunchURL)
 	if launchURL == "" {
@@ -326,13 +326,13 @@ func normalizeLaunchURL(value string, required bool) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		if required {
-			return "", Invalid("deployment_launch_url_required", "A successful SaaS deployment must include its public launch URL.")
+			return "", Invalid("deployment_launch_url_required")
 		}
 		return "", nil
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-		return "", Invalid("deployment_launch_url_invalid", "A deployment launch URL must be an absolute HTTP or HTTPS URL.")
+		return "", Invalid("deployment_launch_url_invalid")
 	}
 	return parsed.String(), nil
 }
@@ -379,7 +379,7 @@ func authorizeHumanCommand(run *DeliveryRun, command Command) error {
 			return nil
 		}
 	}
-	return Invalid("actor_unauthorized", "The authenticated actor is not assigned to the required confirmation role.")
+	return Invalid("actor_unauthorized")
 }
 
 func AgentContextFor(run DeliveryRun) AgentContext {

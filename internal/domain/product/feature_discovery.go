@@ -102,10 +102,10 @@ func normalizeFeatureDiscovery(discovery FeatureDiscovery) FeatureDiscovery {
 
 func validateFeatureDiscovery(discovery FeatureDiscovery) error {
 	if discovery.Focus.Topic == "" || discovery.Focus.DialogueMove == "" || discovery.Focus.Rationale == "" {
-		return Invalid("feature_discovery_focus_incomplete", "Feature discovery requires a current topic, dialogue move, and rationale.")
+		return Invalid("feature_discovery_focus_incomplete")
 	}
 	if len(discovery.Evidence) == 0 {
-		return Invalid("feature_discovery_evidence_missing", "Feature discovery must retain at least one stated or inferred business observation.")
+		return Invalid("feature_discovery_evidence_missing")
 	}
 	if err := validateFeatureEvidence(discovery.Evidence); err != nil {
 		return err
@@ -129,10 +129,10 @@ func validateFeatureEvidence(items []FeatureEvidence) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.Statement == "" || !featureEvidenceKinds[item.Kind] || !featureEvidenceStatuses[item.Status] || len(item.SourceIDs) == 0 {
-			return Invalid("feature_evidence_incomplete", "Every discovery observation requires an ID, supported kind and status, statement, and source reference.")
+			return Invalid("feature_evidence_incomplete")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_evidence_duplicate", "Feature discovery observation IDs must be unique.")
+			return Invalid("feature_evidence_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -143,13 +143,13 @@ func validateDiscoveryScenarios(items []FeatureDiscoveryScenario) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.Title == "" || item.Status == "" {
-			return Invalid("feature_discovery_scenario_incomplete", "Every discovery scenario requires an ID, title, and status.")
+			return Invalid("feature_discovery_scenario_incomplete")
 		}
 		if item.Status != "exploring" && item.Status != "confirmed" {
-			return Invalid("feature_discovery_scenario_status_invalid", "A discovery scenario status must be exploring or confirmed.")
+			return Invalid("feature_discovery_scenario_status_invalid")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_discovery_scenario_duplicate", "Feature discovery scenario IDs must be unique.")
+			return Invalid("feature_discovery_scenario_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -160,13 +160,13 @@ func validateFeatureAssumptions(items []FeatureAssumption) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.Statement == "" || item.Reason == "" || !discoveryLevels[item.Risk] {
-			return Invalid("feature_assumption_incomplete", "Every assumption requires an ID, statement, reason, and risk level.")
+			return Invalid("feature_assumption_incomplete")
 		}
 		if item.Status != "open" && item.Status != "confirmed" && item.Status != "rejected" {
-			return Invalid("feature_assumption_status_invalid", "An assumption status must be open, confirmed, or rejected.")
+			return Invalid("feature_assumption_status_invalid")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_assumption_duplicate", "Feature assumption IDs must be unique.")
+			return Invalid("feature_assumption_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -177,16 +177,16 @@ func validateFeatureConflicts(items []FeatureConflict) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.Summary == "" || !discoveryLevels[item.Impact] || len(item.EvidenceIDs) < 2 {
-			return Invalid("feature_conflict_incomplete", "Every conflict requires an ID, summary, impact, and at least two evidence references.")
+			return Invalid("feature_conflict_incomplete")
 		}
 		if item.Status != "open" && item.Status != "resolved" && item.Status != "dismissed" {
-			return Invalid("feature_conflict_status_invalid", "A conflict status must be open, resolved, or dismissed.")
+			return Invalid("feature_conflict_status_invalid")
 		}
 		if item.Status == "resolved" && item.Resolution == "" {
-			return Invalid("feature_conflict_resolution_missing", "A resolved conflict requires its business resolution.")
+			return Invalid("feature_conflict_resolution_missing")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_conflict_duplicate", "Feature conflict IDs must be unique.")
+			return Invalid("feature_conflict_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -197,10 +197,10 @@ func validateFeatureOptions(items []FeatureDesignOption) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.DecisionID == "" || item.Label == "" || item.Description == "" {
-			return Invalid("feature_option_incomplete", "Every product option requires an ID, decision reference, label, and description.")
+			return Invalid("feature_option_incomplete")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_option_duplicate", "Feature product option IDs must be unique.")
+			return Invalid("feature_option_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -211,13 +211,13 @@ func validateFeatureOpenQuestions(items []FeatureOpenQuestion) error {
 	ids := map[string]bool{}
 	for _, item := range items {
 		if item.ID == "" || item.Question == "" || item.Kind == "" || !discoveryLevels[item.Impact] || !discoveryLevels[item.Uncertainty] || !discoveryLevels[item.Dependency] || !discoveryLevels[item.AnswerCost] || item.PriorityScore < 1 || item.PriorityScore > 100 || item.PriorityReason == "" {
-			return Invalid("feature_question_incomplete", "Every candidate question requires an ID, question, kind, complete ranking factors, and a Rust-computed priority.")
+			return Invalid("feature_question_incomplete")
 		}
 		if item.Status != "open" && item.Status != "answered" && item.Status != "dismissed" {
-			return Invalid("feature_question_status_invalid", "A candidate question status must be open, answered, or dismissed.")
+			return Invalid("feature_question_status_invalid")
 		}
 		if ids[item.ID] {
-			return Invalid("feature_question_duplicate", "Feature candidate question IDs must be unique.")
+			return Invalid("feature_question_duplicate")
 		}
 		ids[item.ID] = true
 	}
@@ -234,12 +234,12 @@ func validateFeatureDiscoveryReferences(discovery FeatureDiscovery, decisions []
 		scenarioIDs[scenario.ID] = true
 	}
 	if discovery.Focus.ScenarioID != "" && !scenarioIDs[discovery.Focus.ScenarioID] {
-		return Invalid("feature_discovery_focus_scenario_invalid", "The discovery focus must reference an existing scenario.")
+		return Invalid("feature_discovery_focus_scenario_invalid")
 	}
 	for _, conflict := range discovery.Conflicts {
 		for _, evidenceID := range conflict.EvidenceIDs {
 			if !evidenceIDs[evidenceID] {
-				return Invalid("feature_conflict_evidence_invalid", "A Feature conflict must reference existing discovery evidence.")
+				return Invalid("feature_conflict_evidence_invalid")
 			}
 		}
 	}
@@ -254,7 +254,7 @@ func validateFeatureDiscoveryReferences(discovery FeatureDiscovery, decisions []
 	for _, option := range discovery.Options {
 		options, ok := decisionOptions[option.DecisionID]
 		if !ok || !options[option.ID] {
-			return Invalid("feature_option_decision_invalid", "A product option must reference an existing decision and one of that decision's options.")
+			return Invalid("feature_option_decision_invalid")
 		}
 	}
 	return nil

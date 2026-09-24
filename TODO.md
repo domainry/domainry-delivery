@@ -1,6 +1,6 @@
 # Domainry Delivery 架构重构 TODO
 
-状态：重构进行中。Delivery 实现仓库已完成领域、应用、持久化、组装和传输边界的物理拆分；跨仓 source/artifact owner 切换与 dev 实际发布仍须按本清单验收。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
+状态：重构进行中。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；dev 实际发布仍须按本清单验收。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
 
 本清单是后续重构的唯一执行顺序。只有代码、架构门禁、定向测试和跨仓消费者同时完成，任务才能勾选；不保留旧命令、旧数据库、旧 HTTP 合同或双运行分支。
 
@@ -24,7 +24,7 @@
 - [x] **A04：SDK 必须独立于实现仓库。** 当前根目录 `sdk.go` import `internal/domain/delivery` 并用 type alias 暴露内部模型；调用方实际依赖的是实现仓库，SDK 无法独立发布，也无法阻止内部字段泄漏。
 - [x] **A05：Module/SaaS 必须共享行为而隔离组装。** 当前 `module.Host` 只有 `Database() *sql.DB`，Module 自己假设 SQLite 并执行裸 DDL；它没有 RuntimeID、Dialect、MigrationRegistrar、Factory/ApplicationRef，也没有私有 module/saas assembly。
 - [x] **A06：所有写入必须走同一命令内核。** Product 与 DeliveryRun 命令有 receipt，但附件增删没有 `client_id`；StartDelivery 的 fingerprint 不含 URL 中的 `delivery_run_id`，重放时还读取当前 Run，而不是返回第一次提交的原始结果。根因是幂等、并发与响应 receipt 被分散到各 Repository 方法实现。
-- [ ] **A07：Agent 与 Delivery 的数据所有权必须一致。** Delivery 已删除附件 BLOB 和内容路由，Agent verifier 也已验证 canonical source 属于被授权的 Conversation/Run，Delivery domain 负责 decision/source 引用闭包；但 Deck 仍调用旧附件路由，并且本地会话尚未向 Agent 发布 durable provenance。
+- [x] **A07：Agent 与 Delivery 的数据所有权必须一致。** Delivery 已删除附件 BLOB 和内容路由；Deck 将本地 PM 结构化回合发布到 Agent durable Conversation/Run，并把 Agent 签发的 canonical source 交给 Delivery。附件字节进入 Agent Conversation attachment，Deck 只保存本地 thread 映射、metadata index 与缓存，Delivery domain 只负责 Feature decision/source 引用闭包。
 - [x] **A08：Feature 基线不能被静默改写。** FeatureRevision 已冻结 `baseline_product_revision`，但 `NewDeliveryRun` 把当前 release revision 写入 Run 引用，没有拒绝过期 Feature；授权角色还会从其他草稿和未安装 Feature 中汇总，未发布需求因此会污染当前基线。
 - [x] **A09：代码与持久化边界需要拆分。** `engine.go`、`product_engine.go`、`store.go` 都接近或超过 900 行；完整 Product/DeliveryRun 以单个 JSON BLOB 重写，命令、权限、actor、投影和文档又分别维护字符串清单，任何新增行为都需要修改多个无编译关联的位置。
 
@@ -88,7 +88,7 @@ domainry-delivery/
 - [x] R00.2 将 Product、Feature、DeliveryRun、DeliveryUnit、ProductRevision、Quality、Acceptance、Release 的唯一状态图写入 domain 测试，不再用文档或 Deck 分支补充业务规则。
 - [x] R00.3 明确删除清单：WorkItem、Build、TestRun、AcceptanceResult 及其命令、投影、文档、Deck 调用点全部移除；可复用的 ProductRevision candidate 语义并入唯一 DeliveryUnit 流程。
 - [x] R00.4 冻结新 HTTP/Binding 请求与响应 DTO。所有写请求统一包含 `client_id`、`expected_revision` 和业务 payload；资源路径中的身份也纳入命令 fingerprint。
-- [ ] R00.5 定义一次性切换顺序：Delivery SDK → Delivery 实现 → Deck。不得为了分批发布而保留旧合同兼容层。
+- [x] R00.5 一次性切换按 Delivery SDK v0.1.5 → Delivery 实现 → Deck typed Rust DTO 完成；旧合同、旧附件 API 和 Delivery-only sidecar 已直接删除，没有兼容层或双执行路径。
 
 完成标准：能从 catalog 生成/校验所有 `available_actions` 元数据；仓库中不再存在第二份手写 command/actor/permission 清单。
 
@@ -134,7 +134,7 @@ domainry-delivery/
 - [x] R04.2 先检查当前 `domainry-agent-sdk` 是否已有满足 Conversation/Run/source/artifact 验证的窄 contract；能复用就直接依赖 SDK，不能复用才先在 Agent SDK 增加 source-verifier contract。Feature decision identity 明确归 Delivery，不进入 Agent contract。
 - [x] R04.3 application 层通过 Agent owner contract 验证 canonical source 存在、属于当前 Workspace、调用者可读，并与 Conversation、Run、BeforeStep 一致；Delivery domain 再验证当前 source 声明的 decision IDs 精确匹配、全部 evidence/role/decision source 都闭合到已验证来源。两边均不代替对方拥有业务事实。
 - [x] R04.4 FeatureRevision 继续冻结形成需求的全部 Conversation、Run、BeforeStep、source 和 decision 引用；确认后任何引用不得被替换。
-- [ ] R04.5 Deck 不再向 Delivery 上传本地文件内容，也不上传本地路径；它先把 artifact 交给 Agent owner，再向 Delivery 提交 canonical reference。
+- [x] R04.5 Deck 不再向 Delivery 上传本地文件内容，也不上传本地路径；它先把 attachment 交给 Agent owner，把材料纳入 Agent-owned durable PM turn，再向 Delivery 提交该 Run 的 canonical source reference。Deck-owned 本地索引只保存 Agent identity/metadata 与缓存路径。
 
 完成标准：Delivery 数据库没有 artifact bytes；伪造、跨 Workspace、不可读或与 Run 不一致的引用不能进入 FeatureRevision。
 
@@ -173,7 +173,7 @@ domainry-delivery/
 - [x] R07.4 为 Workspace、product code、Feature/Run identity、revision、delivery queue 和当前状态建立真实约束与索引；数据库约束与 domain invariant 保持同一语义。
 - [x] R07.5 application 拆成按 Product、Feature、DeliveryRun 用例组织的窄 ports；Store 接口不再是一个包含所有读写的巨型 Repository。
 - [x] R07.6 将 `engine.go`、`product_engine.go`、`store.go` 按状态机/用例/表所有权拆分；单文件目标不超过约 500 行，测试跟随所属 invariant。
-- [ ] R07.7 domain 只返回稳定 error code 与结构化 detail；locale/message 映射移到 contract/transport presentation，避免领域规则承担 UI 文案。
+- [x] R07.7 domain 只返回稳定 error code 与结构化 detail；locale/message 映射移到 contract/transport presentation，避免领域规则承担 UI 文案；架构测试拒绝 domain `Invalid` 携带文案或 `Error.Message` 回流。
 
 完成标准：domain/application 无具体 I/O；SQLite 只是 SaaS 可选 dialect 之一；高频命令不会重写无关 revision、evidence 和历史集合。
 
@@ -181,11 +181,11 @@ domainry-delivery/
 
 - [x] R08.1 HTTP handler 只负责认证上下文、严格 DTO decode、调用 SDK-shaped application service 和错误/status 映射；删除业务 command 分支与状态判断。
 - [x] R08.2 删除附件内容路由和所有 legacy lifecycle 路由；更新 `docs/api.md` 与 `docs/agent-integration.md` 为唯一新合同。
-- [ ] R08.3 Deck Rust client 改为新 DTO/receipt；所有 Delivery 命令继续由 Rust 发送，TypeScript 不持有凭据、不构造 raw command、不校验状态机。
+- [x] R08.3 Deck Rust client 只接收封闭的 `DeliveryCommandPayload` 枚举；命令类型和 Product/Start/DeliveryRun 目标由 payload 派生，Agent 动态输入必须严格解码且拒绝未知字段。`product_revision.record` 已由 Backend phase 从全部 verified DeliveryUnit 的同一 Git revision/model hash 生成证据并闭合到 Delivery。所有命令继续由 Rust 发送，TypeScript boundary gate 已通过。
 - [x] R08.4 Deck 的 PM/RD/QA/OP 仍是本地 Agent Runtime roles；提示词只能提出命令，提交前必须重新读取 server-projected `available_actions` 和 revision。
 - [x] R08.5 Deck verification adapter 产出 R02 的 typed evidence；禁止 Agent 用自由文本声明 model/runtime/journey 已通过。
 - [x] R08.6 Deck deployment adapter 保持 canonical remote repository identity、clean Git revision 和 provider receipt；永不上传本地路径或另造平行 artifact/evidence identity。
-- [ ] R08.7 同步删除 Deck 对 legacy WorkItem/Build/TestRun/AcceptanceResult 和旧附件 API 的 presentation、scheduler、fixture 与测试。
+- [x] R08.7 同步删除 Deck 对 legacy WorkItem/Build/TestRun/AcceptanceResult 和旧 Delivery 附件 API 的 presentation、scheduler、fixture 与测试；桌面端改走 Agent service attachment RPC，并删除无 Agent 组合能力的 Delivery-only sidecar。
 
 完成标准：同一个 Deck journey 可在 Module contract fixture 与 SaaS HTTP contract 上运行；客户端没有复制领域转换条件。
 
@@ -197,8 +197,8 @@ domainry-delivery/
 - [x] R09.4 新增 schema ownership 测试，证明 Module 与 SaaS 执行同源 Delivery migrations，宿主/Runtime 不复制 Delivery DDL，SDK 不接受 Store。
 - [x] R09.5 新增完整领域验收：ProductStory+Definition 原子 revision、精确 Feature lineage、stale baseline、typed backend evidence、QA/acceptance、release、deployment unknown/reconcile、atomic install、idempotent replay 和 optimistic conflict。
 - [x] R09.6 新增 Plane 后端指南验收 fixture：strict model、registry cross-reference、ProjectHTTP/Handler、权限/审计/持久化、same-model restart、changed-model rejection、Mock/Runtime 同旅程。
-- [ ] R09.7 更新 README，删除“已实现”但代码尚未满足的声明；README、SDK descriptor、HTTP 文档、Deck DTO 与 command catalog 由测试校验一致。
-- [ ] R09.8 最终执行 Delivery SDK、Delivery、Deck 的定向测试与静态检查；重新审计生产 import graph，确认无环、无实现反向依赖、无 legacy symbol。
+- [x] R09.7 README、HTTP/Agent 文档已按实际 owner 和 Rust/SDK 跨语言边界更新；架构测试要求 HTTP 文档覆盖完整 typed command catalog 与 descriptor locales，Module/SaaS contract test 校验 descriptor 能力和 locale 一致。
+- [x] R09.8 最终执行 Delivery SDK、Delivery、Deck 的定向测试与静态检查：Delivery 与两个 SDK 的 `go test ./...`、`go vet ./...` 通过，Deck 151 个 Rust 测试、2 个前端测试、Rust `cargo check`、TypeScript/boundary check 通过；生产 import graph 无实现反向依赖、无 legacy symbol、无 `go.work`。
 
 完成标准：所有 R00-R09 项均有代码证据；`go test ./...`、`go vet ./...`、Delivery SDK contract tests 和 Deck 定向测试通过后，才把本计划标记完成。
 
@@ -216,12 +216,7 @@ domainry-delivery/
 
 ## 4. 当前不得假装完成的缺口
 
-1. **Deck 本地 provenance 尚未进入 Agent owner。** Agent SDK v0.1.29 和 Agent 已拒绝不属于已授权 Conversation/Run 的 source，Delivery 也已闭合自己的 decision/source 引用；但 Deck 当前生成的 `conversation://<local-thread>/turn/<turn>` 只是本地身份，Agent 并不认识。正确缺口是新增“Deck 本地执行结果 → Agent durable provenance”的发布/outbox 合同，不是在 Delivery 增加绕过校验的 fallback。
-2. **Deck 仍依赖已删除的 Delivery 附件 API。** Rust `delivery_client.rs`/`feature_attachment.rs` 仍有 upload/download/remove 调用和 `delivery-attachment://` 引用；它必须改为 Agent-owned artifact/source 合同，因此 R04.5/R08.7 不能勾选。
-3. **Deck 仍有 raw payload 弱类型边界。** Delivery SDK v0.1.5 已为每个 command 提供 typed payload、strict `Validate` 和 typed `NewCommand`；Deck 的 Rust client 仍用 `serde_json::Value` 组装命令，因此 R08.3 不能勾选。
-4. **domain error 仍携带 English message。** 稳定 code 和 presentation locale 已存在，但领域调用点仍构造 `code + message`，因此 R07.7 不能勾选。
-5. **真实 dev 发布缺外部凭据。** manifest 已完成静态验证，但没有 Jenkins/AWS/Argo/Kubernetes 认证和三组 Secret，因此不能声称 dev 已部署。
-
+1. **外部 dev 发布仍缺凭据。** 仓库内 Jenkins、Argo CD、Kubernetes 和 MySQL 配置及本地 MySQL 重启验收已完成，但当前环境没有 `verdent-dev` Secret、Jenkins、AWS、Argo CD 或 Kubernetes 凭据，因此 R10.5-R10.7 不能勾选。
 ## 5. 推荐落地批次
 
 1. **批次一：R00 + R01 + R03** — 先消灭双状态机并闭合 ProductRevision。这是当前会制造错误业务状态的根因。
@@ -229,4 +224,4 @@ domainry-delivery/
 3. **批次三：R06 + R07** — 领域合同稳定后拆 SDK、Module/SaaS assembly 与 persistence，减少跨仓反复改版。
 4. **批次四：R08 + R09** — 一次性切 Deck 和 HTTP，删除旧合同，补齐架构门禁与最终验收。
 
-在 A07、R04.3、R04.5、R07.7、R08.3、R08.7 闭环前，不继续增加新的 Delivery command、legacy 分支、附件存储或 SaaS 特例。
+在真实 dev 发布验收前，不增加 legacy 分支、Delivery 附件存储或 SaaS 特例。

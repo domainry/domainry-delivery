@@ -23,13 +23,13 @@ const (
 
 func NewProduct(workspaceID, productID string, command Command, now time.Time) (Product, error) {
 	if command.Type != commandProductCreate {
-		return Product{}, Invalid("command_unknown", "Product creation requires the product.create command.")
+		return Product{}, Invalid("command_unknown")
 	}
 	if err := validateCommandActor(command, CommandTargetProduct); err != nil {
 		return Product{}, err
 	}
 	if command.Actor.Kind == ActorSystem {
-		return Product{}, Invalid("actor_unauthorized", "A system executor cannot create a Product.")
+		return Product{}, Invalid("actor_unauthorized")
 	}
 	var payload struct {
 		Name       string            `json:"name"`
@@ -51,7 +51,7 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 	payload.Industry = strings.TrimSpace(payload.Industry)
 	payload.Definition = NormalizeProductDefinition(payload.Definition)
 	if workspaceID == "" || productID == "" || payload.Name == "" || payload.Code == "" || payload.Goal == "" || payload.Industry == "" {
-		return Product{}, Invalid("product_incomplete", "A Product requires a Workspace, ID, name, code, goal, and industry.")
+		return Product{}, Invalid("product_incomplete")
 	}
 	content := ProductRevisionContent{Story: payload.Story, Definition: payload.Definition, Decisions: payload.Decisions}
 	if err := ValidateProductRevisionContent(content, false); err != nil {
@@ -83,7 +83,7 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 
 func ApplyProduct(product *Product, command Command, now time.Time) error {
 	if product.Status == ProductArchived {
-		return Invalid("product_archived", "An archived Product cannot be changed.")
+		return Invalid("product_archived")
 	}
 	if err := validateCommandActor(command, CommandTargetProduct); err != nil {
 		return err
@@ -92,51 +92,51 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 	switch command.Type {
 	case commandProductDelete:
 		if command.Actor.Kind != ActorHuman {
-			return Invalid("human_deletion_required", "Only an authenticated Product owner can delete a Product.")
+			return Invalid("human_deletion_required")
 		}
 		product.Status = ProductArchived
 	case commandProductFrontendStart:
 		if command.Actor.Kind != ActorAgent {
-			return Invalid("agent_execution_required", "A local RD Agent must start Product engineering initialization.")
+			return Invalid("agent_execution_required")
 		}
 		err = startProductFrontend(product, command, now)
 	case commandProductFrontendFinish:
 		if command.Actor.Kind != ActorAgent {
-			return Invalid("agent_execution_required", "A local RD Agent must complete Product engineering initialization.")
+			return Invalid("agent_execution_required")
 		}
 		err = completeProductFrontend(product, command, now)
 	case commandProductFoundationStart:
 		if command.Actor.Kind != ActorSystem {
-			return Invalid("system_execution_required", "Only the trusted local foundation installer can start Product foundation installation.")
+			return Invalid("system_execution_required")
 		}
 		err = startProductFoundation(product, command, now)
 	case commandProductFoundationFinish:
 		if command.Actor.Kind != ActorSystem {
-			return Invalid("system_execution_required", "Only the trusted local foundation installer can complete Product foundation installation.")
+			return Invalid("system_execution_required")
 		}
 		err = completeProductFoundation(product, command, now)
 	case commandProductFoundationFail:
 		if command.Actor.Kind != ActorSystem {
-			return Invalid("system_execution_required", "Only the trusted local foundation installer can record a Product foundation failure.")
+			return Invalid("system_execution_required")
 		}
 		err = failProductFoundation(product, command)
 	case commandFeatureDiscoveryOpen:
 		if command.Actor.Kind != ActorHuman {
-			return Invalid("actor_unauthorized", "Only an authenticated Product owner can open a Feature discovery workspace.")
+			return Invalid("actor_unauthorized")
 		}
 		err = openFeatureDiscovery(product, command, now)
 	case commandFeatureDiscoveryReplace:
 		if command.Actor.Kind == ActorSystem {
-			return Invalid("actor_unauthorized", "A system executor cannot author a Feature.")
+			return Invalid("actor_unauthorized")
 		}
 		err = replaceFeatureDiscovery(product, command, now)
 	case commandFeatureConfirm:
 		if command.Actor.Kind != ActorHuman {
-			return Invalid("human_confirmation_required", "A Feature must be confirmed by an authenticated Product owner.")
+			return Invalid("human_confirmation_required")
 		}
 		err = confirmFeature(product, command, now)
 	default:
-		err = Invalid("command_unknown", "The Product command is not supported.")
+		err = Invalid("command_unknown")
 	}
 	if err != nil {
 		return err
@@ -147,7 +147,7 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 
 func startProductFrontend(product *Product, command Command, now time.Time) error {
 	if product.Engineering.Status != EngineeringFrontendQueued {
-		return Invalid("product_frontend_not_queued", "Only queued frontend initialization can start.")
+		return Invalid("product_frontend_not_queued")
 	}
 	product.Engineering.Status = EngineeringFrontendInitializing
 	product.Engineering.FrontendStartedBy = command.Actor.ID
@@ -157,7 +157,7 @@ func startProductFrontend(product *Product, command Command, now time.Time) erro
 
 func completeProductFrontend(product *Product, command Command, now time.Time) error {
 	if product.Engineering.Status != EngineeringFrontendInitializing {
-		return Invalid("product_frontend_not_initializing", "Only frontend initialization in progress can complete.")
+		return Invalid("product_frontend_not_initializing")
 	}
 	var payload struct {
 		CodeRevision      string `json:"code_revision"`
@@ -177,7 +177,7 @@ func completeProductFrontend(product *Product, command Command, now time.Time) e
 	payload.ShellEntry = strings.TrimSpace(payload.ShellEntry)
 	payload.PreviewEntry = strings.TrimSpace(payload.PreviewEntry)
 	if payload.CodeRevision == "" || payload.ArtifactRef == "" || payload.DesignContractRef == "" || payload.LoginEntry == "" || payload.ShellEntry == "" || payload.PreviewEntry == "" {
-		return Invalid("product_frontend_evidence_incomplete", "Frontend initialization requires a code revision, build evidence, design contract evidence, login entry, shell entry, and reviewable preview entry.")
+		return Invalid("product_frontend_evidence_incomplete")
 	}
 	product.Engineering.Status = EngineeringFoundationPending
 	product.Engineering.FrontendCodeRevision = payload.CodeRevision
@@ -193,7 +193,7 @@ func completeProductFrontend(product *Product, command Command, now time.Time) e
 
 func startProductFoundation(product *Product, command Command, now time.Time) error {
 	if product.Engineering.Status != EngineeringFoundationPending {
-		return Invalid("product_foundation_not_pending", "Only a pending Product foundation installation can start.")
+		return Invalid("product_foundation_not_pending")
 	}
 	var payload struct {
 		ApplicationDeliverySHA256 string `json:"application_delivery_sha256"`
@@ -205,11 +205,11 @@ func startProductFoundation(product *Product, command Command, now time.Time) er
 	payload.ApplicationDeliverySHA256 = strings.ToLower(strings.TrimSpace(payload.ApplicationDeliverySHA256))
 	payload.IdempotencyKey = strings.ToLower(strings.TrimSpace(payload.IdempotencyKey))
 	if !sha256ValuePattern.MatchString(payload.ApplicationDeliverySHA256) || !sha256ValuePattern.MatchString(payload.IdempotencyKey) {
-		return Invalid("product_foundation_identity_invalid", "Foundation installation requires valid Application Delivery and idempotency SHA-256 identities.")
+		return Invalid("product_foundation_identity_invalid")
 	}
 	if product.Engineering.ApplicationDeliverySHA256 != "" &&
 		(product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey) {
-		return Invalid("product_foundation_retry_conflict", "A foundation retry must use the original Application Delivery and idempotency identities.")
+		return Invalid("product_foundation_retry_conflict")
 	}
 	product.Engineering.Status = EngineeringFoundationInstalling
 	product.Engineering.ApplicationDeliverySHA256 = payload.ApplicationDeliverySHA256
@@ -223,7 +223,7 @@ func startProductFoundation(product *Product, command Command, now time.Time) er
 
 func completeProductFoundation(product *Product, command Command, now time.Time) error {
 	if product.Engineering.Status != EngineeringFoundationInstalling {
-		return Invalid("product_foundation_not_installing", "Only a Product foundation installation in progress can complete.")
+		return Invalid("product_foundation_not_installing")
 	}
 	var payload struct {
 		ApplicationDeliverySHA256 string `json:"application_delivery_sha256"`
@@ -255,10 +255,10 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 		!sha256ValuePattern.MatchString(payload.IdempotencyKey) ||
 		!sha256ValuePattern.MatchString(payload.VerificationSHA256) ||
 		!validGitRevision(payload.CodeRevision) || payload.GitStatus != "clean" || payload.IdentityBaselineResult != "passed" {
-		return Invalid("product_foundation_evidence_invalid", "Foundation completion requires valid release, package, model, repository, verification, and Identity baseline evidence.")
+		return Invalid("product_foundation_evidence_invalid")
 	}
 	if product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey {
-		return Invalid("product_foundation_identity_mismatch", "Foundation completion must match the installation identities recorded at start.")
+		return Invalid("product_foundation_identity_mismatch")
 	}
 	product.Engineering.Status = EngineeringReady
 	product.Engineering.FoundationReleaseSHA256 = payload.FoundationReleaseSHA256
@@ -275,7 +275,7 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 
 func failProductFoundation(product *Product, command Command) error {
 	if product.Engineering.Status != EngineeringFoundationInstalling {
-		return Invalid("product_foundation_not_installing", "Only a Product foundation installation in progress can fail.")
+		return Invalid("product_foundation_not_installing")
 	}
 	var payload struct {
 		Code    string `json:"code"`
@@ -287,7 +287,7 @@ func failProductFoundation(product *Product, command Command) error {
 	payload.Code = strings.TrimSpace(payload.Code)
 	payload.Message = strings.TrimSpace(payload.Message)
 	if payload.Code == "" || len(payload.Code) > 128 || payload.Message == "" || len(payload.Message) > 2000 {
-		return Invalid("product_foundation_failure_invalid", "A foundation failure requires a bounded code and message.")
+		return Invalid("product_foundation_failure_invalid")
 	}
 	product.Engineering.Status = EngineeringFoundationPending
 	product.Engineering.FoundationFailureCode = payload.Code

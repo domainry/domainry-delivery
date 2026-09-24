@@ -18,7 +18,7 @@ func Decode(payload json.RawMessage, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(payload)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return Invalid("payload_invalid", "The command payload is invalid.")
+		return Invalid("payload_invalid")
 	}
 	return nil
 }

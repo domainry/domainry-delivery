@@ -13,8 +13,9 @@ installation into the next ProductRevision.
   message bodies or attachment bytes.
 - `domainry-delivery` owns Product, Feature, revision, lifecycle and release
   state. Every transition is validated by the domain layer.
-- `domainry-deck` runs the local PM/RD/QA/OP roles and submits commands through
-  the independent Delivery SDK. Client code never writes a status directly.
+- `domainry-deck` runs the local PM/RD/QA/OP roles and submits typed Rust
+  requests that mirror the independently published Delivery SDK contract.
+  Client code never writes a status directly.
 
 The implementation is physically split by responsibility:
 

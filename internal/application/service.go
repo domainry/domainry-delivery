@@ -116,7 +116,7 @@ func (service *Service) DispatchProduct(ctx context.Context, workspaceID, produc
 			})
 		}
 		if command.Type == commanddomain.FeatureDeliveryStart {
-			return product.Product{}, domain.Invalid("command_endpoint_invalid", "Use the DeliveryRun lifecycle endpoint for delivery start and installation.")
+			return product.Product{}, domain.Invalid("command_endpoint_invalid")
 		}
 		return service.ports.Products.TransactProduct(ctx, workspaceID, productID, mutation, command.ExpectedRevision, func(productState *product.Product) error {
 			return product.ApplyProduct(productState, command, now)

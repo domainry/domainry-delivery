@@ -15,7 +15,7 @@ func authenticatedSession(ctx context.Context, workspaceID string) (delivery.Ses
 	if ctx != nil {
 		if principal, ok := ctx.Value(trustedPrincipalContextKey{}).(trustedPrincipal); ok {
 			if principal.WorkspaceID != workspaceID {
-				return delivery.Session{}, delivery.Invalid("identity_workspace_mismatch", "The authenticated identity does not belong to the requested Workspace.")
+				return delivery.Session{}, delivery.Invalid("identity_workspace_mismatch")
 			}
 			permissions := make([]string, 0, len(principal.Permissions))
 			for permission, granted := range principal.Permissions {
@@ -30,10 +30,10 @@ func authenticatedSession(ctx context.Context, workspaceID string) (delivery.Ses
 
 	principal, ok := identitysdk.PrincipalFromContext(ctx)
 	if !ok || !principal.Known || strings.TrimSpace(principal.UserID) == "" {
-		return delivery.Session{}, delivery.Invalid("authentication_required", "An authenticated Identity principal is required.")
+		return delivery.Session{}, delivery.Invalid("authentication_required")
 	}
 	if strings.TrimSpace(principal.WorkspaceID) != workspaceID {
-		return delivery.Session{}, delivery.Invalid("identity_workspace_mismatch", "The authenticated identity does not belong to the requested Workspace.")
+		return delivery.Session{}, delivery.Invalid("identity_workspace_mismatch")
 	}
 	kind := delivery.ActorHuman
 	if principal.Workload != nil {
@@ -85,10 +85,10 @@ func authenticatedActor(ctx context.Context, workspaceID, permission string, for
 	if ctx != nil {
 		if principal, ok := ctx.Value(trustedPrincipalContextKey{}).(trustedPrincipal); ok {
 			if principal.WorkspaceID != workspaceID {
-				return delivery.Actor{}, delivery.Invalid("identity_workspace_mismatch", "The authenticated identity does not belong to the requested Workspace.")
+				return delivery.Actor{}, delivery.Invalid("identity_workspace_mismatch")
 			}
 			if !principal.Permissions[permission] {
-				return delivery.Actor{}, delivery.Invalid("permission_denied", "The authenticated identity is not allowed to perform this operation.")
+				return delivery.Actor{}, delivery.Invalid("permission_denied")
 			}
 			actor := principal.Actor
 			if forcedKind != nil {
@@ -103,13 +103,13 @@ func authenticatedActor(ctx context.Context, workspaceID, permission string, for
 
 	principal, ok := identitysdk.PrincipalFromContext(ctx)
 	if !ok || !principal.Known || strings.TrimSpace(principal.UserID) == "" {
-		return delivery.Actor{}, delivery.Invalid("authentication_required", "An authenticated Identity principal is required.")
+		return delivery.Actor{}, delivery.Invalid("authentication_required")
 	}
 	if strings.TrimSpace(principal.WorkspaceID) != workspaceID {
-		return delivery.Actor{}, delivery.Invalid("identity_workspace_mismatch", "The authenticated identity does not belong to the requested Workspace.")
+		return delivery.Actor{}, delivery.Invalid("identity_workspace_mismatch")
 	}
 	if !principal.HasPermission(permission) {
-		return delivery.Actor{}, delivery.Invalid("permission_denied", "The authenticated identity is not allowed to perform this operation.")
+		return delivery.Actor{}, delivery.Invalid("permission_denied")
 	}
 	kind := delivery.ActorHuman
 	if principal.Workload != nil {
@@ -123,10 +123,10 @@ func authenticatedActor(ctx context.Context, workspaceID, permission string, for
 
 func validateAuthenticatedActor(actor delivery.Actor) error {
 	if strings.TrimSpace(actor.ID) == "" {
-		return delivery.Invalid("authentication_required", "An authenticated Identity principal is required.")
+		return delivery.Invalid("authentication_required")
 	}
 	if actor.Kind != delivery.ActorHuman && actor.Kind != delivery.ActorAgent && actor.Kind != delivery.ActorSystem {
-		return delivery.Invalid("identity_actor_invalid", "The authenticated Identity principal has an invalid actor kind.")
+		return delivery.Invalid("identity_actor_invalid")
 	}
 	return nil
 }

@@ -29,7 +29,7 @@ func qualityActions(run *DeliveryRun) []AvailableAction {
 
 func recordQuality(run *DeliveryRun, command Command, now time.Time) error {
 	if run.Stage != StageTesting || activeDeliveryUnit(run) != nil || run.ExecutableRevision == nil {
-		return Invalid("quality_stage_invalid", "Independent QA can run only after every DeliveryUnit Journey passes.")
+		return Invalid("quality_stage_invalid")
 	}
 	var payload struct {
 		TestCaseID   string      `json:"test_case_id"`
@@ -48,22 +48,22 @@ func recordQuality(run *DeliveryRun, command Command, now time.Time) error {
 	}
 	revision, ok := verifiedJourneyRevision(run)
 	if !ok || strings.TrimSpace(payload.GitRevision) != revision {
-		return Invalid("quality_revision_conflict", "QA evidence must match the latest Git revision that passed every DeliveryUnit Journey.")
+		return Invalid("quality_revision_conflict")
 	}
 	payload.Note = strings.TrimSpace(payload.Note)
 	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
 	if !validResult(payload.Result, true) || payload.Note == "" || !evidenceRefsMatchRevision(payload.EvidenceRefs, revision) {
-		return Invalid("quality_evidence_missing", "A QA result requires an outcome, actual observation, and at least one Git-bound evidence reference.")
+		return Invalid("quality_evidence_missing")
 	}
 	if payload.Result == ResultFail && !validQualityFailureOwner(payload.FailureOwner) {
-		return Invalid("quality_failure_owner_invalid", "A failed QA result must route to frontend, backend, framework, or unlocated.")
+		return Invalid("quality_failure_owner_invalid")
 	}
 	if payload.Result != ResultFail && payload.FailureOwner != "" {
-		return Invalid("quality_failure_owner_invalid", "Only a failed QA result can declare a failure owner.")
+		return Invalid("quality_failure_owner_invalid")
 	}
 	if payload.Result == ResultFail && (payload.FailureOwner == "frontend" || payload.FailureOwner == "backend") && deliveryUnitByID(run, testCase.FeatureID) == nil {
-		return Invalid("quality_delivery_unit_missing", "The failed QA case has no DeliveryUnit to reopen.")
+		return Invalid("quality_delivery_unit_missing")
 	}
 	run.QualityRuns = append(run.QualityRuns, QualityRun{
 		ID: newID("quality"), GitRevision: revision, TestCaseID: testCase.ID,
@@ -89,7 +89,7 @@ func routeVerificationFailure(run *DeliveryRun, deliveryUnitID, owner string) er
 	}
 	unit := deliveryUnitByID(run, deliveryUnitID)
 	if unit == nil {
-		return Invalid("quality_delivery_unit_missing", "The failed QA case has no DeliveryUnit to reopen.")
+		return Invalid("quality_delivery_unit_missing")
 	}
 	switch owner {
 	case "interaction", "model", "frontend", "backend":

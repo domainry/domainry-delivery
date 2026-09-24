@@ -48,7 +48,7 @@ func activeRelease(run *DeliveryRun) bool {
 
 func prepareRelease(run *DeliveryRun, command Command, now time.Time) error {
 	if run.Stage != StageRelease || activeDeliveryUnit(run) != nil {
-		return Invalid("release_stage_invalid", "A release can be prepared only after QA and business acceptance pass.")
+		return Invalid("release_stage_invalid")
 	}
 	var payload struct {
 		Version        string `json:"version"`
@@ -60,23 +60,23 @@ func prepareRelease(run *DeliveryRun, command Command, now time.Time) error {
 	payload.Version = strings.TrimSpace(payload.Version)
 	payload.EnvironmentRef = strings.TrimSpace(payload.EnvironmentRef)
 	if payload.Version == "" || payload.EnvironmentRef == "" {
-		return Invalid("release_target_required", "A release requires a version and target environment.")
+		return Invalid("release_target_required")
 	}
 	revision, ok := verifiedJourneyRevision(run)
 	if !ok || !backendGuideEvidenceReady(run) || !executableRevisionReady(run) || !allQualityPass(run, revision) || !allAcceptancePass(run, revision) {
-		return Invalid("release_gate_failed", "Journey, independent QA, and business acceptance must pass for the current Git revision.")
+		return Invalid("release_gate_failed")
 	}
 	if !allRequiredReleaseChecksPass(run) {
-		return Invalid("release_checks_incomplete", "Every required ReleaseCheck must pass before preparing a release.")
+		return Invalid("release_checks_incomplete")
 	}
 	for _, check := range run.ReleaseChecks {
 		if check.EnvironmentRef != payload.EnvironmentRef {
-			return Invalid("release_check_environment_mismatch", "Release checks must match the release target environment.")
+			return Invalid("release_check_environment_mismatch")
 		}
 	}
 	for _, release := range run.Releases {
 		if release.CodeRevision == revision && release.Status != ReleaseFailed {
-			return Invalid("release_exists", "The current Git revision already has an active Release.")
+			return Invalid("release_exists")
 		}
 	}
 	releaseID := fmt.Sprintf("REL-%03d", len(run.Releases)+1)
@@ -105,19 +105,19 @@ func canPrepareRelease(run *DeliveryRun) bool {
 func ensureReleaseStillValid(run *DeliveryRun, release *Release) error {
 	revision, ok := verifiedJourneyRevision(run)
 	if !ok || release.CodeRevision != revision {
-		return Invalid("release_stale", "The Release is not bound to the current verified Git revision.")
+		return Invalid("release_stale")
 	}
 	if !backendGuideEvidenceReady(run) {
-		return Invalid("backend_guide_evidence_stale", "The Release no longer has complete Plane backend guide evidence.")
+		return Invalid("backend_guide_evidence_stale")
 	}
 	if !executableRevisionReady(run) || release.ProductRevision != run.ExecutableRevision.TargetRevision || release.ProductRevisionRef != run.ExecutableRevision.EvidenceRef || release.ModelSHA256 != run.ExecutableRevision.ModelSHA256 {
-		return Invalid("product_revision_release_mismatch", "The Release is not bound to the executable ProductRevision and model hash.")
+		return Invalid("product_revision_release_mismatch")
 	}
 	if !allQualityPass(run, revision) || !allAcceptancePass(run, revision) {
-		return Invalid("release_gate_failed", "QA or business acceptance for the Release Git revision is no longer valid.")
+		return Invalid("release_gate_failed")
 	}
 	if !allRequiredReleaseChecksPass(run) {
-		return Invalid("release_checks_incomplete", "ReleaseChecks for the Release are no longer valid.")
+		return Invalid("release_checks_incomplete")
 	}
 	return nil
 }

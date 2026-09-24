@@ -29,7 +29,7 @@ func (store *Store) claimOperation(ctx context.Context, transaction sqlhost.DBTX
 		StatusURL: "delivery://operations/" + identity, CreatedAt: mutation.OccurredAt,
 	})
 	if errors.Is(err, sharedoperation.ErrIdempotencyConflict) {
-		return sharedoperation.Receipt{}, false, domain.Invalid("idempotency_key_reused", "The same client_id cannot be used for different command facts.")
+		return sharedoperation.Receipt{}, false, domain.Invalid("idempotency_key_reused")
 	}
 	if err != nil {
 		return sharedoperation.Receipt{}, false, storageError(err)
@@ -38,7 +38,7 @@ func (store *Store) claimOperation(ctx context.Context, transaction sqlhost.DBTX
 		return receipt, false, nil
 	}
 	if receipt.Status != sharedoperation.StatusSucceeded || !json.Valid(receipt.Result) || string(receipt.Result) == "{}" {
-		return sharedoperation.Receipt{}, false, domain.Invalid("operation_in_progress", "The command is already being processed.")
+		return sharedoperation.Receipt{}, false, domain.Invalid("operation_in_progress")
 	}
 	return receipt, true, nil
 }

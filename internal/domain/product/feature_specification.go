@@ -149,7 +149,7 @@ func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []
 	}
 	for _, role := range authorization.Roles {
 		if role.ID == "" || declaredRoleIDs[role.ID] {
-			return Invalid("feature_authorization_role_duplicate", "Feature authorization role IDs must be non-empty and unique.")
+			return Invalid("feature_authorization_role_duplicate")
 		}
 		declaredRoleIDs[role.ID] = true
 		roleIDs[role.ID] = true
@@ -166,7 +166,7 @@ func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []
 		}
 		for _, roleID := range authorization.PermissionAdminIDs {
 			if !roleIDs[roleID] {
-				return Invalid("feature_permission_admin_invalid", "A Feature permission administrator must reference a defined role.")
+				return Invalid("feature_permission_admin_invalid")
 			}
 		}
 		coveredActors := map[string]bool{}
@@ -195,7 +195,7 @@ func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []
 	grantIDs := map[string]bool{}
 	for _, grant := range authorization.Grants {
 		if grant.ID == "" || grantIDs[grant.ID] {
-			return Invalid("feature_authorization_grant_duplicate", "Feature authorization grant IDs must be non-empty and unique.")
+			return Invalid("feature_authorization_grant_duplicate")
 		}
 		grantIDs[grant.ID] = true
 		if len(grant.RoleIDs) == 0 || grant.CapabilityID == "" || grant.Capability == "" || len(grant.ScenarioIDs) == 0 || len(grant.DataScopes) == 0 {
@@ -203,7 +203,7 @@ func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []
 		}
 		for _, roleID := range grant.RoleIDs {
 			if !roleIDs[roleID] {
-				return Invalid("feature_authorization_role_unknown", "A Feature authorization grant must reference a role from the Product baseline or this Feature.")
+				return Invalid("feature_authorization_role_unknown")
 			}
 		}
 		for _, scenarioID := range grant.ScenarioIDs {
@@ -214,7 +214,6 @@ func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []
 			if !scenarioIDs[scenarioID] {
 				return &Error{
 					Code:    "feature_authorization_scenario_unknown",
-					Message: "A Feature authorization grant must reference a Feature scenario.",
 					Details: map[string]any{"grant_id": grant.ID, "scenario_id": scenarioID},
 				}
 			}
@@ -241,7 +240,7 @@ func assessFeatureScenarios(scenarios []FeatureScenario, addBlocker func(string)
 	ids := map[string]bool{}
 	for _, scenario := range scenarios {
 		if scenario.ID != "" && ids[scenario.ID] {
-			return Invalid("feature_scenario_duplicate", "Feature scenario IDs must be unique.")
+			return Invalid("feature_scenario_duplicate")
 		}
 		ids[scenario.ID] = true
 		if scenario.ID == "" || scenario.Title == "" || len(scenario.ActorIDs) == 0 || scenario.Trigger == "" || len(scenario.MainFlow) == 0 || scenario.Outcome == "" {
@@ -258,14 +257,14 @@ func assessFeatureImpacts(impacts []FeatureImpact, addBlocker func(string)) erro
 	ids := map[string]bool{}
 	for _, impact := range impacts {
 		if impact.ID != "" && ids[impact.ID] {
-			return Invalid("feature_impact_duplicate", "Feature impact IDs must be unique.")
+			return Invalid("feature_impact_duplicate")
 		}
 		ids[impact.ID] = true
 		if impact.Operation != "add" && impact.Operation != "change" && impact.Operation != "remove" {
-			return Invalid("feature_impact_operation_invalid", "A Feature impact operation must be add, change, or remove.")
+			return Invalid("feature_impact_operation_invalid")
 		}
 		if !validImpactTargetKind(impact.TargetKind) {
-			return Invalid("feature_impact_target_invalid", "A Feature impact must target a supported ProductDefinition area.")
+			return Invalid("feature_impact_target_invalid")
 		}
 		if impact.ID == "" || impact.TargetID == "" || impact.Summary == "" || len(impact.Details) == 0 {
 			addBlocker("impact")
@@ -281,7 +280,7 @@ func assessFeatureAcceptance(acceptance []FeatureAcceptanceScenario, addBlocker 
 	ids := map[string]bool{}
 	for _, scenario := range acceptance {
 		if scenario.ID != "" && ids[scenario.ID] {
-			return Invalid("feature_acceptance_duplicate", "Feature acceptance scenario IDs must be unique.")
+			return Invalid("feature_acceptance_duplicate")
 		}
 		ids[scenario.ID] = true
 		if scenario.ID == "" || scenario.Title == "" || len(scenario.Given) == 0 || scenario.When == "" || len(scenario.Then) == 0 {

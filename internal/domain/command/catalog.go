@@ -162,26 +162,26 @@ func ValidateActor(value domain.Command, target Target) error {
 	}
 	definition, ok := DefinitionFor(value.Type)
 	if !ok || definition.Target != target {
-		return domain.Invalid("command_unknown", "The command is not supported for this aggregate.")
+		return domain.Invalid("command_unknown")
 	}
 	if containsActorKind(definition.AllowedActors, value.Actor.Kind) {
 		return nil
 	}
 	if containsActorKind(definition.AllowedActors, domain.ActorHuman) {
-		return domain.Invalid("human_confirmation_required", "An authenticated owner must confirm this action.")
+		return domain.Invalid("human_confirmation_required")
 	}
 	if containsActorKind(definition.AllowedActors, domain.ActorSystem) {
-		return domain.Invalid("system_execution_required", "Only a trusted system adapter can record this action.")
+		return domain.Invalid("system_execution_required")
 	}
-	return domain.Invalid("agent_execution_required", "A local Agent Runtime must execute this action.")
+	return domain.Invalid("agent_execution_required")
 }
 
 func ValidateIdentity(actor domain.Actor) error {
 	if strings.TrimSpace(actor.ID) == "" {
-		return domain.Invalid("actor_required", "The authenticated actor is required.")
+		return domain.Invalid("actor_required")
 	}
 	if actor.Kind != domain.ActorHuman && actor.Kind != domain.ActorAgent && actor.Kind != domain.ActorSystem {
-		return domain.Invalid("actor_kind_invalid", "The authenticated actor kind is invalid.")
+		return domain.Invalid("actor_kind_invalid")
 	}
 	return nil
 }

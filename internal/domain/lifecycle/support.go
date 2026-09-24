@@ -39,7 +39,7 @@ func validateCommandActor(value Command, target commanddomain.Target) error {
 
 func decode(payload json.RawMessage, target any) error { return domain.Decode(payload, target) }
 func clone[T any](value T) T                           { return domain.Clone(value) }
-func Invalid(code, message string) error               { return domain.Invalid(code, message) }
+func Invalid(code string) error                        { return domain.Invalid(code) }
 func NotFound(entity, id string) error                 { return domain.NotFound(entity, id) }
 
 func nextFeatureForDelivery(value *Product) *product.Feature {

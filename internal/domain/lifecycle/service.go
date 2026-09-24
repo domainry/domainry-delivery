@@ -11,16 +11,16 @@ import (
 // Product aggregate. Persistence must commit both returned states together.
 func StartDelivery(product *Product, deliveryRunID string, command Command, now time.Time) (DeliveryRun, error) {
 	if command.Type != commanddomain.FeatureDeliveryStart {
-		return DeliveryRun{}, Invalid("command_unknown", "Delivery start requires feature.delivery.start.")
+		return DeliveryRun{}, Invalid("command_unknown")
 	}
 	if err := validateCommandActor(command, CommandTargetProduct); err != nil {
 		return DeliveryRun{}, err
 	}
 	if command.Actor.Kind != ActorAgent {
-		return DeliveryRun{}, Invalid("agent_execution_required", "A local Agent Runtime must start delivery.")
+		return DeliveryRun{}, Invalid("agent_execution_required")
 	}
 	if product.Engineering.Status != EngineeringReady {
-		return DeliveryRun{}, Invalid("product_engineering_incomplete", "Product engineering initialization must be ready before a confirmed Feature can start delivery.")
+		return DeliveryRun{}, Invalid("product_engineering_incomplete")
 	}
 	var payload struct {
 		FeatureID       string   `json:"feature_id"`
@@ -40,7 +40,7 @@ func StartDelivery(product *Product, deliveryRunID string, command Command, now 
 	}
 	next := nextFeatureForDelivery(product)
 	if next == nil || next.ID != strings.TrimSpace(payload.FeatureID) {
-		return DeliveryRun{}, Invalid("feature_delivery_order_invalid", "Only the first complete Feature in the Product development queue can start delivery.")
+		return DeliveryRun{}, Invalid("feature_delivery_order_invalid")
 	}
 	run, err := NewDeliveryRun(*product, payload.FeatureID, payload.FeatureRevision, spec, command.Actor, now)
 	if err != nil {
@@ -59,27 +59,27 @@ func StartDelivery(product *Product, deliveryRunID string, command Command, now 
 // DeliveryRun command.
 func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now time.Time) error {
 	if actor.Kind != ActorSystem && actor.Kind != ActorHuman {
-		return Invalid("installation_actor_invalid", "Only a trusted deployment adapter or reconciliation owner can install a Feature.")
+		return Invalid("installation_actor_invalid")
 	}
 	if run.Stage != StageLive {
-		return Invalid("delivery_run_not_live", "A Feature can be installed only from a live DeliveryRun.")
+		return Invalid("delivery_run_not_live")
 	}
 	feature := findFeature(product, run.Feature.ID)
 	if feature == nil {
 		return NotFound("Feature", run.Feature.ID)
 	}
 	if feature.Status != FeatureDelivering || feature.DeliveryRunID != run.ID || feature.ConfirmedRevision != run.Feature.Source.FeatureRevision {
-		return Invalid("feature_not_delivering", "The live DeliveryRun does not match the delivering FeatureRevision.")
+		return Invalid("feature_not_delivering")
 	}
 	if run.Product.ProductRevision != product.CurrentReleaseRevision {
-		return Invalid("feature_install_baseline_invalid", "The live DeliveryRun no longer matches the Product release baseline.")
+		return Invalid("feature_install_baseline_invalid")
 	}
 	if run.ExecutableRevision == nil {
-		return Invalid("product_revision_missing", "The live DeliveryRun has no executable ProductRevision to install.")
+		return Invalid("product_revision_missing")
 	}
 	executable := run.ExecutableRevision
 	if executable.BaseRevision != product.CurrentDefinitionRevision || executable.TargetRevision != product.CurrentDefinitionRevision+1 {
-		return Invalid("product_revision_baseline_invalid", "The executable ProductRevision no longer extends the current Product definition.")
+		return Invalid("product_revision_baseline_invalid")
 	}
 	var liveRelease *Release
 	for index := range run.Releases {
@@ -88,13 +88,13 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 		}
 	}
 	if liveRelease == nil || liveRelease.DeploymentAttempt == nil || strings.TrimSpace(liveRelease.DeploymentAttempt.ReceiptRef) == "" {
-		return Invalid("release_receipt_missing", "A live release with a deployment receipt is required to install the Feature.")
+		return Invalid("release_receipt_missing")
 	}
 	if strings.TrimSpace(liveRelease.DeploymentAttempt.LaunchURL) == "" || liveRelease.DeploymentAttempt.ResolvedAt == nil {
-		return Invalid("release_launch_url_missing", "A live SaaS release requires a resolved public launch URL.")
+		return Invalid("release_launch_url_missing")
 	}
 	if liveRelease.ProductRevision != executable.TargetRevision || liveRelease.ProductRevisionRef != executable.EvidenceRef || liveRelease.CodeRevision != executable.CodeRevision || liveRelease.ModelSHA256 != executable.ModelSHA256 {
-		return Invalid("product_revision_release_mismatch", "The live Release is not bound to the executable ProductRevision produced by this DeliveryRun.")
+		return Invalid("product_revision_release_mismatch")
 	}
 	product.Revisions = append(product.Revisions, ProductRevision{
 		Number: executable.TargetRevision, Story: clone(executable.Content.Story),

@@ -28,7 +28,7 @@ func acceptanceActions(run *DeliveryRun) []AvailableAction {
 
 func confirmAcceptance(run *DeliveryRun, command Command, now time.Time) error {
 	if run.Stage != StageAcceptance || activeDeliveryUnit(run) != nil {
-		return Invalid("acceptance_stage_invalid", "Business acceptance can run only after independent QA passes.")
+		return Invalid("acceptance_stage_invalid")
 	}
 	var payload struct {
 		AcceptanceCaseID string      `json:"acceptance_case_id"`
@@ -47,25 +47,25 @@ func confirmAcceptance(run *DeliveryRun, command Command, now time.Time) error {
 	}
 	revision, ok := verifiedJourneyRevision(run)
 	if !ok || strings.TrimSpace(payload.GitRevision) != revision || !allQualityPass(run, revision) {
-		return Invalid("acceptance_quality_incomplete", "Business acceptance requires independent QA for the current Git revision.")
+		return Invalid("acceptance_quality_incomplete")
 	}
 	payload.Note = strings.TrimSpace(payload.Note)
 	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
 	if payload.Result != ResultPass && payload.Result != ResultFail {
-		return Invalid("acceptance_result_invalid", "Business acceptance accepts only pass or fail.")
+		return Invalid("acceptance_result_invalid")
 	}
 	if payload.Note == "" || !evidenceRefsMatchRevision(payload.EvidenceRefs, revision) {
-		return Invalid("acceptance_evidence_missing", "Business acceptance requires an actual conclusion and Git-bound evidence.")
+		return Invalid("acceptance_evidence_missing")
 	}
 	if payload.Result == ResultFail && !validQualityFailureOwner(payload.FailureOwner) {
-		return Invalid("acceptance_failure_owner_invalid", "Failed business acceptance must route to frontend, backend, framework, or unlocated.")
+		return Invalid("acceptance_failure_owner_invalid")
 	}
 	if payload.Result != ResultFail && payload.FailureOwner != "" {
-		return Invalid("acceptance_failure_owner_invalid", "Only failed business acceptance can declare a failure owner.")
+		return Invalid("acceptance_failure_owner_invalid")
 	}
 	if payload.Result == ResultFail && (payload.FailureOwner == "frontend" || payload.FailureOwner == "backend") && deliveryUnitByID(run, acceptanceCase.FeatureID) == nil {
-		return Invalid("acceptance_delivery_unit_missing", "The failed acceptance case has no DeliveryUnit to reopen.")
+		return Invalid("acceptance_delivery_unit_missing")
 	}
 	run.AcceptanceConfirmations = append(run.AcceptanceConfirmations, AcceptanceConfirmation{
 		ID: newID("acceptance"), GitRevision: revision, AcceptanceCaseID: acceptanceCase.ID,

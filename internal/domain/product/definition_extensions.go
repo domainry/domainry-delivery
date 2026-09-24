@@ -67,10 +67,10 @@ func validateProductDefinitionExtensions(definition ProductDefinition, actors ma
 
 func validateProductAccessModel(access ProductAccessModel, actors map[string]bool) (map[string]bool, error) {
 	if access.Authentication != "" && access.Authentication != "required" && access.Authentication != "optional" && access.Authentication != "not_required" && access.Authentication != "mixed" {
-		return nil, Invalid("product_authentication_invalid", "Product authentication must be required, optional, not_required, or mixed.")
+		return nil, Invalid("product_authentication_invalid")
 	}
 	if access.PermissionModel != "" && access.PermissionModel != "fixed" && access.PermissionModel != "configurable" && access.PermissionModel != "hybrid" && access.PermissionModel != "not_applicable" {
-		return nil, Invalid("product_permission_model_invalid", "Product permission model must be fixed, configurable, hybrid, or not_applicable.")
+		return nil, Invalid("product_permission_model_invalid")
 	}
 	roleIDs := map[string]bool{}
 	for _, role := range access.Roles {
@@ -78,21 +78,21 @@ func validateProductAccessModel(access ProductAccessModel, actors map[string]boo
 			return nil, err
 		}
 		if strings.TrimSpace(role.Name) == "" || len(cleanStrings(role.Responsibilities)) == 0 || len(cleanStrings(role.Capabilities)) == 0 || len(cleanStrings(role.DataScopes)) == 0 {
-			return nil, Invalid("product_role_incomplete", "A Product role requires a name, responsibilities, capabilities, and data scopes.")
+			return nil, Invalid("product_role_incomplete")
 		}
 		for _, actorID := range cleanStrings(role.ActorIDs) {
 			if !actors[actorID] {
-				return nil, Invalid("product_role_actor_invalid", "A Product role must reference valid actors.")
+				return nil, Invalid("product_role_actor_invalid")
 			}
 		}
 	}
 	for _, roleID := range cleanStrings(access.PermissionAdmins) {
 		if !roleIDs[roleID] {
-			return nil, Invalid("product_permission_admin_invalid", "A permission administrator must reference a valid Product role.")
+			return nil, Invalid("product_permission_admin_invalid")
 		}
 	}
 	if (access.PermissionModel == "configurable" || access.PermissionModel == "hybrid") && (len(cleanStrings(access.PermissionAdmins)) == 0 || len(cleanStrings(access.AssignmentRules)) == 0) {
-		return nil, Invalid("product_permission_administration_incomplete", "Configurable permissions require administrators and assignment rules.")
+		return nil, Invalid("product_permission_administration_incomplete")
 	}
 	return roleIDs, nil
 }
@@ -104,13 +104,13 @@ func validateProductIntegrations(integrations []ProductIntegration) error {
 			return err
 		}
 		if strings.TrimSpace(integration.Name) == "" || strings.TrimSpace(integration.Contract) == "" || strings.TrimSpace(integration.Authentication) == "" || strings.TrimSpace(integration.FailurePolicy) == "" {
-			return Invalid("product_integration_incomplete", "A Product integration requires a name, contract, authentication, and failure policy.")
+			return Invalid("product_integration_incomplete")
 		}
 		if integration.Direction != "inbound" && integration.Direction != "outbound" && integration.Direction != "bidirectional" {
-			return Invalid("product_integration_direction_invalid", "A Product integration direction must be inbound, outbound, or bidirectional.")
+			return Invalid("product_integration_direction_invalid")
 		}
 		if integration.Mode != "synchronous" && integration.Mode != "asynchronous" && integration.Mode != "batch" {
-			return Invalid("product_integration_mode_invalid", "A Product integration mode must be synchronous, asynchronous, or batch.")
+			return Invalid("product_integration_mode_invalid")
 		}
 	}
 	return nil
@@ -123,10 +123,10 @@ func validateProductAutomations(automations []ProductAutomation) error {
 			return err
 		}
 		if strings.TrimSpace(automation.Name) == "" || strings.TrimSpace(automation.Trigger) == "" || strings.TrimSpace(automation.Outcome) == "" || strings.TrimSpace(automation.FailureHandling) == "" {
-			return Invalid("product_automation_incomplete", "A Product automation requires a name, trigger, outcome, and failure handling.")
+			return Invalid("product_automation_incomplete")
 		}
 		if (strings.TrimSpace(automation.Schedule) == "") != (strings.TrimSpace(automation.Timezone) == "") {
-			return Invalid("product_automation_schedule_invalid", "A scheduled automation requires both a schedule and timezone.")
+			return Invalid("product_automation_schedule_invalid")
 		}
 	}
 	return nil
@@ -139,11 +139,11 @@ func validateProductConfiguration(configuration []ProductConfiguration, roles ma
 			return err
 		}
 		if strings.TrimSpace(setting.Name) == "" || strings.TrimSpace(setting.Scope) == "" || strings.TrimSpace(setting.ValueType) == "" {
-			return Invalid("product_configuration_incomplete", "Product configuration requires a name, scope, and value type.")
+			return Invalid("product_configuration_incomplete")
 		}
 		for _, roleID := range cleanStrings(setting.ManagedByRoleIDs) {
 			if !roles[roleID] {
-				return Invalid("product_configuration_role_invalid", "Product configuration managers must reference valid roles.")
+				return Invalid("product_configuration_role_invalid")
 			}
 		}
 	}
@@ -157,7 +157,7 @@ func validateProductQualityConstraints(constraints []ProductQualityConstraint) e
 			return err
 		}
 		if strings.TrimSpace(constraint.Category) == "" || strings.TrimSpace(constraint.Requirement) == "" || strings.TrimSpace(constraint.Measure) == "" {
-			return Invalid("product_quality_constraint_incomplete", "A Product quality constraint requires a category, requirement, and measure.")
+			return Invalid("product_quality_constraint_incomplete")
 		}
 	}
 	return nil

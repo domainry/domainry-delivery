@@ -17,10 +17,10 @@ func openFeatureDiscovery(product *Product, command Command, now time.Time) erro
 	}
 	payload.FeatureID = strings.TrimSpace(payload.FeatureID)
 	if payload.FeatureID == "" {
-		return Invalid("feature_identity_incomplete", "A Feature discovery workspace requires a stable ID.")
+		return Invalid("feature_identity_incomplete")
 	}
 	if FindFeature(product, payload.FeatureID) != nil {
-		return Invalid("feature_id_duplicate", "Feature IDs must be unique within a Product.")
+		return Invalid("feature_id_duplicate")
 	}
 	code := nextFeatureCode(product)
 	product.Features = append(product.Features, Feature{
@@ -88,10 +88,10 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	payload.Decisions = normalizeFeatureDecisions(payload.Decisions)
 	payload.Source = normalizeFeatureSource(payload.Source)
 	if payload.FeatureID == "" || payload.Code == "" {
-		return Invalid("feature_identity_incomplete", "A Feature draft requires a stable ID and code.")
+		return Invalid("feature_identity_incomplete")
 	}
 	if payload.BaselineProductRevision == 0 || payload.BaselineProductRevision != product.CurrentDefinitionRevision {
-		return Invalid("feature_baseline_stale", "A Feature must use the current Product definition revision as its baseline.")
+		return Invalid("feature_baseline_stale")
 	}
 	if err := validateFeatureSource(payload.Source); err != nil {
 		return err
@@ -114,7 +114,7 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 		return err
 	}
 	if readiness.Status != "ready" && nextQuestion == "" {
-		return Invalid("feature_next_question_required", "Incomplete Feature discovery must retain at least one ranked open business question.")
+		return Invalid("feature_next_question_required")
 	}
 	feature := FindFeature(product, payload.FeatureID)
 	sources := []FeatureSource{}
@@ -129,7 +129,7 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	if feature == nil {
 		for index := range product.Features {
 			if product.Features[index].Code == payload.Code {
-				return Invalid("feature_code_duplicate", "Feature codes must be unique within a Product.")
+				return Invalid("feature_code_duplicate")
 			}
 		}
 		product.Features = append(product.Features, Feature{
@@ -137,9 +137,9 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 		})
 		feature = &product.Features[len(product.Features)-1]
 	} else if feature.Status != FeatureDraft {
-		return Invalid("feature_locked", "A confirmed, delivering, or installed Feature cannot be replaced; create a new Feature for new requirements.")
+		return Invalid("feature_locked")
 	} else if feature.Code != payload.Code {
-		return Invalid("feature_code_immutable", "A Feature code is immutable after creation.")
+		return Invalid("feature_code_immutable")
 	}
 	draftVersion := uint64(1)
 	if feature.Draft != nil {
@@ -183,17 +183,17 @@ func confirmFeature(product *Product, command Command, now time.Time) error {
 		return NotFound("Feature", payload.FeatureID)
 	}
 	if feature.Status != FeatureDraft || feature.Draft == nil {
-		return Invalid("feature_not_draft", "Only a Feature with active discovery can be confirmed.")
+		return Invalid("feature_not_draft")
 	}
 	if payload.DraftVersion == 0 || payload.DraftVersion != feature.Draft.Version {
-		return Invalid("feature_draft_stale", "Feature discovery changed; read the latest draft before confirming it.")
+		return Invalid("feature_draft_stale")
 	}
 	draft := feature.Draft
 	if draft.BaselineProductRevision != product.CurrentDefinitionRevision || draft.BaselineProductRevision != product.CurrentReleaseRevision {
-		return Invalid("feature_baseline_stale", "Feature discovery is based on an old ProductRevision; reopen it against the current Product baseline before confirmation.")
+		return Invalid("feature_baseline_stale")
 	}
 	if draft.Readiness.Status != "ready" || len(draft.Readiness.BlockingSections) > 0 || len(draft.Readiness.BlockingIssues) > 0 {
-		return Invalid("feature_specification_incomplete", "Resolve every material requirement concern before confirming the Feature.")
+		return Invalid("feature_specification_incomplete")
 	}
 	number := feature.CurrentRevision + 1
 	feature.Revisions = append(feature.Revisions, FeatureRevision{
@@ -235,7 +235,7 @@ func productFeatureRevision(product *Product, payload productFeaturePayload) (*F
 		return nil, nil, NotFound("Feature", payload.FeatureID)
 	}
 	if payload.FeatureRevision == 0 || payload.FeatureRevision != feature.CurrentRevision {
-		return nil, nil, Invalid("feature_revision_stale", "The Feature revision changed; read it again before submitting.")
+		return nil, nil, Invalid("feature_revision_stale")
 	}
 	return feature, &feature.Revisions[len(feature.Revisions)-1], nil
 }

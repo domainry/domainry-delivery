@@ -41,7 +41,7 @@ func (store *Store) StartDelivery(
 SELECT run_id FROM delivery_runs WHERE workspace_id = ? AND run_id = ?
 `, workspaceID, deliveryRunID).Scan(&existingRunID)
 		if err == nil {
-			return startDeliveryResult{}, domain.Invalid("delivery_run_exists", "The delivery run already exists.")
+			return startDeliveryResult{}, domain.Invalid("delivery_run_exists")
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return startDeliveryResult{}, storageError(err)
@@ -52,7 +52,7 @@ SELECT run_id FROM delivery_runs WHERE workspace_id = ? AND run_id = ?
 			return startDeliveryResult{}, err
 		}
 		if run.ID != deliveryRunID || run.WorkspaceID != workspaceID || run.Product.ID != productID {
-			return startDeliveryResult{}, domain.Invalid("delivery_run_identity_invalid", "The created delivery run does not match the requested resource identity.")
+			return startDeliveryResult{}, domain.Invalid("delivery_run_identity_invalid")
 		}
 		product.Revision = actualRevision + 1
 		if err := store.insertRunState(ctx, transaction, run); err != nil {

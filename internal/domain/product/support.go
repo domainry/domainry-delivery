@@ -37,7 +37,7 @@ func decode(payload json.RawMessage, target any) error { return domain.Decode(pa
 func clone[T any](value T) T                           { return domain.Clone(value) }
 func cleanStrings(values []string) []string            { return domain.CleanStrings(values) }
 func validGitRevision(value string) bool               { return domain.ValidGitRevision(value) }
-func Invalid(code, message string) error               { return domain.Invalid(code, message) }
+func Invalid(code string) error                        { return domain.Invalid(code) }
 func NotFound(entity, id string) error                 { return domain.NotFound(entity, id) }
 
 const CommandTargetProduct = commanddomain.TargetProduct

@@ -3,13 +3,15 @@
 Deck executes PM, RD, QA and OP as local roles in its embedded runtime. Those
 roles propose typed Delivery commands; they are not independent services and a
 prompt never grants authority. Rust orchestration rereads the current Delivery
-projection, checks `available_actions` and revision, then submits through the
-Delivery SDK. TypeScript is presentation-only.
+projection, checks `available_actions` and revision, then submits a closed Rust
+command DTO that mirrors the independent Delivery SDK contract. Dynamic Agent
+tool input is strictly decoded into that DTO before HTTP; TypeScript is
+presentation-only.
 
 ## Source ownership
 
-Agent owns Conversation, Run, source access, decision provenance and artifact
-bytes. Delivery owns only immutable lineage values:
+Agent owns Conversation, Run, source access and artifact bytes. Delivery owns
+Feature decision identity/state and freezes immutable lineage values:
 
 - `conversation_id` and `run_id`;
 - the optional `before_step` boundary;

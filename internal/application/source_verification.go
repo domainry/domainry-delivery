@@ -22,7 +22,7 @@ func (service *Service) verifyProductCommandSources(ctx context.Context, workspa
 		Source product.FeatureSource `json:"source"`
 	}
 	if err := json.Unmarshal(command.Payload, &payload); err != nil {
-		return domain.Invalid("payload_invalid", "The command payload is invalid.")
+		return domain.Invalid("payload_invalid")
 	}
 	source := payload.Source
 	source.ConversationID = strings.TrimSpace(source.ConversationID)
@@ -30,7 +30,7 @@ func (service *Service) verifyProductCommandSources(ctx context.Context, workspa
 	source.SourceIDs = normalizedIdentities(source.SourceIDs)
 	source.DecisionIDs = normalizedIdentities(source.DecisionIDs)
 	if service.ports.Sources == nil || strings.TrimSpace(service.ports.SourceRuntimeID) == "" {
-		return domain.Invalid("feature_source_verifier_unavailable", "The Agent source owner is not configured; Feature lineage cannot be committed.")
+		return domain.Invalid("feature_source_verifier_unavailable")
 	}
 	request := agentsdk.ConversationSourceVerificationRequest{
 		References: []agentsdk.ConversationRunReference{{ConversationID: source.ConversationID, RunID: source.RunID, BeforeStep: source.BeforeStep}},
@@ -42,10 +42,10 @@ func (service *Service) verifyProductCommandSources(ctx context.Context, workspa
 	}
 	receipt, err := service.ports.Sources.VerifyConversationSources(ctx, request)
 	if err != nil {
-		return domain.Invalid("feature_source_unverified", "The Agent source owner rejected the Feature lineage or current reader access.")
+		return domain.Invalid("feature_source_unverified")
 	}
 	if strings.TrimSpace(receipt.WorkspaceID) != request.Reader.WorkspaceID || receipt.VerifiedAt.IsZero() || len(receipt.References) != 1 || receipt.References[0] != request.References[0] || !sameIdentities(receipt.SourceIDs, request.SourceIDs) {
-		return domain.Invalid("feature_source_receipt_invalid", "The Agent source verification receipt does not match the submitted Feature lineage.")
+		return domain.Invalid("feature_source_receipt_invalid")
 	}
 	return nil
 }

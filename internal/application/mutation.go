@@ -43,11 +43,11 @@ func executeMutation[T any](
 ) (T, error) {
 	var zero T
 	if command.ClientID == "" {
-		return zero, domain.Invalid("client_id_required", "Every write requires client_id.")
+		return zero, domain.Invalid("client_id_required")
 	}
 	definition, ok := commanddomain.DefinitionFor(command.Type)
 	if !ok || definition.Target != scope.Target {
-		return zero, domain.Invalid("command_unknown", "The command is not supported for this target.")
+		return zero, domain.Invalid("command_unknown")
 	}
 	var forcedKind *domain.ActorKind
 	if len(definition.AllowedActors) == 1 && definition.AllowedActors[0] == domain.ActorSystem {
@@ -66,7 +66,7 @@ func executeMutation[T any](
 	}
 	fingerprint, err := commandFingerprint(command, scope.FingerprintIdentity...)
 	if err != nil {
-		return zero, domain.Invalid("command_invalid", "The command could not be canonicalized.")
+		return zero, domain.Invalid("command_invalid")
 	}
 	now := service.now()
 	return commit(command, mutation(command, fingerprint, now), now)
