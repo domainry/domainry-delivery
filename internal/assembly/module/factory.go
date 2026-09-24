@@ -41,7 +41,7 @@ func (factory *Factory) OpenModule(ctx context.Context, reference deliverysdk.Ap
 		return nil, err
 	}
 	return &Binding{runtimeID: reference.RuntimeID, store: store, service: application.NewService(application.Ports{
-		Products: store, Runs: store, Lifecycle: store, Sources: host.ConversationSourceVerifier(), SourceRuntimeID: host.RuntimeID(),
+		Products: store, Runs: store, Lifecycle: store,
 	})}, nil
 }
 

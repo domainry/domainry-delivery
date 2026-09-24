@@ -30,9 +30,9 @@ type commandScope struct {
 
 // executeMutation is the owner-neutral application entry point for every
 // Delivery command. It freezes command identity and authorization before the
-// aggregate-specific transaction begins. External owner reads, such as Agent
-// source verification, run through verify before commit; Delivery currently
-// has no post-commit outbound effect to dispatch.
+// aggregate-specific transaction begins. Pure command-specific validation may
+// run through verify before commit; Delivery currently has no synchronous
+// external owner read or post-commit outbound effect to dispatch.
 func executeMutation[T any](
 	ctx context.Context,
 	service *Service,

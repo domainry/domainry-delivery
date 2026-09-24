@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	agentremote "github.com/domainry/domainry-agent-sdk/remote"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	identityhttpmiddleware "github.com/domainry/domainry-identity-sdk/httpmiddleware"
@@ -22,20 +21,9 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	sourceRuntimeID := env("AGENT_RUNTIME_ID", "")
-	if sourceRuntimeID == "" {
-		logger.Error("configure Agent source owner", "error", "AGENT_RUNTIME_ID is required")
-		os.Exit(1)
-	}
-	sourceVerifier, err := agentremote.NewConversationSourceVerifier(agentremote.ConversationSourceVerifierConfigFromEnvironment())
-	if err != nil {
-		logger.Error("configure Agent source owner", "error", err)
-		os.Exit(1)
-	}
 	databaseDriver := env("DELIVERY_DB_DRIVER", "sqlite")
 	applicationRuntime, err := deliverysaas.Open(context.Background(), deliverysaas.DatabaseConfig{
 		Driver: databaseDriver, MySQLDSN: os.Getenv("DELIVERY_MYSQL_DSN"), SQLitePath: env("DELIVERY_DB", "data/domainry-delivery.db"),
-		SourceRuntimeID: sourceRuntimeID, Sources: sourceVerifier,
 	})
 	if err != nil {
 		logger.Error("open delivery store", "error", err)

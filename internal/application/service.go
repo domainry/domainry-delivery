@@ -107,9 +107,7 @@ func (service *Service) DispatchProduct(ctx context.Context, workspaceID, produc
 	return executeMutation(ctx, service, commandScope{
 		Target: commanddomain.TargetProduct, WorkspaceID: workspaceID,
 		FingerprintIdentity: []string{workspaceID, "product", productID},
-	}, command, func(command domain.Command) error {
-		return service.verifyProductCommandSources(ctx, workspaceID, command.Actor, command)
-	}, func(command domain.Command, mutation Mutation, now time.Time) (product.Product, error) {
+	}, command, nil, func(command domain.Command, mutation Mutation, now time.Time) (product.Product, error) {
 		if command.Type == commanddomain.ProductCreate {
 			return service.ports.Products.CreateProduct(ctx, workspaceID, productID, mutation, command.ExpectedRevision, func() (product.Product, error) {
 				return product.NewProduct(workspaceID, productID, command, now)

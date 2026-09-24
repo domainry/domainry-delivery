@@ -124,6 +124,48 @@ func TestDomainAndApplicationDoNotChooseConcreteIO(t *testing.T) {
 	}
 }
 
+func TestDeliveryHasNoAgentRuntimeDependency(t *testing.T) {
+	root := repositoryRoot(t)
+	moduleFile, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(moduleFile), "github.com/domainry/domainry-agent") {
+		t.Fatal("Delivery module must not depend on Agent or Agent SDK")
+	}
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == ".idea" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") {
+			return nil
+		}
+		parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, imported := range parsed.Imports {
+			name, err := strconv.Unquote(imported.Path.Value)
+			if err != nil {
+				return err
+			}
+			if strings.HasPrefix(name, "github.com/domainry/domainry-agent") {
+				t.Errorf("%s imports Agent runtime contract %s", strings.TrimPrefix(path, root+string(filepath.Separator)), name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDomainErrorsRemainSemantic(t *testing.T) {
 	root := repositoryRoot(t)
 	err := filepath.WalkDir(filepath.Join(root, "internal", "domain"), func(path string, entry os.DirEntry, walkErr error) error {

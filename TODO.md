@@ -1,6 +1,6 @@
 # Domainry Delivery 架构重构 TODO
 
-状态：代码重构与测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；dev 发布已完成构建、推镜像和 Argo 同步，但 Pod 因缺少数据库 Secret 无法创建容器。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
+状态：代码重构与测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；Delivery 已删除对 Agent 服务的反向运行依赖。dev 发布已完成构建、推镜像和 Argo 同步，但环境侧 MySQL 与 Identity 运行配置尚未提供。`[x]` 表示已有代码和测试证据，`[ ]` 表示仍有真实缺口或外部发布前置条件。
 
 本清单是后续重构的唯一执行顺序。只有代码、架构门禁、定向测试和跨仓消费者同时完成，任务才能勾选；不保留旧命令、旧数据库、旧 HTTP 合同或双运行分支。
 
@@ -24,7 +24,7 @@
 - [x] **A04：SDK 必须独立于实现仓库。** 当前根目录 `sdk.go` import `internal/domain/delivery` 并用 type alias 暴露内部模型；调用方实际依赖的是实现仓库，SDK 无法独立发布，也无法阻止内部字段泄漏。
 - [x] **A05：Module/SaaS 必须共享行为而隔离组装。** 当前 `module.Host` 只有 `Database() *sql.DB`，Module 自己假设 SQLite 并执行裸 DDL；它没有 RuntimeID、Dialect、MigrationRegistrar、Factory/ApplicationRef，也没有私有 module/saas assembly。
 - [x] **A06：所有写入必须走同一命令内核。** Product 与 DeliveryRun 命令有 receipt，但附件增删没有 `client_id`；StartDelivery 的 fingerprint 不含 URL 中的 `delivery_run_id`，重放时还读取当前 Run，而不是返回第一次提交的原始结果。根因是幂等、并发与响应 receipt 被分散到各 Repository 方法实现。
-- [x] **A07：Agent 与 Delivery 的数据所有权必须一致。** Delivery 已删除附件 BLOB 和内容路由；Deck 将本地 PM 结构化回合发布到 Agent durable Conversation/Run，并把 Agent 签发的 canonical source 交给 Delivery。附件字节进入 Agent Conversation attachment，Deck 只保存本地 thread 映射、metadata index 与缓存，Delivery domain 只负责 Feature decision/source 引用闭包。
+- [x] **A07：Agent 与 Delivery 的数据所有权必须一致，但不能形成反向运行依赖。** Delivery 已删除附件 BLOB、内容路由和同步 Agent source verifier；Deck 将本地 PM 结构化回合发布到 Agent durable Conversation/Run，并把 Agent 签发的 canonical source 交给 Delivery。附件字节进入 Agent Conversation attachment，Deck 只保存本地 thread 映射、metadata index 与缓存，Delivery domain 只负责 Feature decision/source 引用完整性与闭包。Agent 不在线不会阻止 Delivery 启动或处理其他生命周期命令。
 - [x] **A08：Feature 基线不能被静默改写。** FeatureRevision 已冻结 `baseline_product_revision`，但 `NewDeliveryRun` 把当前 release revision 写入 Run 引用，没有拒绝过期 Feature；授权角色还会从其他草稿和未安装 Feature 中汇总，未发布需求因此会污染当前基线。
 - [x] **A09：代码与持久化边界需要拆分。** `engine.go`、`product_engine.go`、`store.go` 都接近或超过 900 行；完整 Product/DeliveryRun 以单个 JSON BLOB 重写，命令、权限、actor、投影和文档又分别维护字符串清单，任何新增行为都需要修改多个无编译关联的位置。
 
@@ -36,12 +36,12 @@
 | --- | --- | --- |
 | `domainry-delivery-sdk` | Delivery 公共 DTO、command/error/receipt、Module/SaaS host 边界和合同测试 | 领域状态机、Store、HTTP 实现 |
 | `domainry-delivery` | Product、ProductRevision、Feature、FeatureRevision、DeliveryRun/Unit、QA/Acceptance/Release 状态机与持久化 | Conversation/Run、artifact bytes、产品 Runtime 启动、Jenkins/Kubernetes 配置 |
-| `domainry-agent-sdk` | Conversation/Run/source/artifact 的窄验证合同 | Delivery decision DTO、领域状态机 |
+| `domainry-agent-sdk` | Conversation/Run/source/artifact 的发布与访问合同、canonical source identity | Delivery decision DTO、领域状态机、Delivery host port |
 | `domainry-agent` | Conversation、Run、source/artifact 归属、访问控制与可读性 | Product/Feature/DeliveryRun 状态和 Feature decision identity |
 | `domainry-deck` | 本地 PM/RD/QA/OP Agent Runtime roles、项目源码/缓存/outbox/thread state、Runtime/Mock/journey 真实检查与 evidence 生成 | Delivery 状态转换、Delivery 持久化、伪造系统验证结果 |
 | `devops` | Jenkins job、镜像发布、Argo CD/Kubernetes dev 部署与 MySQL/Identity/Agent secret 引用 | Delivery 业务逻辑和密钥明文 |
 
-关键调用方向：`Deck -> Agent (source/artifact owner)`，`Deck -> Delivery (command/evidence reference)`，`Delivery -> Agent verifier (confirm lineage/access)`；`devops -> Delivery SaaS` 只负责组装和发布。Delivery 不能因为要验收一个事实，就反向拥有产生该事实的能力。
+关键调用方向：`Deck -> Agent (publish source/artifact)`，`Deck -> Delivery (command/evidence reference)`；`devops -> Delivery SaaS` 只负责组装和发布。Delivery 不反向调用 Agent：它保存生产者提交的精确不可变引用并验证自己的业务闭包，不能因为要验收一个事实，就依赖产生该事实的服务在线。
 
 ### 独立 `domainry-delivery-sdk`
 
@@ -131,8 +131,8 @@ domainry-delivery/
 ### R04：修正 Agent source 与 artifact 所有权
 
 - [x] R04.1 删除 Delivery 附件 BLOB 表、上传/下载内容接口和 `FeatureAttachmentContent`；Delivery 只保留不可变 artifact/source reference、hash、media metadata 与来源身份。
-- [x] R04.2 先检查当前 `domainry-agent-sdk` 是否已有满足 Conversation/Run/source/artifact 验证的窄 contract；能复用就直接依赖 SDK，不能复用才先在 Agent SDK 增加 source-verifier contract。Feature decision identity 明确归 Delivery，不进入 Agent contract。
-- [x] R04.3 application 层通过 Agent owner contract 验证 canonical source 存在、属于当前 Workspace、调用者可读，并与 Conversation、Run、BeforeStep 一致；Delivery domain 再验证当前 source 声明的 decision IDs 精确匹配、全部 evidence/role/decision source 都闭合到已验证来源。两边均不代替对方拥有业务事实。
+- [x] R04.2 `domainry-agent-sdk` 只保留 source publication 与 canonical identity 能力；Delivery SDK `modulehost.Host` 不暴露 Agent verifier，Delivery 实现仓库不依赖 Agent SDK。Feature decision identity 明确归 Delivery，不进入 Agent contract。
+- [x] R04.3 Deck 先以当前 Workspace/用户身份把完成的 PM turn 发布给 Agent owner并取得 canonical source identity，再把精确 Conversation、Run、BeforeStep 与 source IDs 提交给 Delivery。Delivery domain 校验引用完整性、当前 source 的 decision IDs 精确匹配，以及全部 evidence/role/decision source 闭合；Delivery 写事务不跨网络读取 Agent。
 - [x] R04.4 FeatureRevision 继续冻结形成需求的全部 Conversation、Run、BeforeStep、source 和 decision 引用；确认后任何引用不得被替换。
 - [x] R04.5 Deck 不再向 Delivery 上传本地文件内容，也不上传本地路径；它先把 attachment 交给 Agent owner，把材料纳入 Agent-owned durable PM turn，再向 Delivery 提交该 Run 的 canonical source reference。Deck-owned 本地索引只保存 Agent identity/metadata 与缓存路径。
 
@@ -192,7 +192,7 @@ domainry-delivery/
 ### R09：架构门禁与最终验收
 
 - [x] R09.1 新增 `internal/architecture/layout_test.go`，检查目标目录、薄 module facade、标准 Go 文件名与私有实现位置。
-- [x] R09.2 新增 import gate：domain/application 禁止具体 I/O和外部实现；SDK 禁止实现依赖；非 `cmd`/assembly 禁止选择 Identity/Agent 等具体实现；禁止跨模块 internal import。
+- [x] R09.2 新增 import gate：domain/application 禁止具体 I/O和外部实现；SDK 禁止实现依赖；非 `cmd`/assembly 禁止选择 Identity 等具体实现；禁止跨模块 internal import。Delivery 的所有层均不 import Agent SDK。
 - [x] R09.3 新增 mutation entrypoint inventory，列出所有强一致写入口、owner、permission、receipt、transaction 和外部 effect；测试拒绝未知入口与 repository bypass。
 - [x] R09.4 新增 schema ownership 测试，证明 Module 与 SaaS 执行同源 Delivery migrations，宿主/Runtime 不复制 Delivery DDL，SDK 不接受 Store。
 - [x] R09.5 新增完整领域验收：ProductStory+Definition 原子 revision、精确 Feature lineage、stale baseline、typed backend evidence、QA/acceptance、release、deployment unknown/reconcile、atomic install、idempotent replay 和 optimistic conflict。
@@ -206,17 +206,17 @@ domainry-delivery/
 
 - [x] R10.1 Delivery 提供多阶段 `Dockerfile` 和 `.dockerignore`，镜像运行非 root 静态 Linux 二进制，本地已通过 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build`。
 - [x] R10.2 在独立 `devops` 仓库增加 `jenkins-configs/domainry-delivery-dev.yaml` 和 `domainry-delivery/k8s/dev/Jenkinsfile`，复用现有 shared library、ECR 和 Argo CD 流程。
-- [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql` 和 secret-backed `DELIVERY_MYSQL_DSN`，Identity/Agent 也只引用 Kubernetes Secret，仓库不保存明文密钥；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
+- [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql`。参照 Japan Office 当前的环境配置所有权模式，由环境侧维护 `domainry-delivery-dev-config/runtime.env`，Pod 启动时从九个 `MYSQL_*` 字段组装 DSN；数据库必须由平台预先创建，应用与 Pod 不创建或改写数据库。Delivery 只复用该模式，不复用 Japan Office 的数据库、数据或凭据。Identity 引用独立 Kubernetes Secret；Delivery 没有 Agent endpoint/token 配置。仓库不保存明文配置；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
-- [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret。Jenkins build #2 已逐一确认三组对象全部不存在，Jenkins 全局凭据目录也没有对应服务配置；build #4 进一步只读列举相关资源名，证明现有 `agent-service-dev` 属于 `codeck-backend/agent` 而非 `domainry/domainry-agent`，`kb-wiki-database` 是端口 5432 的 PostgreSQL，且没有 Identity/MySQL Service 候选，因此不能通过改 Secret 名称复用。本机 `eks-verdent-dev` context 未登录且没有真实值，不能伪造凭据。
+- [ ] R10.5 在 `verdent-dev` 创建环境所有的 `domainry-delivery-dev-config` ConfigMap 和 `domainry-delivery-identity` Secret。ConfigMap 必须选择平台预先创建的 Delivery 专用 MySQL database；不允许指向 Japan Office 业务库。此前 Jenkins build 已确认环境中没有可复用的 MySQL/Identity 配置；`kb-wiki-database` 是 PostgreSQL，不能通过改名称复用。本机 `eks-verdent-dev` context 未登录且没有真实值，不能伪造配置。
 - [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行：build #1 成功构建并推送 Delivery 镜像、创建 Argo CD Application，Service/Ingress 同步健康，但 Deployment 因 R10.5 为 Degraded；build #2/#3/#4 复用同一 ECR digest，并在约 100 秒内通过 Secret/key 门禁于 Argo 同步前失败。共享流水线已支持由产品配置声明默认 tag，build #3 后已从 Jenkins 参数页验证 Delivery 默认值确实为 `v0.1.5`，不再回落到 `v0.0.1`。
-- [ ] R10.7 Argo CD 当前已同步 devops `main` 清单且 Deployment image 为 `v0.1.5`，但 Pod 是 `CreateContainerConfigError`，尚不能从集群外执行 `/healthz`、descriptor、Identity 认证、MySQL 写入/重启持久化和 Agent source-verifier 写入旅程。
+- [ ] R10.7 Argo CD 当前已同步 devops `main` 清单且 Deployment image 为 `v0.1.5`，但 Pod 是 `CreateContainerConfigError`，尚不能从集群外执行 `/healthz`、descriptor、Identity 认证和 MySQL 写入/重启持久化旅程。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
 
 ## 4. 当前不得假装完成的缺口
 
-1. **外部 dev 发布的根阻塞是完整运行依赖未就绪，不是代码、镜像或 Argo 配置。** 三组 Secret 均不存在，集群内也没有可安全复用的 Domainry Identity、Domainry Agent source-verifier 或 MySQL Service；同名 Agent 候选属于另一代码库，数据库候选是 PostgreSQL。需要平台先提供专用 MySQL database、已登记的 Identity workspace/application/service credential，以及 `domainry/domainry-agent` 的可达 source-verifier 与凭据，再创建三组 Secret。本机 Kubernetes context 未登录、AWS CLI 无身份，Jenkins 也没有对应服务凭据，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
+1. **外部 dev 发布的根阻塞只剩环境拥有的 MySQL 与 Identity，不是 Agent、代码、镜像或 Argo 配置。** Japan Office 解决的是“配置由环境拥有”的模式，不会为 Delivery 提供可复用的数据库或身份。当前数据库候选是 PostgreSQL，也没有可安全复用的 Domainry Identity 配置。需要平台先提供 Delivery 专用 MySQL database 和已登记的 Identity workspace/application/service credential，再创建一组 ConfigMap 和一组 Secret。本机 Kubernetes context 未登录、AWS CLI 无身份，Jenkins 也没有对应配置，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
 ## 5. 推荐落地批次
 
 1. **批次一：R00 + R01 + R03** — 先消灭双状态机并闭合 ProductRevision。这是当前会制造错误业务状态的根因。

@@ -12,9 +12,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
-	agentsdk "github.com/domainry/domainry-agent-sdk"
 	deliverysdk "github.com/domainry/domainry-delivery-sdk"
 	"github.com/domainry/domainry-delivery-sdk/modulehost"
 	deliveryremote "github.com/domainry/domainry-delivery-sdk/remote"
@@ -44,20 +42,8 @@ func (host databaseHost) RuntimeID() string                         { return "de
 func (host databaseHost) Database() sqlhost.Database                { return host.database }
 func (host databaseHost) Dialect() modulehost.Dialect               { return host.dialect }
 func (host databaseHost) Migrations() modulehost.MigrationRegistrar { return host.migrations }
-func (host databaseHost) ConversationSourceVerifier() agentsdk.ConversationSourceVerifier {
-	return acceptingSourceVerifier{}
-}
-
-type acceptingSourceVerifier struct{}
-
-func (acceptingSourceVerifier) VerifyConversationSources(_ context.Context, request agentsdk.ConversationSourceVerificationRequest) (agentsdk.ConversationSourceVerificationReceipt, error) {
-	return agentsdk.ConversationSourceVerificationReceipt{
-		WorkspaceID: request.Reader.WorkspaceID, References: request.References, SourceIDs: request.SourceIDs,
-		VerifiedAt: time.Now().UTC(),
-	}, nil
-}
-func (registrar *migrationRegistrar) Driver() string { return "sqlite" }
-func (registrar *migrationRegistrar) Schema() string { return "" }
+func (registrar *migrationRegistrar) Driver() string                { return "sqlite" }
+func (registrar *migrationRegistrar) Schema() string                { return "" }
 func (registrar *migrationRegistrar) ApplyOwnedMigrations(ctx context.Context, _ string, migrations []ormmigration.Migration) error {
 	for _, migration := range migrations {
 		for _, statement := range migration.Statements {
@@ -91,7 +77,7 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 	}
 	defer saasStore.Close()
 	saasHandler := httpapi.New(application.NewService(application.Ports{
-		Products: saasStore, Runs: saasStore, Lifecycle: saasStore, Sources: acceptingSourceVerifier{}, SourceRuntimeID: "delivery-contract-test",
+		Products: saasStore, Runs: saasStore, Lifecycle: saasStore,
 	}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-contract-test")
 	server := httptest.NewServer(contractAuthentication(saasHandler))
 	defer server.Close()

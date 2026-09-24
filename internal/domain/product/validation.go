@@ -82,8 +82,8 @@ func appendFeatureSource(sources []FeatureSource, source FeatureSource) []Featur
 }
 
 // validateCurrentFeatureSourceDecisions keeps Delivery-owned decision identity
-// out of the Agent source-verification contract. The current source declaration
-// must name exactly the decisions whose business evidence points at that source.
+// out of the Agent source contract. The current source declaration must name
+// exactly the decisions whose business evidence points at that source.
 func validateCurrentFeatureSourceDecisions(source FeatureSource, decisions []FeatureDecision) error {
 	expected := featureDecisionIDsForSources(decisions, source.SourceIDs)
 	actual := cleanStrings(source.DecisionIDs)
@@ -116,10 +116,10 @@ func featureDecisionIDsForSources(decisions []FeatureDecision, sourceIDs []strin
 	return cleanStrings(decisionIDs)
 }
 
-// validateFeatureLineageReferences is the Delivery half of provenance
-// verification: Agent proves the Conversation/Run/source identities exist and
-// are readable; Delivery proves every business fact and decision in the draft
-// is closed over those verified source identities.
+// validateFeatureLineageReferences enforces Delivery's provenance boundary:
+// every business fact and decision in the draft must close over the immutable
+// source identities supplied by the producer. Delivery preserves those opaque
+// references and does not read the Agent owner during its write transaction.
 func validateFeatureLineageReferences(discovery FeatureDiscovery, specification FeatureSpecification, decisions []FeatureDecision, sources []FeatureSource) error {
 	registered := map[string]bool{}
 	for _, source := range sources {

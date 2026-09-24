@@ -8,9 +8,10 @@ installation into the next ProductRevision.
 
 ## Ownership and module boundaries
 
-- `domainry-agent` owns conversations, runs, source access control, artifacts,
-  and interactive confirmation. Delivery stores immutable references, never
-  message bodies or attachment bytes.
+- `domainry-agent` owns conversations, runs, source publication, artifacts,
+  and interactive confirmation. Delivery stores the immutable references
+  supplied with a command, never message bodies or attachment bytes, and does
+  not require Agent to be online.
 - `domainry-delivery` owns Product, Feature, revision, lifecycle and release
   state. Every transition is validated by the domain layer.
 - `domainry-deck` runs the local PM/RD/QA/OP roles and submits typed Rust
@@ -67,14 +68,10 @@ Environment:
 - `DELIVERY_MYSQL_DSN`: Go MySQL driver DSN when the driver is `mysql`.
 - `IDENTITY_*`: the remote Identity SDK configuration. Development identity is
   deliberately restricted to loopback listeners.
-- `AGENT_ENDPOINT`, `AGENT_RUNTIME_ID`, `AGENT_SERVICE_ACCESS_TOKEN`,
-  `AGENT_USER_AGENT`: the
-  Agent-owned source verification endpoint and service credential. SaaS startup
-  fails closed when this owner boundary is unavailable.
-
 The dev Kubernetes configuration lives in the separate devops repository at
-`domainry-delivery/k8s/dev`. It uses MySQL, secret-backed database and Identity
-configuration, Jenkins image builds, ECR, and Argo CD; no secrets are committed.
+`domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
+Identity configuration, Jenkins image builds, ECR, and Argo CD; no environment
+values are committed.
 
 ## Verify
 

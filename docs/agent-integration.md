@@ -19,10 +19,13 @@ Feature decision identity/state and freezes immutable lineage values:
 - exact `decision_ids`.
 
 Delivery never accepts a local path and has no attachment upload/download or
-BLOB table. A source-owner verifier must confirm existence, Workspace scope,
-current reader access and the run boundary before `feature.discovery.replace`
-can commit. Feature confirmation copies the verified lineage into the immutable
-FeatureRevision; it cannot later be replaced.
+BLOB table. Deck first publishes the completed PM turn to Agent and receives
+the canonical immutable source identity, then submits that exact reference in
+`feature.discovery.replace`. Delivery validates reference completeness and the
+closure between business facts, decisions and source identities, but it does
+not synchronously read Agent during its write transaction. Feature confirmation
+copies the lineage into the immutable FeatureRevision; it cannot later be
+replaced.
 
 ## Delivery lifecycle
 

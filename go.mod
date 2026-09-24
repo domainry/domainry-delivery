@@ -8,8 +8,7 @@ require (
 )
 
 require (
-	github.com/domainry/domainry-agent-sdk v0.1.29
-	github.com/domainry/domainry-delivery-sdk v0.1.5
+	github.com/domainry/domainry-delivery-sdk v0.1.6
 	github.com/domainry/domainry-foundation v0.1.40
 	github.com/domainry/domainry-identity-sdk v0.1.17
 	github.com/domainry/domainry-orm v0.1.31
@@ -18,10 +17,6 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/domainry/domainry-integration-sdk v0.1.11 // indirect
-	github.com/domainry/domainry-report-sdk v0.1.15 // indirect
-	github.com/domainry/domainry-todo-sdk v0.1.5 // indirect
-	github.com/domainry/domainry-tools-sdk v0.1.9 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

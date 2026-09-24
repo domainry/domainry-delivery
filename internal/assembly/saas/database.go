@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	agentsdk "github.com/domainry/domainry-agent-sdk"
 	"github.com/domainry/domainry-delivery/internal/application"
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
 	deliverymysql "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/mysql"
@@ -13,11 +12,9 @@ import (
 )
 
 type DatabaseConfig struct {
-	Driver          string
-	MySQLDSN        string
-	SQLitePath      string
-	SourceRuntimeID string
-	Sources         agentsdk.ConversationSourceVerifier
+	Driver     string
+	MySQLDSN   string
+	SQLitePath string
 }
 
 type Application struct {
@@ -41,7 +38,7 @@ func Open(ctx context.Context, config DatabaseConfig) (*Application, error) {
 		return nil, err
 	}
 	return &Application{Service: application.NewService(application.Ports{
-		Products: store, Runs: store, Lifecycle: store, Sources: config.Sources, SourceRuntimeID: strings.TrimSpace(config.SourceRuntimeID),
+		Products: store, Runs: store, Lifecycle: store,
 	}), store: store}, nil
 }
 
