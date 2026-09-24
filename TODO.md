@@ -208,15 +208,15 @@ domainry-delivery/
 - [x] R10.2 在独立 `devops` 仓库增加 `jenkins-configs/domainry-delivery-dev.yaml` 和 `domainry-delivery/k8s/dev/Jenkinsfile`，复用现有 shared library、ECR 和 Argo CD 流程。
 - [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql` 和 secret-backed `DELIVERY_MYSQL_DSN`，Identity/Agent 也只引用 Kubernetes Secret，仓库不保存明文密钥；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
-- [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret。Jenkins build #1 的真实 Pod event 已确认 `domainry-delivery-database` 不存在；Kubernetes 在第一个缺失引用处停止，所以另外两个 Secret 仍须逐一验证。本机保留 `eks-verdent-dev` context，但 API 返回未登录，且没有 Secret 值，因此不伪造或输出凭据。
-- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行 build #1：Delivery 镜像成功构建并推送到 ECR，Argo CD Application 创建且 Service/Ingress 同步健康；Deployment 因 R10.5 缺少数据库 Secret 为 Degraded，流水线无法成功。Jenkinsfile 已增加三组 Secret 的部署前置存在性检查，后续缺配置会在 Argo 同步前直接失败。
+- [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret。Jenkins build #2 已通过只读预检逐一确认三组 Secret 对象全部不存在；Jenkins 全局凭据目录也没有这三组服务配置。本机保留 `eks-verdent-dev` context，但 API 返回未登录，且没有 Secret 值，因此不伪造或输出凭据。
+- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并用 immutable tag `v0.1.5` 执行两次：build #1 成功构建并推送 Delivery 镜像、创建 Argo CD Application，Service/Ingress 同步健康，但 Deployment 因 R10.5 为 Degraded；build #2 复用同一 ECR digest，并在约 100 秒内通过 Secret/key 门禁于 Argo 同步前失败。共享流水线已支持由产品配置声明默认 tag，Delivery 默认值固定为 `v0.1.5`，避免回落到 `v0.0.1`。
 - [ ] R10.7 Argo CD 当前已同步 devops `main` 清单且 Deployment image 为 `v0.1.5`，但 Pod 是 `CreateContainerConfigError`，尚不能从集群外执行 `/healthz`、descriptor、Identity 认证、MySQL 写入/重启持久化和 Agent source-verifier 写入旅程。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
 
 ## 4. 当前不得假装完成的缺口
 
-1. **外部 dev 发布的根阻塞是运行 Secret，不是代码、镜像或 Argo 配置。** Jenkins build #1 已把 `v0.1.5` 镜像推送到 ECR 并同步 Argo；当前 Pod event 明确报 `secret "domainry-delivery-database" not found`。本机 Kubernetes context 未登录、AWS CLI 无身份，也没有三组 Secret 的真实值，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
+1. **外部 dev 发布的根阻塞是运行 Secret，不是代码、镜像或 Argo 配置。** Jenkins build #1 已把 `v0.1.5` 镜像推送到 ECR 并同步 Argo；build #2 又以只读预检确认 `domainry-delivery-database`、`domainry-delivery-identity`、`domainry-delivery-agent` 全部不存在。本机 Kubernetes context 未登录、AWS CLI 无身份，Jenkins 也没有对应服务凭据，因此不能替平台伪造配置或声称 R10.5-R10.7 已完成。
 ## 5. 推荐落地批次
 
 1. **批次一：R00 + R01 + R03** — 先消灭双状态机并闭合 ProductRevision。这是当前会制造错误业务状态的根因。
