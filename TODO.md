@@ -208,15 +208,15 @@ domainry-delivery/
 - [x] R10.2 在独立 `devops` 仓库增加 `jenkins-configs/domainry-delivery-dev.yaml` 和 `domainry-delivery/k8s/dev/Jenkinsfile`，复用现有 shared library、ECR 和 Argo CD 流程。
 - [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql` 和 secret-backed `DELIVERY_MYSQL_DSN`，Identity/Agent 也只引用 Kubernetes Secret，仓库不保存明文密钥；本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
-- [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret；本机当前没有这些凭据，不伪造值。
-- [ ] R10.6 在 Jenkins 创建/更新 dev job 并运行一次成功 pipeline；当前 Jenkins/AWS/Argo/Kubernetes 认证在本任务中不可用。
+- [ ] R10.5 在 `verdent-dev` 创建 `domainry-delivery-database`、`domainry-delivery-identity` 和 `domainry-delivery-agent` 三个 Secret；本机保留 `eks-verdent-dev` context，但 API 返回未登录，且没有 Secret 值，因此不伪造或输出凭据。
+- [ ] R10.6 Jenkins `domainry-delivery-dev` Job 已创建并核验：项目仓库、devops Pipeline SCM、`domainry-delivery/k8s/dev/Jenkinsfile` 和默认 immutable tag `v0.1.5` 均正确；在 R10.5 的三组 Secret 可验证前不触发必然失败的 pipeline。
 - [ ] R10.7 Argo CD 同步后从集群外执行 `/healthz`、descriptor、Identity 认证、MySQL 写入/重启持久化和 Agent source-verifier 写入旅程。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
 
 ## 4. 当前不得假装完成的缺口
 
-1. **外部 dev 发布仍缺凭据。** 仓库内 Jenkins、Argo CD、Kubernetes 和 MySQL 配置及本地 MySQL 重启验收已完成，但当前环境没有 `verdent-dev` Secret、Jenkins、AWS、Argo CD 或 Kubernetes 凭据，因此 R10.5-R10.7 不能勾选。
+1. **外部 dev 发布仍缺运行 Secret 与集群身份。** Jenkins UI 已有登录态，`domainry-delivery-dev` Job 已按 tag `v0.1.5` 配置；但本机 Kubernetes context 未登录、AWS CLI 无身份，也没有 `verdent-dev` 三组 Secret 的值，因此不能安全触发 pipeline 或声称 R10.5-R10.7 已完成。
 ## 5. 推荐落地批次
 
 1. **批次一：R00 + R01 + R03** — 先消灭双状态机并闭合 ProductRevision。这是当前会制造错误业务状态的根因。
