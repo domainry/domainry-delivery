@@ -4,7 +4,7 @@ go 1.26.0
 
 require modernc.org/sqlite v1.57.0
 
-require github.com/domainry/domainry-identity-sdk v0.1.16
+require github.com/domainry/domainry-identity-sdk v0.1.17
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
