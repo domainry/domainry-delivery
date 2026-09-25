@@ -19,7 +19,7 @@ func newDeliveryUnits(feature FeatureSnapshot) ([]DeliveryUnit, string) {
 		FrontendStatus:    DeliveryGatePending,
 		ContractStatus:    DeliveryGatePending,
 		JourneyStatus:     DeliveryGatePending,
-		DevelopmentTodos:  newDevelopmentTodos(feature),
+		DevelopmentTodos:  []DevelopmentTodo{},
 	}
 	return []DeliveryUnit{unit}, unit.ID
 }
@@ -38,6 +38,9 @@ func deliveryUnitActions(run *DeliveryRun) ([]AvailableAction, bool) {
 	}
 	_ = actorKind // catalog is the single source of projected actor metadata.
 	actions := []AvailableAction{}
+	if len(unit.DevelopmentTodos) == 0 && unit.Phase == DeliveryUnitInteractionModeling {
+		return []AvailableAction{catalogAction(commandDevelopmentTodosInit, unit.ID)}, true
+	}
 	if todo := activeDevelopmentTodo(unit); todo != nil && unit.ActiveRole != "system" {
 		actions = append(actions, catalogAction(commandDevelopmentTodoComplete, todo.ID))
 	}
@@ -113,6 +116,9 @@ func lifecycleActions(run *DeliveryRun) []AvailableAction {
 }
 
 func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) (bool, error) {
+	if command.Type == commandDevelopmentTodosInit {
+		return true, initializeDevelopmentTodos(run, command, now)
+	}
 	if command.Type == commandDevelopmentTodoComplete {
 		return true, completeDevelopmentTodo(run, command, now)
 	}

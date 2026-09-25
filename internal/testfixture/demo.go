@@ -4,6 +4,7 @@
 package testfixture
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -236,5 +237,26 @@ func DemoDeliveryRun(now time.Time) deliveryrun.DeliveryRun {
 	if err != nil {
 		panic(err)
 	}
+	items := DemoDevelopmentTodoBatch()
+	payload, err := json.Marshal(map[string]any{"delivery_unit_id": run.ActiveDeliveryUnitID, "todos": items})
+	if err != nil {
+		panic(err)
+	}
+	if err := deliveryrun.Apply(&run, domain.Command{Actor: domain.Actor{ID: "planning-agent", Kind: domain.ActorAgent}, Type: "development_todos.initialize", Payload: payload}, now); err != nil {
+		panic(err)
+	}
 	return run
+}
+
+func DemoDevelopmentTodoBatch() []map[string]any {
+	return []map[string]any{
+		{"phase": "interaction_modeling", "category": "business_flow", "source_kind": "scenario", "source_id": "F-001-scenario", "title": "Model cancellation interaction", "detail": "Define the member cancellation interaction and outcome."},
+		{"phase": "domain_modeling", "category": "business_rules", "source_kind": "impact", "source_id": "F-001-impact", "title": "Model cancellation rules", "detail": "Define the cutoff and capacity release rules."},
+		{"phase": "model_verification", "category": "business_rules", "source_kind": "impact", "source_id": "F-001-impact", "title": "Verify cancellation model", "detail": "Verify the authoritative model semantics."},
+		{"phase": "backend_implementation", "category": "business_flow", "source_kind": "scenario", "source_id": "F-001-scenario", "title": "Implement cancellation service", "detail": "Implement and verify the cancellation transaction."},
+		{"phase": "frontend_convergence", "category": "member_experience", "source_kind": "scenario", "source_id": "F-001-scenario", "title": "Build cancellation experience", "detail": "Connect the member cancellation UI to the verified backend."},
+		{"phase": "contract_verification", "category": "quality_proof", "source_kind": "acceptance", "source_id": "F-001-acceptance-1", "title": "Verify cancellation contract", "detail": "Verify the integrated contract against the acceptance criteria."},
+		{"phase": "journey_testing", "category": "quality_proof", "source_kind": "acceptance", "source_id": "F-001-acceptance-1", "title": "Test successful cancellation", "detail": "Run the successful cancellation journey."},
+		{"phase": "journey_testing", "category": "quality_proof", "source_kind": "acceptance", "source_id": "F-001-acceptance-2", "title": "Test rejected cancellation", "detail": "Run the late cancellation journey."},
+	}
 }

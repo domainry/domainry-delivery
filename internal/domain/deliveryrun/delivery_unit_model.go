@@ -45,6 +45,7 @@ const (
 	commandContractVerify          = commanddomain.DeliveryUnitContractVerify
 	commandGapReport               = commanddomain.DeliveryUnitGapReport
 	commandJourneyComplete         = commanddomain.DeliveryUnitJourneyComplete
+	commandDevelopmentTodosInit    = commanddomain.DevelopmentTodosInitialize
 	commandDevelopmentTodoComplete = commanddomain.DevelopmentTodoComplete
 )
 
@@ -71,12 +72,14 @@ type DeliveryUnit struct {
 	DevelopmentTodos                 []DevelopmentTodo     `json:"development_todos"`
 }
 
-// DevelopmentTodo is the authoritative, durable progress item for one of the
-// seven development categories. Evidence is append-only so a later rework
-// route never erases what previously passed or why it was invalidated.
+// DevelopmentTodo is one ordered, authoritative unit of development work.
+// Category is batch-provided data rather than a fixed enum. Phase controls the
+// technical gate that owns the item and is not the Todo classification.
 type DevelopmentTodo struct {
 	ID         string                    `json:"id"`
+	Sequence   int                       `json:"sequence"`
 	Phase      DeliveryUnitPhase         `json:"phase"`
+	Category   string                    `json:"category"`
 	SourceKind string                    `json:"source_kind"`
 	SourceID   string                    `json:"source_id"`
 	Title      string                    `json:"title"`
@@ -193,6 +196,20 @@ type developmentTodoCompletePayload struct {
 	GitRevision    string   `json:"git_revision"`
 	Summary        string   `json:"summary"`
 	EvidenceRefs   []string `json:"evidence_refs"`
+}
+
+type developmentTodoInitializeItem struct {
+	Phase      DeliveryUnitPhase `json:"phase"`
+	Category   string            `json:"category"`
+	SourceKind string            `json:"source_kind"`
+	SourceID   string            `json:"source_id"`
+	Title      string            `json:"title"`
+	Detail     string            `json:"detail"`
+}
+
+type developmentTodosInitializePayload struct {
+	DeliveryUnitID string                          `json:"delivery_unit_id"`
+	Todos          []developmentTodoInitializeItem `json:"todos"`
 }
 
 // deliveryUnitResult is the normalized domain input after one of the three

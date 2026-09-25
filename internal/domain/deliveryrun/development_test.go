@@ -18,18 +18,33 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	if run.Feature.Discovery.Focus.Topic == "" {
 		t.Fatal("DeliveryRun discarded confirmed discovery facts")
 	}
-	phaseCategories := map[delivery.DeliveryUnitPhase]bool{}
-	for _, todo := range run.DeliveryUnits[0].DevelopmentTodos {
-		phaseCategories[todo.Phase] = true
+	todos := run.DeliveryUnits[0].DevelopmentTodos
+	if len(todos) != 8 || todos[0].Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("development Todo batch was not initialized: %#v", todos)
 	}
-	if len(phaseCategories) != 7 || len(run.DeliveryUnits[0].DevelopmentTodos) <= len(phaseCategories) || run.DeliveryUnits[0].DevelopmentTodos[0].Status != delivery.DevelopmentTodoInProgress {
-		t.Fatalf("new DeliveryRun has no authoritative seven-category development plan: %#v", run.DeliveryUnits[0].DevelopmentTodos)
-	}
-	for _, todo := range run.DeliveryUnits[0].DevelopmentTodos[1:] {
-		if todo.Status != delivery.DevelopmentTodoNotStarted || todo.Title == "" || todo.SourceID == "" {
+	categories := map[string]bool{}
+	for index, todo := range todos {
+		categories[todo.Category] = true
+		if todo.Sequence != index+1 || todo.Category == "" {
+			t.Fatalf("development Todo order or dynamic category was lost: %#v", todos)
+		}
+		if index > 0 && (todo.Status != delivery.DevelopmentTodoNotStarted || todo.Title == "" || todo.SourceID == "") {
 			t.Fatalf("new development todo has the wrong scope or status: %#v", todo)
 		}
 	}
+	if len(categories) >= 7 {
+		t.Fatalf("Todo categories were incorrectly coupled to the seven technical phases: %#v", categories)
+	}
+	skipPayload, err := json.Marshal(map[string]any{
+		"delivery_unit_id": run.ActiveDeliveryUnitID, "todo_id": todos[1].ID,
+		"git_revision": strings.Repeat("a", 40), "summary": "Skipped ahead.",
+		"evidence_refs": []string{"git:" + strings.Repeat("a", 40) + "#evidence:skip.json"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = delivery.Apply(&run, delivery.Command{Actor: agent("frontend-agent"), Type: "development_todo.complete", Payload: skipPayload}, time.Now().UTC())
+	assertCode(t, err, "development_todo_conflict")
 	assertPhaseAction(t, run, "interaction_modeling", "frontend", "delivery_unit.interaction.complete")
 
 	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
@@ -74,7 +89,7 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	newRevision := strings.Repeat("b", 40)
 	advanceUnitAtRevision(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", newRevision)
 	advanceUnitAtRevision(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_convergence", newRevision)
-	err := applyUnitAtRevision(&run, delivery.Actor{ID: "contract-check", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", strings.Repeat("a", 40), "", nil)
+	err = applyUnitAtRevision(&run, delivery.Actor{ID: "contract-check", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", strings.Repeat("a", 40), "", nil)
 	assertCode(t, err, "delivery_unit_revision_not_advanced")
 	advanceUnitAtRevision(t, &run, delivery.Actor{ID: "contract-check", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", newRevision)
 	advanceUnitAtRevision(t, &run, delivery.Actor{ID: "journey-runner", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing", newRevision)

@@ -71,7 +71,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	dispatchContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, actor, application.PermissionDeliveryRunWrite)
 	interactionTodo := delivery.Command{
 		ClientID: "todo-interaction", ExpectedRevision: 1, Actor: actor, Type: "development_todo.complete",
-		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:interaction_modeling:scenario:F-001-scenario","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
+		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:development_todo:001","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
 	}
 	interactionProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, interactionTodo)
 	if err != nil || interactionProgress.Revision != 2 {
@@ -357,6 +357,17 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	}
 	if retriedProduct.Revision != 2 || retriedRun.Revision != 1 {
 		t.Fatalf("delivery start retry was not idempotent: product=%d run=%d", retriedProduct.Revision, retriedRun.Revision)
+	}
+	run = dispatchRunCommand(t, ctx, service, run, "todo-batch", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "development_todos.initialize", map[string]any{
+		"delivery_unit_id": run.Feature.ID,
+		"todos":            testfixture.DemoDevelopmentTodoBatch(),
+	})
+	stored, err := loadRunState(ctx, store.db, store.renderer, run.WorkspaceID, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != len(testfixture.DemoDevelopmentTodoBatch()) {
+		t.Fatalf("Todo batch was not persisted atomically inside one DeliveryUnit row: %#v", stored.DeliveryUnits)
 	}
 
 	phaseCommands := []struct {

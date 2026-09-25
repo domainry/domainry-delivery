@@ -222,6 +222,7 @@ func TestDomainErrorsRemainSemantic(t *testing.T) {
 func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	expected := []string{
 		commanddomain.AcceptanceConfirm,
+		commanddomain.DevelopmentTodosInitialize,
 		commanddomain.DevelopmentTodoComplete,
 		commanddomain.DeliveryUnitBackendComplete,
 		commanddomain.DeliveryUnitContractVerify,

@@ -37,6 +37,7 @@ const (
 	DeliveryUnitContractVerify      = "delivery_unit.contract.verify"
 	DeliveryUnitGapReport           = "delivery_unit.gap.report"
 	DeliveryUnitJourneyComplete     = "delivery_unit.journey.complete"
+	DevelopmentTodosInitialize      = "development_todos.initialize"
 	DevelopmentTodoComplete         = "development_todo.complete"
 	ProductRevisionRecord           = "product_revision.record"
 	QualityRecord                   = "quality.record"
@@ -73,6 +74,7 @@ func buildCatalog() map[string]Definition {
 		DeliveryUnitModelComplete:       "DeliveryUnitPhaseResult",
 		DeliveryUnitBackendComplete:     "DeliveryUnitPhaseResult",
 		DeliveryUnitFrontendComplete:    "DeliveryUnitPhaseResult",
+		DevelopmentTodosInitialize:      "DevelopmentTodoBatch",
 		DevelopmentTodoComplete:         "DevelopmentTodoEvidence",
 		ProductRevisionRecord:           "ProductRevisionRecord",
 		QualityRecord:                   "QualityResult",

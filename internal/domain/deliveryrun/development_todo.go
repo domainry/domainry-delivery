@@ -1,62 +1,73 @@
 package deliveryrun
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
 
-type developmentTodoSeed struct {
-	kind   string
-	id     string
-	title  string
-	detail string
+var orderedDevelopmentPhases = []DeliveryUnitPhase{
+	DeliveryUnitInteractionModeling,
+	DeliveryUnitDomainModeling,
+	DeliveryUnitModelVerification,
+	DeliveryUnitBackendImplementation,
+	DeliveryUnitFrontendConvergence,
+	DeliveryUnitContractVerification,
+	DeliveryUnitJourneyTesting,
 }
 
-func newDevelopmentTodos(feature FeatureSnapshot) []DevelopmentTodo {
-	todos := make([]DevelopmentTodo, 0)
-	appendTodos := func(phase DeliveryUnitPhase, seeds []developmentTodoSeed) {
-		if len(seeds) == 0 {
-			seeds = []developmentTodoSeed{{kind: "feature", id: feature.ID, title: feature.Title, detail: feature.Summary}}
+func initializeDevelopmentTodos(run *DeliveryRun, command Command, now time.Time) error {
+	unit := activeDeliveryUnit(run)
+	if unit == nil || unit.Phase != DeliveryUnitInteractionModeling || len(unit.DevelopmentTodos) != 0 {
+		return Invalid("development_todos_already_initialized")
+	}
+	var payload developmentTodosInitializePayload
+	if err := decode(command.Payload, &payload); err != nil {
+		return err
+	}
+	payload.DeliveryUnitID = strings.TrimSpace(payload.DeliveryUnitID)
+	if payload.DeliveryUnitID != unit.ID || len(payload.Todos) == 0 || len(payload.Todos) > 500 {
+		return Invalid("development_todo_batch_invalid")
+	}
+	phaseCounts := make(map[DeliveryUnitPhase]int, len(orderedDevelopmentPhases))
+	todos := make([]DevelopmentTodo, 0, len(payload.Todos))
+	lastPhaseOrder := -1
+	for index, candidate := range payload.Todos {
+		candidate.Category = strings.TrimSpace(candidate.Category)
+		candidate.SourceKind = strings.TrimSpace(candidate.SourceKind)
+		candidate.SourceID = strings.TrimSpace(candidate.SourceID)
+		candidate.Title = strings.TrimSpace(candidate.Title)
+		candidate.Detail = strings.TrimSpace(candidate.Detail)
+		phaseOrder := developmentPhaseOrder(candidate.Phase)
+		if phaseOrder == len(orderedDevelopmentPhases) || phaseOrder < lastPhaseOrder || candidate.Category == "" || len(candidate.Category) > 120 || candidate.SourceKind == "" || len(candidate.SourceKind) > 120 || candidate.SourceID == "" || len(candidate.SourceID) > 500 || candidate.Title == "" || len(candidate.Title) > 500 || candidate.Detail == "" || len(candidate.Detail) > 4000 {
+			return Invalid("development_todo_batch_invalid")
 		}
-		for _, seed := range seeds {
-			todos = append(todos, DevelopmentTodo{
-				ID:         feature.ID + ":" + string(phase) + ":" + seed.kind + ":" + seed.id,
-				Phase:      phase,
-				SourceKind: seed.kind,
-				SourceID:   seed.id,
-				Title:      seed.title,
-				Detail:     seed.detail,
-				Status:     DevelopmentTodoNotStarted,
-				Evidence:   []DevelopmentTodoEvidence{},
-			})
-		}
+		lastPhaseOrder = phaseOrder
+		phaseCounts[candidate.Phase]++
+		todos = append(todos, DevelopmentTodo{
+			ID: fmt.Sprintf("%s:development_todo:%03d", unit.ID, index+1), Sequence: index + 1,
+			Phase: candidate.Phase, Category: candidate.Category, SourceKind: candidate.SourceKind, SourceID: candidate.SourceID,
+			Title: candidate.Title, Detail: candidate.Detail, Status: DevelopmentTodoNotStarted, Evidence: []DevelopmentTodoEvidence{},
+		})
 	}
-	scenarios := make([]developmentTodoSeed, 0, len(feature.Specification.Scenarios))
-	for _, scenario := range feature.Specification.Scenarios {
-		scenarios = append(scenarios, developmentTodoSeed{kind: "scenario", id: scenario.ID, title: scenario.Title, detail: scenario.Trigger + " → " + scenario.Outcome})
-	}
-	impacts := make([]developmentTodoSeed, 0, len(feature.Specification.Impacts))
-	for _, impact := range feature.Specification.Impacts {
-		impacts = append(impacts, developmentTodoSeed{kind: "impact", id: impact.ID, title: impact.Summary, detail: strings.Join(impact.Details, " · ")})
-	}
-	acceptance := make([]developmentTodoSeed, 0, len(feature.Specification.Acceptance))
-	for _, criterion := range feature.Specification.Acceptance {
-		acceptance = append(acceptance, developmentTodoSeed{kind: "acceptance", id: criterion.ID, title: criterion.Title, detail: formatAcceptanceScenario(criterion)})
-	}
-	appendTodos(DeliveryUnitInteractionModeling, scenarios)
-	appendTodos(DeliveryUnitDomainModeling, impacts)
-	appendTodos(DeliveryUnitModelVerification, impacts)
-	appendTodos(DeliveryUnitBackendImplementation, scenarios)
-	appendTodos(DeliveryUnitFrontendConvergence, scenarios)
-	appendTodos(DeliveryUnitContractVerification, acceptance)
-	appendTodos(DeliveryUnitJourneyTesting, acceptance)
-	for index := range todos {
-		if todos[index].Phase == DeliveryUnitInteractionModeling {
-			todos[index].Status = DevelopmentTodoInProgress
-			break
+	for _, phase := range orderedDevelopmentPhases {
+		if phaseCounts[phase] == 0 {
+			return Invalid("development_todo_phase_missing")
 		}
 	}
-	return todos
+	unit.DevelopmentTodos = todos
+	syncDevelopmentTodoStatuses(unit)
+	appendActivity(run, command.Actor, "development_todos_initialized", "Development Todo batch initialized", fmt.Sprintf("%d ordered Todos", len(todos)), now)
+	return nil
+}
+
+func developmentPhaseOrder(phase DeliveryUnitPhase) int {
+	for index, candidate := range orderedDevelopmentPhases {
+		if candidate == phase {
+			return index
+		}
+	}
+	return len(orderedDevelopmentPhases)
 }
 
 func completeDevelopmentTodo(run *DeliveryRun, command Command, now time.Time) error {
@@ -134,21 +145,12 @@ func completeSystemPhaseTodos(unit *DeliveryUnit, gate DeliveryGateResult) {
 }
 
 func resetDevelopmentTodosFromPhase(unit *DeliveryUnit, phase DeliveryUnitPhase) {
-	phaseOrder := map[DeliveryUnitPhase]int{
-		DeliveryUnitInteractionModeling:   0,
-		DeliveryUnitDomainModeling:        1,
-		DeliveryUnitModelVerification:     2,
-		DeliveryUnitBackendImplementation: 3,
-		DeliveryUnitFrontendConvergence:   4,
-		DeliveryUnitContractVerification:  5,
-		DeliveryUnitJourneyTesting:        6,
-	}
-	activeOrder, ok := phaseOrder[phase]
-	if !ok {
+	activeOrder := developmentPhaseOrder(phase)
+	if activeOrder == len(orderedDevelopmentPhases) {
 		return
 	}
 	for index := range unit.DevelopmentTodos {
-		if phaseOrder[unit.DevelopmentTodos[index].Phase] >= activeOrder {
+		if developmentPhaseOrder(unit.DevelopmentTodos[index].Phase) >= activeOrder {
 			unit.DevelopmentTodos[index].Status = DevelopmentTodoNotStarted
 		}
 	}
