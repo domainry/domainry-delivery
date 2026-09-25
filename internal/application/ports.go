@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 
+	attachmentdomain "github.com/domainry/domainry-delivery/internal/domain/attachment"
+	"github.com/domainry/domainry-delivery/internal/domain/conversation"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	"github.com/domainry/domainry-delivery/internal/domain/product"
 )
@@ -29,8 +31,26 @@ type LifecycleRepository interface {
 	StartDelivery(context.Context, string, string, string, Mutation, uint64, func(*product.Product) (deliveryrun.DeliveryRun, error)) (product.Product, deliveryrun.DeliveryRun, error)
 }
 
+// ConversationRepository stores exact, immutable user and assistant messages.
+// A Feature revision cites these records rather than embedding conversation text.
+type ConversationRepository interface {
+	PutMessage(context.Context, string, string, string, conversation.Message) (conversation.Message, error)
+	ListMessages(context.Context, string, string, string, string, int) ([]conversation.Message, error)
+	GetMessage(context.Context, string, string, string, string) (conversation.Message, error)
+}
+
+type AttachmentRepository interface {
+	PutAttachment(context.Context, string, string, string, attachmentdomain.Metadata) (attachmentdomain.Metadata, error)
+	GetAttachment(context.Context, string, string, string, string) (attachmentdomain.Metadata, error)
+	ListAttachments(context.Context, string, string, string) ([]attachmentdomain.Metadata, error)
+	RemoveAttachment(context.Context, string, string, string, string, string, string, uint64) (attachmentdomain.Metadata, error)
+}
+
 type Ports struct {
-	Products  ProductRepository
-	Runs      DeliveryRunRepository
-	Lifecycle LifecycleRepository
+	Products          ProductRepository
+	Runs              DeliveryRunRepository
+	Lifecycle         LifecycleRepository
+	Attachments       attachmentdomain.Store
+	AttachmentRecords AttachmentRepository
+	Conversations     ConversationRepository
 }

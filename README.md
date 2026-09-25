@@ -8,10 +8,10 @@ installation into the next ProductRevision.
 
 ## Ownership and module boundaries
 
-- `domainry-agent` owns conversations, runs, source publication, artifacts,
-  and interactive confirmation. Delivery stores the immutable references
-  supplied with a command, never message bodies or attachment bytes, and does
-  not require Agent to be online.
+- `domainry-delivery` backs up raw PM conversation messages, stores original
+  Feature attachment bytes in a configured object store or persistent volume,
+  and verifies the source references used by Feature revisions. It does not
+  require a remote Agent service.
 - `domainry-delivery` owns Product, Feature, revision, lifecycle and release
   state. Every transition is validated by the domain layer.
 - `domainry-deck` runs the local PM/RD/QA/OP roles and submits typed Rust
@@ -67,6 +67,12 @@ Environment:
 - `DELIVERY_DB_DRIVER`: `sqlite` for local development or `mysql`.
 - `DELIVERY_DB`: SQLite path when the driver is `sqlite`.
 - `DELIVERY_MYSQL_DSN`: Go MySQL driver DSN when the driver is `mysql`.
+- `DELIVERY_ATTACHMENT_STORAGE_PATH`: absolute path for original attachment
+  bytes on a persistent volume. Set this for the dev deployment. Either this
+  setting or S3 storage is required at startup.
+- `DELIVERY_ATTACHMENT_S3_REGION`, `DELIVERY_ATTACHMENT_S3_BUCKET`, and
+  optional `DELIVERY_ATTACHMENT_S3_PREFIX`: alternative S3 object storage.
+  Configure either the file path or S3, never both.
 - `DOMAINRY_IDENTITY_BRIDGE_CONFIG_FILE`: strict external-provider bridge
   configuration, default `conf/identity-external.json`. The packaged
   configuration validates Verdent Passport access tokens and creates one
@@ -76,8 +82,15 @@ Environment:
   restricted to loopback listeners and never used by the dev deployment.
 The dev Kubernetes configuration lives in the separate devops repository at
 `domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
-the packaged Identity Bridge configuration, Jenkins image builds, ECR, and
-Argo CD; no database values are committed.
+the packaged Identity Bridge configuration, a dedicated attachment PVC,
+Jenkins image builds, ECR, and Argo CD; no database values are committed.
+
+All Delivery-owned Product, Feature, DeliveryRun, conversation and attachment
+timestamp columns and API fields use UTC Unix milliseconds. Foundation-owned
+operation metadata retains its separate storage contract and is not exposed
+as Delivery API dates.
+`target_date` is a calendar date rather than an instant, so it remains a
+date-only value. Clients format timestamps in the user's local timezone.
 
 ## Verify
 
@@ -86,5 +99,5 @@ go test ./...
 go vet ./...
 ```
 
-See [HTTP API](docs/api.md), [Agent integration](docs/agent-integration.md), and
+See [HTTP API](docs/api.md), [Deck integration](docs/agent-integration.md), and
 the evidence-backed [refactor checklist](TODO.md).

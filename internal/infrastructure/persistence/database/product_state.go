@@ -3,13 +3,13 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
+	"github.com/domainry/domainry-delivery/internal/utcjson"
 	ormquery "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -28,7 +28,7 @@ func loadProductState(ctx context.Context, database sqlhost.DBTX, renderer sqlRe
 	var product productdomain.Product
 	var engineeringJSON []byte
 	var deploymentJSON []byte
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
 		&product.ID, &product.WorkspaceID, &product.Name, &product.Code, &product.Goal, &product.Industry,
 		&engineeringJSON, &product.Status, &product.Revision, &product.CurrentDefinitionRevision,
@@ -40,21 +40,17 @@ func loadProductState(ctx context.Context, database sqlhost.DBTX, renderer sqlRe
 	if err != nil {
 		return productdomain.Product{}, storageError(err)
 	}
-	if err := json.Unmarshal(engineeringJSON, &product.Engineering); err != nil {
+	if err := utcjson.Unmarshal(engineeringJSON, &product.Engineering); err != nil {
 		return productdomain.Product{}, storageError(err)
 	}
 	if len(deploymentJSON) > 0 {
 		product.CurrentDeployment = &productdomain.ProductDeployment{}
-		if err := json.Unmarshal(deploymentJSON, product.CurrentDeployment); err != nil {
+		if err := utcjson.Unmarshal(deploymentJSON, product.CurrentDeployment); err != nil {
 			return productdomain.Product{}, storageError(err)
 		}
 	}
-	if product.CreatedAt, err = parseStoredTime(createdAt); err != nil {
-		return productdomain.Product{}, storageError(err)
-	}
-	if product.UpdatedAt, err = parseStoredTime(updatedAt); err != nil {
-		return productdomain.Product{}, storageError(err)
-	}
+	product.CreatedAt = time.UnixMilli(createdAt).UTC()
+	product.UpdatedAt = time.UnixMilli(updatedAt).UTC()
 	if product.Revisions, err = loadJSONRows[productdomain.ProductRevision](ctx, database,
 		ormquery.NewWorkspaceSelectBuilder(renderer, TableProductRevisions, workspaceID).
 			Columns("revision_json").
@@ -88,31 +84,24 @@ func loadFeatures(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 	features := make([]productdomain.Feature, 0)
 	for rows.Next() {
 		var feature productdomain.Feature
-		var queuedAt sql.NullString
+		var queuedAt sql.NullInt64
 		var draftJSON []byte
-		var createdAt, updatedAt string
+		var createdAt, updatedAt int64
 		if err := rows.Scan(&feature.ID, &feature.Code, &feature.Status, &feature.CurrentRevision, &feature.ConfirmedRevision, &feature.DeliverySequence, &queuedAt, &feature.DeliveryRunID, &feature.InstalledReleaseID, &draftJSON, &createdAt, &updatedAt); err != nil {
 			return nil, storageError(err)
 		}
 		if queuedAt.Valid {
-			parsed, err := parseStoredTime(queuedAt.String)
-			if err != nil {
-				return nil, storageError(err)
-			}
+			parsed := time.UnixMilli(queuedAt.Int64).UTC()
 			feature.QueuedAt = &parsed
 		}
 		if len(draftJSON) > 0 {
 			feature.Draft = &productdomain.FeatureDraftState{}
-			if err := json.Unmarshal(draftJSON, feature.Draft); err != nil {
+			if err := utcjson.Unmarshal(draftJSON, feature.Draft); err != nil {
 				return nil, storageError(err)
 			}
 		}
-		if feature.CreatedAt, err = parseStoredTime(createdAt); err != nil {
-			return nil, storageError(err)
-		}
-		if feature.UpdatedAt, err = parseStoredTime(updatedAt); err != nil {
-			return nil, storageError(err)
-		}
+		feature.CreatedAt = time.UnixMilli(createdAt).UTC()
+		feature.UpdatedAt = time.UnixMilli(updatedAt).UTC()
 		features = append(features, feature)
 	}
 	if err := rows.Err(); err != nil {
@@ -140,7 +129,7 @@ func loadFeatures(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 }
 
 func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product) error {
-	engineeringJSON, err := json.Marshal(product.Engineering)
+	engineeringJSON, err := utcjson.Marshal(product.Engineering)
 	if err != nil {
 		return storageError(err)
 	}
@@ -156,7 +145,7 @@ func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.
 		Values(
 			product.ID, product.Name, product.Code, product.Goal, product.Industry, engineeringJSON, product.Status, product.Revision,
 			product.CurrentDefinitionRevision, product.CurrentReleaseRevision, deploymentJSON,
-			product.CreatedAt.Format(timeFormat), product.UpdatedAt.Format(timeFormat),
+			product.CreatedAt.UnixMilli(), product.UpdatedAt.UnixMilli(),
 		).
 		Build()
 	if err != nil {
@@ -169,7 +158,7 @@ func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.
 }
 
 func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product, expectedRevision uint64) error {
-	engineeringJSON, err := json.Marshal(product.Engineering)
+	engineeringJSON, err := utcjson.Marshal(product.Engineering)
 	if err != nil {
 		return storageError(err)
 	}
@@ -188,7 +177,7 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 		Set("current_definition_revision", product.CurrentDefinitionRevision).
 		Set("current_release_revision", product.CurrentReleaseRevision).
 		Set("current_deployment_json", deploymentJSON).
-		Set("updated_at", product.UpdatedAt.Format(timeFormat)).
+		Set("updated_at", product.UpdatedAt.UnixMilli()).
 		Where(ormquery.And(
 			ormquery.Equal("product_id", product.ID),
 			ormquery.Equal("revision", expectedRevision),
@@ -213,13 +202,13 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 
 func (store *Store) persistProductRelations(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product) error {
 	for _, revision := range product.Revisions {
-		valueJSON, err := json.Marshal(revision)
+		valueJSON, err := utcjson.Marshal(revision)
 		if err != nil {
 			return storageError(err)
 		}
 		statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableProductRevisions, product.WorkspaceID).
 			Columns("product_id", "revision_number", "revision_json", "created_at").
-			Values(product.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)).
+			Values(product.ID, revision.Number, valueJSON, revision.CreatedAt.UnixMilli()).
 			OnConflictDoNothing("workspace_id", "product_id", "revision_number").
 			Build()
 		if err != nil {
@@ -250,7 +239,7 @@ func (store *Store) persistFeature(ctx context.Context, transaction sqlhost.DBTX
 		Values(
 			product.ID, feature.ID, feature.Code, feature.Status, feature.CurrentRevision, feature.ConfirmedRevision, feature.DeliverySequence,
 			nullableTime(feature.QueuedAt), feature.DeliveryRunID, feature.InstalledReleaseID, draftJSON,
-			feature.CreatedAt.Format(timeFormat), feature.UpdatedAt.Format(timeFormat),
+			feature.CreatedAt.UnixMilli(), feature.UpdatedAt.UnixMilli(),
 		)
 	insert, err = store.profile.ApplyUpsert(insert, []string{"workspace_id", "product_id", "feature_id"},
 		ormquery.AssignExpression("code", ormquery.InsertedValue("code")),
@@ -275,13 +264,13 @@ func (store *Store) persistFeature(ctx context.Context, transaction sqlhost.DBTX
 		return storageError(err)
 	}
 	for _, revision := range feature.Revisions {
-		valueJSON, err := json.Marshal(revision)
+		valueJSON, err := utcjson.Marshal(revision)
 		if err != nil {
 			return storageError(err)
 		}
 		statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableFeatureRevisions, product.WorkspaceID).
 			Columns("product_id", "feature_id", "revision_number", "revision_json", "created_at").
-			Values(product.ID, feature.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)).
+			Values(product.ID, feature.ID, revision.Number, valueJSON, revision.CreatedAt.UnixMilli()).
 			OnConflictDoNothing("workspace_id", "product_id", "feature_id", "revision_number").
 			Build()
 		if err != nil {
@@ -298,7 +287,7 @@ func nullableJSON(value any) ([]byte, error) {
 	if value == nil {
 		return nil, nil
 	}
-	raw, err := json.Marshal(value)
+	raw, err := utcjson.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +301,7 @@ func nullableTime(value *time.Time) any {
 	if value == nil {
 		return nil
 	}
-	return value.Format(timeFormat)
+	return value.UnixMilli()
 }
 
 func loadJSONRows[T any](ctx context.Context, database sqlhost.DBTX, builder *ormquery.SelectBuilder) ([]T, error) {
@@ -332,7 +321,7 @@ func loadJSONRows[T any](ctx context.Context, database sqlhost.DBTX, builder *or
 			return nil, storageError(err)
 		}
 		var value T
-		if err := json.Unmarshal(raw, &value); err != nil {
+		if err := utcjson.Unmarshal(raw, &value); err != nil {
 			return nil, storageError(fmt.Errorf("decode relational JSON payload: %w", err))
 		}
 		values = append(values, value)

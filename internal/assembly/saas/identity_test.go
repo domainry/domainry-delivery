@@ -34,6 +34,7 @@ func TestExternalIdentityCreatesOnePersistentWorkspacePerVerdentUser(t *testing.
 	defer provider.Close()
 
 	directory := t.TempDir()
+	t.Setenv("DELIVERY_ATTACHMENT_STORAGE_PATH", filepath.Join(directory, "attachments"))
 	databasePath := filepath.Join(directory, "delivery.db")
 	configPath := filepath.Join(directory, "identity.json")
 	configuration := map[string]any{

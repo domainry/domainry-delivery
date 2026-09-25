@@ -15,6 +15,10 @@ Errors contain a stable code, localized presentation message, and optional
 details. Supported locales are `en`, `zh`, `zh-hant`, `ja`, `ko`, `es`, `pt`,
 `fr`, `de`, `it`, `tr`, and `ar`.
 
+All instant fields named `*_at` are integer UTC Unix milliseconds in both
+requests and responses. `target_date` is a date-only business value and
+remains a string. User interfaces format instants in the user's timezone.
+
 ## Discovery
 
 ```text
@@ -32,6 +36,26 @@ GET  /api/v1/workspaces/{workspace_id}/products/{product_id}/agent-context
 POST /api/v1/workspaces/{workspace_id}/products/{product_id}/commands
 POST /api/v1/workspaces/{workspace_id}/products/{product_id}/delivery-runs/{delivery_run_id}
 ```
+
+The Feature archive is scoped under the same Product and Workspace:
+
+```text
+POST   /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/messages
+GET    /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/messages?cursor={message_id}&limit=100
+POST   /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/attachments
+GET    /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/attachments
+GET    /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/attachments/{attachment_id}
+DELETE /api/v1/workspaces/{workspace_id}/products/{product_id}/features/{feature_id}/attachments/{attachment_id}
+```
+
+Message writes contain `client_id`, `device_id`, `expected_revision: 0`,
+`turn_id`, `role` (`user` or `assistant`), original `text`, and
+`attachment_ids`. Attachment uploads are JSON with `client_id`, `device_id`,
+`expected_revision: 0`, `filename`, and base64 `data`; removal contains
+`client_id`, `device_id`, and the attachment's `expected_revision`. Downloads
+return attachment metadata plus base64 `data`. A removal hides the attachment
+from the active list but keeps the original bytes readable for historical PRD
+citations.
 
 Product commands come from the typed command catalog:
 

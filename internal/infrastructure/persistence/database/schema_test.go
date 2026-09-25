@@ -11,6 +11,7 @@ func TestOwnedTableNamesDoNotRepeatDatabaseName(t *testing.T) {
 		"products", "product_revisions", "features", "feature_revisions",
 		"runs", "units", "test_cases", "quality_runs", "acceptance_cases",
 		"acceptance_confirmations", "release_checks", "releases", "activity",
+		"feature_messages", "feature_attachments",
 	}
 	if got := OwnedTables(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("owned tables = %#v, want %#v", got, want)
@@ -34,8 +35,8 @@ func TestSchemaHasOnePortableSourceForSQLiteAndMySQL(t *testing.T) {
 				t.Fatalf("%s schema is missing %s", driver, table)
 			}
 		}
-		if strings.Contains(joined, "delivery_feature_attachments") {
-			t.Fatalf("%s schema retained Agent-owned attachment bytes", driver)
+		if strings.Contains(joined, "content_bytes") {
+			t.Fatalf("%s schema stores attachment bytes in Delivery SQL", driver)
 		}
 		if strings.Contains(joined, "TABLE IF NOT EXISTS delivery_") {
 			t.Fatalf("%s schema retained a redundant delivery_ table prefix", driver)
@@ -56,8 +57,12 @@ func TestSchemaMigrationsAreTheSamePhysicalBaseline(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Baseline == nil || len(migrations[0].Baseline.Tables) != len(OwnedTables()) {
+		if len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Baseline == nil {
 			t.Fatalf("%s migration baseline=%#v", driver, migrations)
+		}
+		statements, err := SchemaStatements(driver)
+		if err != nil || !reflect.DeepEqual(migrations[0].Statements, statements) {
+			t.Fatalf("%s migration differs from physical baseline: %v", driver, err)
 		}
 	}
 }

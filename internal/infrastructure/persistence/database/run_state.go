@@ -3,11 +3,12 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
+	"github.com/domainry/domainry-delivery/internal/utcjson"
 	ormquery "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
@@ -25,7 +26,7 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 	}
 	var run deliveryrun.DeliveryRun
 	var productJSON, featureJSON, membersJSON, executableJSON []byte
-	var createdAt, updatedAt string
+	var createdAt, updatedAt int64
 	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
 		&run.ID, &run.WorkspaceID, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
 		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &createdAt, &updatedAt,
@@ -36,27 +37,23 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 	if err != nil {
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
-	if err := json.Unmarshal(productJSON, &run.Product); err != nil {
+	if err := utcjson.Unmarshal(productJSON, &run.Product); err != nil {
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
-	if err := json.Unmarshal(featureJSON, &run.Feature); err != nil {
+	if err := utcjson.Unmarshal(featureJSON, &run.Feature); err != nil {
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
-	if err := json.Unmarshal(membersJSON, &run.Members); err != nil {
+	if err := utcjson.Unmarshal(membersJSON, &run.Members); err != nil {
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
 	if len(executableJSON) > 0 {
 		run.ExecutableRevision = &deliveryrun.ExecutableProductRevision{}
-		if err := json.Unmarshal(executableJSON, run.ExecutableRevision); err != nil {
+		if err := utcjson.Unmarshal(executableJSON, run.ExecutableRevision); err != nil {
 			return deliveryrun.DeliveryRun{}, storageError(err)
 		}
 	}
-	if run.CreatedAt, err = parseStoredTime(createdAt); err != nil {
-		return deliveryrun.DeliveryRun{}, storageError(err)
-	}
-	if run.UpdatedAt, err = parseStoredTime(updatedAt); err != nil {
-		return deliveryrun.DeliveryRun{}, storageError(err)
-	}
+	run.CreatedAt = time.UnixMilli(createdAt).UTC()
+	run.UpdatedAt = time.UnixMilli(updatedAt).UTC()
 	if run.DeliveryUnits, err = loadRunComponents[deliveryrun.DeliveryUnit](ctx, database, renderer, TableDeliveryUnits, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
@@ -107,7 +104,7 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 		Values(
 			run.ID, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
 			productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON,
-			run.CreatedAt.Format(timeFormat), run.UpdatedAt.Format(timeFormat),
+			run.CreatedAt.UnixMilli(), run.UpdatedAt.UnixMilli(),
 		).
 		Build()
 	if err != nil {
@@ -137,7 +134,7 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 		Set("members_json", membersJSON).
 		Set("active_delivery_unit_id", run.ActiveDeliveryUnitID).
 		Set("executable_revision_json", executableJSON).
-		Set("updated_at", run.UpdatedAt.Format(timeFormat)).
+		Set("updated_at", run.UpdatedAt.UnixMilli()).
 		Where(ormquery.And(
 			ormquery.Equal("run_id", run.ID),
 			ormquery.Equal("revision", expectedRevision),
@@ -161,15 +158,15 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 }
 
 func marshalRunHeader(run deliveryrun.DeliveryRun) ([]byte, []byte, []byte, []byte, error) {
-	productJSON, err := json.Marshal(run.Product)
+	productJSON, err := utcjson.Marshal(run.Product)
 	if err != nil {
 		return nil, nil, nil, nil, storageError(err)
 	}
-	featureJSON, err := json.Marshal(run.Feature)
+	featureJSON, err := utcjson.Marshal(run.Feature)
 	if err != nil {
 		return nil, nil, nil, nil, storageError(err)
 	}
-	membersJSON, err := json.Marshal(run.Members)
+	membersJSON, err := utcjson.Marshal(run.Members)
 	if err != nil {
 		return nil, nil, nil, nil, storageError(err)
 	}
@@ -212,7 +209,7 @@ type componentAt func(int) (string, any)
 func (store *Store) persistImmutableRunComponents(ctx context.Context, transaction sqlhost.DBTX, table, idColumn, workspaceID, runID string, count int, at componentAt) error {
 	for ordinal := 0; ordinal < count; ordinal++ {
 		id, value := at(ordinal)
-		raw, err := json.Marshal(value)
+		raw, err := utcjson.Marshal(value)
 		if err != nil {
 			return storageError(err)
 		}
@@ -234,7 +231,7 @@ func (store *Store) persistImmutableRunComponents(ctx context.Context, transacti
 func (store *Store) persistMutableRunComponents(ctx context.Context, transaction sqlhost.DBTX, table, idColumn, workspaceID, runID string, count int, at componentAt) error {
 	for ordinal := 0; ordinal < count; ordinal++ {
 		id, value := at(ordinal)
-		raw, err := json.Marshal(value)
+		raw, err := utcjson.Marshal(value)
 		if err != nil {
 			return storageError(err)
 		}

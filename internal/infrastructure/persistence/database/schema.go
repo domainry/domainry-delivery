@@ -22,15 +22,21 @@ const (
 	TableReleaseChecks           = "release_checks"
 	TableReleases                = "releases"
 	TableActivity                = "activity"
+	TableFeatureMessages         = "feature_messages"
+	TableFeatureAttachments      = "feature_attachments"
 )
 
-func OwnedTables() []string {
+func baselineTables() []string {
 	return []string{
 		TableProducts, TableProductRevisions, TableFeatures, TableFeatureRevisions,
 		TableRuns, TableDeliveryUnits, TableTestCases, TableQualityRuns,
 		TableAcceptanceCases, TableAcceptanceConfirmations, TableReleaseChecks,
-		TableReleases, TableActivity,
+		TableReleases, TableActivity, TableFeatureMessages, TableFeatureAttachments,
 	}
+}
+
+func OwnedTables() []string {
+	return baselineTables()
 }
 
 // SchemaStatements is the one physical baseline shared by Module and SaaS.
@@ -41,7 +47,58 @@ func SchemaStatements(driver string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return schemaStatements(driver, renderer)
+	baseline, err := schemaStatements(driver, renderer)
+	if err != nil {
+		return nil, err
+	}
+	archive, err := archiveSchemaStatements(driver, renderer)
+	return append(baseline, archive...), err
+}
+
+func archiveSchemaStatements(driver string, renderer baseSQLRenderer) ([]string, error) {
+	named, err := deliveryRenderer(driver, renderer)
+	if err != nil {
+		return nil, err
+	}
+	message, arguments, err := ormschema.NewTable(named, TableFeatureMessages).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("feature_id", ormschema.TextKey(191)),
+		requiredColumn("message_id", ormschema.TextKey(191)),
+		requiredColumn("conversation_id", ormschema.TextKey(191)),
+		requiredColumn("turn_id", ormschema.TextKey(191)),
+		requiredColumn("role", ormschema.TextKey(32)),
+		requiredColumn("text", ormschema.LongText()),
+		requiredColumn("attachment_ids_json", ormschema.Binary()),
+		requiredColumn("created_by", ormschema.TextKey(191)),
+		requiredColumn("device_id", ormschema.TextKey(191)),
+		requiredColumn("created_at", ormschema.BigInt()),
+	).PrimaryKey("workspace_id", "product_id", "feature_id", "message_id").Build()
+	if err != nil || len(arguments) != 0 {
+		return nil, fmt.Errorf("build Feature message table: %w", err)
+	}
+	attachment, attachmentArguments, err := ormschema.NewTable(named, TableFeatureAttachments).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("feature_id", ormschema.TextKey(191)),
+		requiredColumn("attachment_id", ormschema.TextKey(191)),
+		requiredColumn("filename", ormschema.LongText()),
+		requiredColumn("content_type", ormschema.TextKey(191)),
+		requiredColumn("bytes", ormschema.BigInt()),
+		requiredColumn("sha256", ormschema.TextKey(64)),
+		requiredColumn("content_ref", ormschema.LongText()),
+		requiredColumn("active", ormschema.Boolean()),
+		requiredColumn("revision", ormschema.BigInt()),
+		requiredColumn("remove_client_id", ormschema.TextKey(191)),
+		requiredColumn("remove_device_id", ormschema.TextKey(191)),
+		requiredColumn("created_by", ormschema.TextKey(191)),
+		requiredColumn("device_id", ormschema.TextKey(191)),
+		requiredColumn("created_at", ormschema.BigInt()),
+	).PrimaryKey("workspace_id", "product_id", "feature_id", "attachment_id").Build()
+	if err != nil || len(attachmentArguments) != 0 {
+		return nil, fmt.Errorf("build Feature attachment table: %w", err)
+	}
+	return []string{message, attachment}, nil
 }
 
 func schemaStatements(driver string, renderer baseSQLRenderer) ([]string, error) {
@@ -118,8 +175,8 @@ func productsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("current_definition_revision", ormschema.BigInt()),
 		requiredColumn("current_release_revision", ormschema.BigInt()),
 		ormschema.Column("current_deployment_json", ormschema.Binary()),
-		requiredColumn("created_at", ormschema.TextKey(40)),
-		requiredColumn("updated_at", ormschema.TextKey(40)),
+		requiredColumn("created_at", ormschema.BigInt()),
+		requiredColumn("updated_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "product_id").Unique("workspace_id", "code")
 }
 
@@ -129,7 +186,7 @@ func productRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder 
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("revision_number", ormschema.BigInt()),
 		requiredColumn("revision_json", ormschema.Binary()),
-		requiredColumn("created_at", ormschema.TextKey(40)),
+		requiredColumn("created_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "product_id", "revision_number")
 }
 
@@ -143,12 +200,12 @@ func featuresTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("current_revision", ormschema.BigInt()),
 		requiredColumn("confirmed_revision", ormschema.BigInt()),
 		requiredColumn("delivery_sequence", ormschema.BigInt()),
-		ormschema.Column("queued_at", ormschema.TextKey(40)),
+		ormschema.Column("queued_at", ormschema.BigInt()),
 		requiredColumn("delivery_run_id", ormschema.TextKey(191)),
 		requiredColumn("installed_release_id", ormschema.TextKey(191)),
 		ormschema.Column("draft_json", ormschema.Binary()),
-		requiredColumn("created_at", ormschema.TextKey(40)),
-		requiredColumn("updated_at", ormschema.TextKey(40)),
+		requiredColumn("created_at", ormschema.BigInt()),
+		requiredColumn("updated_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "product_id", "feature_id").Unique("workspace_id", "product_id", "code")
 }
 
@@ -159,7 +216,7 @@ func featureRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder 
 		requiredColumn("feature_id", ormschema.TextKey(191)),
 		requiredColumn("revision_number", ormschema.BigInt()),
 		requiredColumn("revision_json", ormschema.Binary()),
-		requiredColumn("created_at", ormschema.TextKey(40)),
+		requiredColumn("created_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "product_id", "feature_id", "revision_number")
 }
 
@@ -179,8 +236,8 @@ func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("members_json", ormschema.Binary()),
 		requiredColumn("active_delivery_unit_id", ormschema.TextKey(191)),
 		ormschema.Column("executable_revision_json", ormschema.Binary()),
-		requiredColumn("created_at", ormschema.TextKey(40)),
-		requiredColumn("updated_at", ormschema.TextKey(40)),
+		requiredColumn("created_at", ormschema.BigInt()),
+		requiredColumn("updated_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "run_id")
 }
 
@@ -211,8 +268,13 @@ func migrationsForRenderer(driver string, renderer baseSQLRenderer) ([]ormmigrat
 	if err != nil {
 		return nil, err
 	}
-	tables := make([]ormmigration.Table, 0, len(OwnedTables()))
-	for _, table := range OwnedTables() {
+	archiveStatements, err := archiveSchemaStatements(driver, renderer)
+	if err != nil {
+		return nil, err
+	}
+	statements = append(statements, archiveStatements...)
+	tables := make([]ormmigration.Table, 0, len(baselineTables()))
+	for _, table := range baselineTables() {
 		tables = append(tables, ormmigration.Table{Name: table})
 	}
 	return []ormmigration.Migration{{

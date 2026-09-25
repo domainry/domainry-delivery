@@ -289,7 +289,7 @@ func TestOwnedSchemaHasNoAggregateBlobsOrPrivateReceipts(t *testing.T) {
 			t.Fatal(err)
 		}
 		joined := strings.ToLower(strings.Join(statements, "\n"))
-		for _, forbidden := range []string{"state_json", "command_receipt", "feature_attachment"} {
+		for _, forbidden := range []string{"state_json", "command_receipt", "content_bytes"} {
 			if strings.Contains(joined, forbidden) {
 				t.Fatalf("%s Delivery schema retained forbidden ownership %q", driver, forbidden)
 			}

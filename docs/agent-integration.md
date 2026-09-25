@@ -1,4 +1,4 @@
-# Agent, Deck and Delivery integration
+# Deck and Delivery integration
 
 Deck executes PM, RD, QA and OP as local roles in its embedded runtime. Those
 roles propose typed Delivery commands; they are not independent services and a
@@ -10,22 +10,30 @@ presentation-only.
 
 ## Source ownership
 
-Agent owns Conversation, Run, source access and artifact bytes. Delivery owns
-Feature decision identity/state and freezes immutable lineage values:
+Delivery backs up the original user and PM messages and the original Feature
+attachment bytes. Deck owns the local PM/RD/QA/OP runtime; no remote Agent
+service is involved. Delivery also owns Feature decision identity/state and
+freezes immutable lineage values:
 
 - `conversation_id` and `run_id`;
 - the optional `before_step` boundary;
 - canonical `source_ids`;
 - exact `decision_ids`.
 
-Delivery never accepts a local path and has no attachment upload/download or
-BLOB table. Deck first publishes the completed PM turn to Agent and receives
-the canonical immutable source identity, then submits that exact reference in
-`feature.discovery.replace`. Delivery validates reference completeness and the
-closure between business facts, decisions and source identities, but it does
-not synchronously read Agent during its write transaction. Feature confirmation
-copies the lineage into the immutable FeatureRevision; it cannot later be
-replaced.
+Delivery never accepts a local path or stores attachment bytes in a database
+BLOB. Deck uploads original files to Delivery before starting a PM turn, and
+archives the user's original message with those attachment IDs. Delivery
+returns stable `conversation://` and `attachment://` source identities. The PM
+runtime reads the files as business input and attaches relevant source IDs to
+changed PRD records. Deck archives each PM reply and keeps an account-scoped
+local outbox for retrying failed message saves with the same `client_id`.
+Delivery verifies cited messages and attachments in the same Workspace,
+Product and Feature before `feature.discovery.replace` commits. Feature
+confirmation copies the lineage into the immutable FeatureRevision.
+
+Every archive write records both an operation `client_id` and a persistent
+installation `device_id`. Delivery timestamps are UTC Unix milliseconds; Deck
+formats them in the user's local timezone.
 
 ## Delivery lifecycle
 

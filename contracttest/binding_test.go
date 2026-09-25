@@ -3,6 +3,7 @@ package contracttest
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-delivery/internal/infrastructure/attachmentstorage"
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
 	deliverymodule "github.com/domainry/domainry-delivery/module"
@@ -56,6 +58,11 @@ func (registrar *migrationRegistrar) ApplyOwnedMigrations(ctx context.Context, _
 }
 
 func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
+	t.Setenv("DELIVERY_ATTACHMENT_STORAGE_PATH", t.TempDir())
+	objects, err := attachmentstorage.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	moduleDatabase, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "module.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -78,6 +85,7 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 	defer saasStore.Close()
 	saasHandler := httpapi.New(application.NewService(application.Ports{
 		Products: saasStore, Runs: saasStore, Lifecycle: saasStore,
+		Conversations: saasStore, Attachments: objects, AttachmentRecords: saasStore,
 	}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-contract-test")
 	server := httptest.NewServer(contractAuthentication(saasHandler))
 	defer server.Close()
@@ -152,6 +160,40 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 			}
 			if opened.Product.Revision != 2 || len(opened.Product.Features) != 1 || opened.Product.Features[0].ID != "feature-inquiry" {
 				t.Fatalf("Feature discovery differs: %#v", opened.Product.Features)
+			}
+			message, err := testCase.binding.AppendFeatureMessage(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", deliverysdk.FeatureMessageAppend{
+				ClientID: "message-1", DeviceID: "device-1", TurnID: "turn-1", Role: "user", Text: "The original request", AttachmentIDs: []string{},
+			})
+			if err != nil || message.CreatedAt <= 0 || message.DeviceID != "device-1" {
+				t.Fatalf("message archive differs: value=%#v error=%v", message, err)
+			}
+			page, err := testCase.binding.ListFeatureMessages(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", "", 10)
+			if err != nil || len(page.Data) != 1 || page.Data[0].SourceID != message.SourceID {
+				t.Fatalf("conversation page differs: value=%#v error=%v", page, err)
+			}
+			content, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/leUAAAAASUVORK5CYII=")
+			if err != nil {
+				t.Fatal(err)
+			}
+			attached, err := testCase.binding.UploadFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", deliverysdk.FeatureAttachmentUpload{
+				ClientID: "attachment-1", DeviceID: "device-1", Filename: "evidence.png", Data: content,
+			})
+			if err != nil || attached.Bytes != int64(len(content)) || attached.CreatedAt <= 0 {
+				t.Fatalf("attachment archive differs: value=%#v error=%v", attached, err)
+			}
+			attachments, err := testCase.binding.ListFeatureAttachments(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry")
+			if err != nil || len(attachments) != 1 || attachments[0].ID != attached.ID {
+				t.Fatalf("attachment list differs: value=%#v error=%v", attachments, err)
+			}
+			downloaded, err := testCase.binding.DownloadFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", attached.ID)
+			if err != nil || downloaded.Data != base64.StdEncoding.EncodeToString(content) {
+				t.Fatalf("attachment download differs: value=%#v error=%v", downloaded, err)
+			}
+			removed, err := testCase.binding.RemoveFeatureAttachment(testCase.ctx, contractWorkspaceID, "product-contract", "feature-inquiry", attached.ID, deliverysdk.FeatureAttachmentRemove{
+				ClientID: "remove-1", DeviceID: "device-1", ExpectedRevision: attached.Revision,
+			})
+			if err != nil || removed.Active || removed.RemoveDeviceID != "device-1" {
+				t.Fatalf("attachment removal differs: value=%#v error=%v", removed, err)
 			}
 
 		})

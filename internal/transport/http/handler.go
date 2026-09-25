@@ -13,6 +13,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	"github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/presentation"
+	"github.com/domainry/domainry-delivery/internal/utcjson"
 )
 
 type Handler struct {
@@ -31,6 +32,12 @@ func New(service *application.Service, logger *slog.Logger, runtimeID string) ht
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}", handler.getProduct)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}/agent-context", handler.getProductAgentContext)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/commands", handler.dispatchProduct)
+	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/messages", handler.appendFeatureMessage)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/messages", handler.listFeatureMessages)
+	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/attachments", handler.uploadFeatureAttachment)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/attachments", handler.listFeatureAttachments)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/attachments/{attachmentID}", handler.downloadFeatureAttachment)
+	mux.HandleFunc("DELETE /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/attachments/{attachmentID}", handler.removeFeatureAttachment)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/delivery-runs/{deliveryRunID}", handler.startDelivery)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs", handler.listDeliveryRuns)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}", handler.getDeliveryRun)
@@ -196,6 +203,12 @@ func (handler *Handler) decodeCommand(writer http.ResponseWriter, request *http.
 		}
 		return deliverysdk.Command{}, false
 	}
+	normalized, err := utcjson.NormalizeInput(command.Payload)
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "payload_invalid"}, requestLocale(request)))
+		return deliverysdk.Command{}, false
+	}
+	command.Payload = normalized
 	return command, true
 }
 
@@ -241,7 +254,12 @@ func (handler *Handler) securityHeaders(next http.Handler) http.Handler {
 }
 
 func writeJSON(writer http.ResponseWriter, status int, value any) {
+	raw, err := utcjson.Marshal(value)
+	if err != nil {
+		http.Error(writer, "Delivery response encoding failed", http.StatusInternalServerError)
+		return
+	}
 	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(value)
+	_, _ = writer.Write(append(raw, '\n'))
 }

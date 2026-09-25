@@ -3,9 +3,9 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"github.com/domainry/domainry-delivery/internal/application"
+	"github.com/domainry/domainry-delivery/internal/utcjson"
 )
 
 // commandTarget is the persistence identity used by the shared Foundation
@@ -52,7 +52,7 @@ func executeCommand[T any](
 	}
 	if replay {
 		var saved T
-		if err := json.Unmarshal(receipt.Result, &saved); err != nil {
+		if err := utcjson.Unmarshal(receipt.Result, &saved); err != nil {
 			return zero, storageError(err)
 		}
 		if err := transaction.Commit(); err != nil {
@@ -65,7 +65,7 @@ func executeCommand[T any](
 	if err != nil {
 		return zero, err
 	}
-	resultJSON, err := json.Marshal(result)
+	resultJSON, err := utcjson.Marshal(result)
 	if err != nil {
 		return zero, storageError(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-delivery/internal/application"
+	"github.com/domainry/domainry-delivery/internal/infrastructure/attachmentstorage"
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
 	deliverymysql "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/mysql"
 	deliverysqlite "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
@@ -37,8 +38,14 @@ func Open(ctx context.Context, config DatabaseConfig) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
+	attachments, err := attachmentstorage.NewFromEnvironment(ctx)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return &Application{Service: application.NewService(application.Ports{
-		Products: store, Runs: store, Lifecycle: store,
+		Products: store, Runs: store, Lifecycle: store, Conversations: store,
+		Attachments: attachments, AttachmentRecords: store,
 	}), store: store}, nil
 }
 

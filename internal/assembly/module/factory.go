@@ -14,8 +14,10 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	"github.com/domainry/domainry-delivery/internal/domain/product"
+	"github.com/domainry/domainry-delivery/internal/infrastructure/attachmentstorage"
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
 	"github.com/domainry/domainry-delivery/internal/presentation"
+	"github.com/domainry/domainry-delivery/internal/utcjson"
 )
 
 type Factory struct{}
@@ -40,8 +42,13 @@ func (factory *Factory) OpenModule(ctx context.Context, reference deliverysdk.Ap
 	if err != nil {
 		return nil, err
 	}
+	attachments, err := attachmentstorage.NewFromEnvironment(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &Binding{runtimeID: reference.RuntimeID, store: store, service: application.NewService(application.Ports{
-		Products: store, Runs: store, Lifecycle: store,
+		Products: store, Runs: store, Lifecycle: store, Conversations: store,
+		Attachments: attachments, AttachmentRecords: store,
 	})}, nil
 }
 
@@ -86,7 +93,11 @@ func (binding *Binding) ProductAgentContext(ctx context.Context, workspaceID, pr
 }
 
 func (binding *Binding) DispatchProduct(ctx context.Context, workspaceID, productID string, command deliverysdk.Command) (deliverysdk.ProductProjection, error) {
-	value, err := binding.service.DispatchProduct(ctx, workspaceID, productID, domainCommand(command))
+	domainCommand, err := normalizedCommand(command)
+	if err != nil {
+		return deliverysdk.ProductProjection{}, toSDKError(ctx, err)
+	}
+	value, err := binding.service.DispatchProduct(ctx, workspaceID, productID, domainCommand)
 	if err != nil {
 		return deliverysdk.ProductProjection{}, toSDKError(ctx, err)
 	}
@@ -94,7 +105,11 @@ func (binding *Binding) DispatchProduct(ctx context.Context, workspaceID, produc
 }
 
 func (binding *Binding) StartDelivery(ctx context.Context, workspaceID, productID, deliveryRunID string, command deliverysdk.Command) (deliverysdk.DeliveryStartResult, error) {
-	productState, run, err := binding.service.StartDelivery(ctx, workspaceID, productID, deliveryRunID, domainCommand(command))
+	domainCommand, err := normalizedCommand(command)
+	if err != nil {
+		return deliverysdk.DeliveryStartResult{}, toSDKError(ctx, err)
+	}
+	productState, run, err := binding.service.StartDelivery(ctx, workspaceID, productID, deliveryRunID, domainCommand)
 	if err != nil {
 		return deliverysdk.DeliveryStartResult{}, toSDKError(ctx, err)
 	}
@@ -130,7 +145,11 @@ func (binding *Binding) DeliveryRunAgentContext(ctx context.Context, workspaceID
 }
 
 func (binding *Binding) DispatchDeliveryRun(ctx context.Context, workspaceID, deliveryRunID string, command deliverysdk.Command) (deliverysdk.DeliveryRunProjection, error) {
-	value, err := binding.service.Dispatch(ctx, workspaceID, deliveryRunID, domainCommand(command))
+	domainCommand, err := normalizedCommand(command)
+	if err != nil {
+		return deliverysdk.DeliveryRunProjection{}, toSDKError(ctx, err)
+	}
+	value, err := binding.service.Dispatch(ctx, workspaceID, deliveryRunID, domainCommand)
 	if err != nil {
 		return deliverysdk.DeliveryRunProjection{}, toSDKError(ctx, err)
 	}
@@ -139,8 +158,12 @@ func (binding *Binding) DispatchDeliveryRun(ctx context.Context, workspaceID, de
 
 func (binding *Binding) Close(context.Context) error { return nil }
 
-func domainCommand(value deliverysdk.Command) domain.Command {
-	return domain.Command{ClientID: value.ClientID, ExpectedRevision: value.ExpectedRevision, Type: value.Type, Payload: append(json.RawMessage(nil), value.Payload...)}
+func normalizedCommand(value deliverysdk.Command) (domain.Command, error) {
+	payload, err := utcjson.NormalizeInput(value.Payload)
+	if err != nil {
+		return domain.Command{}, domain.Invalid("payload_invalid")
+	}
+	return domain.Command{ClientID: value.ClientID, ExpectedRevision: value.ExpectedRevision, Type: value.Type, Payload: payload}, nil
 }
 
 func convert[T any](ctx context.Context, value any, sourceError error) (T, error) {
@@ -148,7 +171,7 @@ func convert[T any](ctx context.Context, value any, sourceError error) (T, error
 	if sourceError != nil {
 		return zero, toSDKError(ctx, sourceError)
 	}
-	raw, err := json.Marshal(value)
+	raw, err := utcjson.Marshal(value)
 	if err != nil {
 		return zero, err
 	}

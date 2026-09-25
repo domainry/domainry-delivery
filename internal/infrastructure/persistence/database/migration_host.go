@@ -53,7 +53,7 @@ func (registrar directMigrationRegistrar) ensureLedger(ctx context.Context) erro
 		schema.Column("name", schema.TextKey(191)).NotNull(),
 		schema.Column("checksum", schema.TextKey(64)).NotNull(),
 		schema.Column("dirty", schema.Boolean()).NotNull(),
-		schema.Column("applied_at", schema.TextKey(40)).NotNull(),
+		schema.Column("applied_at", schema.BigInt()).NotNull(),
 	).PrimaryKey("owner", "version").Build()
 	if err != nil {
 		return fmt.Errorf("build standalone Delivery migration ledger: %w", err)
@@ -83,7 +83,7 @@ func (registrar directMigrationRegistrar) apply(ctx context.Context, owner strin
 
 	insert, insertArguments, err := query.NewInsertBuilder(registrar.renderer, migrationLedgerTable).
 		Columns("owner", "version", "name", "checksum", "dirty", "applied_at").
-		Values(owner, migration.Version, strings.TrimSpace(migration.Name), checksum, true, "").Build()
+		Values(owner, migration.Version, strings.TrimSpace(migration.Name), checksum, true, int64(0)).Build()
 	if err != nil {
 		return err
 	}
@@ -106,7 +106,7 @@ func (registrar directMigrationRegistrar) apply(ctx context.Context, owner strin
 	}
 	complete, completeArguments, err := query.NewUpdateBuilder(registrar.renderer, migrationLedgerTable).
 		Set("dirty", false).
-		Set("applied_at", time.Now().UTC().Format(time.RFC3339Nano)).
+		Set("applied_at", time.Now().UTC().UnixMilli()).
 		Where(query.And(
 			query.Equal("owner", owner), query.Equal("version", migration.Version),
 			query.Equal("checksum", checksum), query.Equal("dirty", true),
