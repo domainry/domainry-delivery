@@ -19,6 +19,8 @@ const (
 	ProductDelete             = "product.delete"
 	ProductFrontendStart      = "product.engineering.frontend.start"
 	ProductFrontendComplete   = "product.engineering.frontend.complete"
+	ProductFrontendApprove    = "product.engineering.frontend.approve"
+	ProductFrontendRevise     = "product.engineering.frontend.revise"
 	ProductFoundationStarted  = "product.engineering.foundation.started"
 	ProductFoundationComplete = "product.engineering.foundation.completed"
 	ProductFoundationFailed   = "product.engineering.foundation.failed"
@@ -100,9 +102,11 @@ func buildCatalog() map[string]Definition {
 		FeatureDeliveryStart:    "DeliveryStart",
 	})
 	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorHuman}, []string{"active"}, map[string]string{
-		ProductDelete:        "ProductDelete",
-		FeatureDiscoveryOpen: "FeatureDiscoveryOpen",
-		FeatureConfirm:       "FeatureConfirmation",
+		ProductDelete:          "ProductDelete",
+		ProductFrontendApprove: "FrontendApproval",
+		ProductFrontendRevise:  "FrontendReviewFeedback",
+		FeatureDiscoveryOpen:   "FeatureDiscoveryOpen",
+		FeatureConfirm:         "FeatureConfirmation",
 	})
 	register(TargetProduct, "delivery_deployment.record", "ProductProjection", []domain.ActorKind{domain.ActorSystem}, []string{"active"}, map[string]string{
 		ProductFoundationStarted:  "FoundationStart",

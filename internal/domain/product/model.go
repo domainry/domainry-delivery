@@ -65,6 +65,9 @@ type ProductEngineering struct {
 	FrontendStartedAt            *time.Time        `json:"frontend_started_at,omitempty"`
 	FrontendCompletedBy          string            `json:"frontend_completed_by,omitempty"`
 	FrontendCompletedAt          *time.Time        `json:"frontend_completed_at,omitempty"`
+	FrontendReviewFeedback       string            `json:"frontend_review_feedback,omitempty"`
+	FrontendApprovedBy           string            `json:"frontend_approved_by,omitempty"`
+	FrontendApprovedAt           *time.Time        `json:"frontend_approved_at,omitempty"`
 	ApplicationDeliverySHA256    string            `json:"application_delivery_sha256,omitempty"`
 	FoundationReleaseSHA256      string            `json:"foundation_release_sha256,omitempty"`
 	FoundationPackageSHA256      string            `json:"foundation_package_sha256,omitempty"`

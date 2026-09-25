@@ -12,6 +12,8 @@ const (
 	commandProductDelete           = commanddomain.ProductDelete
 	commandProductFrontendStart    = commanddomain.ProductFrontendStart
 	commandProductFrontendFinish   = commanddomain.ProductFrontendComplete
+	commandProductFrontendApprove  = commanddomain.ProductFrontendApprove
+	commandProductFrontendRevise   = commanddomain.ProductFrontendRevise
 	commandProductFoundationStart  = commanddomain.ProductFoundationStarted
 	commandProductFoundationFinish = commanddomain.ProductFoundationComplete
 	commandProductFoundationFail   = commanddomain.ProductFoundationFailed
@@ -105,6 +107,16 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 			return Invalid("agent_execution_required")
 		}
 		err = completeProductFrontend(product, command, now)
+	case commandProductFrontendApprove:
+		if command.Actor.Kind != ActorHuman {
+			return Invalid("human_confirmation_required")
+		}
+		err = approveProductFrontend(product, command, now)
+	case commandProductFrontendRevise:
+		if command.Actor.Kind != ActorHuman {
+			return Invalid("human_confirmation_required")
+		}
+		err = reviseProductFrontend(product, command)
 	case commandProductFoundationStart:
 		if command.Actor.Kind != ActorSystem {
 			return Invalid("system_execution_required")
@@ -188,11 +200,61 @@ func completeProductFrontend(product *Product, command Command, now time.Time) e
 	product.Engineering.PreviewEntry = payload.PreviewEntry
 	product.Engineering.FrontendCompletedBy = command.Actor.ID
 	product.Engineering.FrontendCompletedAt = &now
+	product.Engineering.FrontendReviewFeedback = ""
+	return nil
+}
+
+func approveProductFrontend(product *Product, command Command, now time.Time) error {
+	if product.Engineering.Status != EngineeringFoundationPending || product.Engineering.FrontendApprovedAt != nil {
+		return Invalid("product_frontend_not_reviewable")
+	}
+	var payload struct {
+		CodeRevision string `json:"code_revision"`
+	}
+	if err := decode(command.Payload, &payload); err != nil {
+		return err
+	}
+	if strings.TrimSpace(payload.CodeRevision) == "" || payload.CodeRevision != product.Engineering.FrontendCodeRevision {
+		return Invalid("product_frontend_review_revision_stale")
+	}
+	product.Engineering.FrontendApprovedBy = command.Actor.ID
+	product.Engineering.FrontendApprovedAt = &now
+	return nil
+}
+
+func reviseProductFrontend(product *Product, command Command) error {
+	if product.Engineering.Status != EngineeringFoundationPending || product.Engineering.FrontendApprovedAt != nil {
+		return Invalid("product_frontend_not_reviewable")
+	}
+	var payload struct {
+		CodeRevision string `json:"code_revision"`
+		Feedback     string `json:"feedback"`
+	}
+	if err := decode(command.Payload, &payload); err != nil {
+		return err
+	}
+	payload.Feedback = strings.TrimSpace(payload.Feedback)
+	if strings.TrimSpace(payload.CodeRevision) == "" || payload.CodeRevision != product.Engineering.FrontendCodeRevision {
+		return Invalid("product_frontend_review_revision_stale")
+	}
+	if payload.Feedback == "" {
+		return Invalid("product_frontend_feedback_required")
+	}
+	product.Engineering.Status = EngineeringFrontendQueued
+	product.Engineering.FrontendReviewFeedback = payload.Feedback
+	product.Engineering.FrontendCodeRevision = ""
+	product.Engineering.FrontendArtifactRef = ""
+	product.Engineering.DesignContractRef = ""
+	product.Engineering.LoginEntry = ""
+	product.Engineering.ShellEntry = ""
+	product.Engineering.PreviewEntry = ""
+	product.Engineering.FrontendCompletedBy = ""
+	product.Engineering.FrontendCompletedAt = nil
 	return nil
 }
 
 func startProductFoundation(product *Product, command Command, now time.Time) error {
-	if product.Engineering.Status != EngineeringFoundationPending {
+	if product.Engineering.Status != EngineeringFoundationPending || product.Engineering.FrontendApprovedAt == nil {
 		return Invalid("product_foundation_not_pending")
 	}
 	var payload struct {

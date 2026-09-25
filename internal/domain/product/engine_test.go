@@ -48,12 +48,23 @@ func TestNewProductQueuesEngineeringInitializationBeforeFeatureDelivery(t *testi
 
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
 	projection = delivery.ProductProjectionFor(product)
-	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.FrontendCompletedAt == nil || projection.AvailableActions[2].Command != "product.engineering.foundation.started" || projection.AvailableActions[2].ActorKind != delivery.ActorSystem {
-		t.Fatalf("frontend completion did not hand off to foundation installation: %#v %#v", product.Engineering, projection.AvailableActions)
+	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.FrontendCompletedAt == nil || product.Engineering.FrontendApprovedAt != nil || projection.AvailableActions[2].Command != "product.engineering.frontend.approve" || projection.AvailableActions[2].ActorKind != delivery.ActorHuman || projection.AvailableActions[3].Command != "product.engineering.frontend.revise" {
+		t.Fatalf("frontend completion did not wait for human review: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
-	err := applyProduct(&product, agent("rd-agent"), "product.engineering.foundation.started", foundationStartEvidence())
+	err := applyProduct(&product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
+	assertCode(t, err, "product_foundation_not_pending")
+	err = applyProduct(&product, agent("rd-agent"), "product.engineering.frontend.approve", map[string]any{})
+	assertCode(t, err, "human_confirmation_required")
+	err = applyProduct(&product, human("product-owner"), "product.engineering.frontend.approve", map[string]any{"code_revision": "git:stale"})
+	assertCode(t, err, "product_frontend_review_revision_stale")
+	mustApplyProduct(t, &product, human("product-owner"), "product.engineering.frontend.approve", frontendApproval())
+	projection = delivery.ProductProjectionFor(product)
+	if product.Engineering.FrontendApprovedAt == nil || projection.AvailableActions[2].Command != "product.engineering.foundation.started" || projection.AvailableActions[2].ActorKind != delivery.ActorSystem {
+		t.Fatalf("human approval did not open Foundation installation: %#v %#v", product.Engineering, projection.AvailableActions)
+	}
+	err = applyProduct(&product, agent("rd-agent"), "product.engineering.foundation.started", foundationStartEvidence())
 	assertCode(t, err, "system_execution_required")
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
 	projection = delivery.ProductProjectionFor(product)
@@ -72,6 +83,7 @@ func TestProductFoundationFailureRetainsIdentityForExactRetry(t *testing.T) {
 	product := newQueuedProduct(t)
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	mustApplyProduct(t, &product, human("product-owner"), "product.engineering.frontend.approve", frontendApproval())
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.failed", map[string]any{"code": "verification_failed", "message": "runtime check rejected the installed source"})
@@ -100,6 +112,23 @@ func TestFeatureDeliveryWaitsForFoundationCompletion(t *testing.T) {
 		if action.Command == "feature.delivery.start" {
 			t.Fatalf("Feature delivery became available before foundation completion: %#v", action)
 		}
+	}
+}
+
+func TestFrontendReviewCanRequestChangesBeforeFoundation(t *testing.T) {
+	product := newQueuedProduct(t)
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	err := applyProduct(&product, human("product-owner"), "product.engineering.frontend.revise", map[string]any{"code_revision": "git:frontend-foundation", "feedback": " "})
+	assertCode(t, err, "product_frontend_feedback_required")
+	mustApplyProduct(t, &product, human("product-owner"), "product.engineering.frontend.revise", map[string]any{"code_revision": "git:frontend-foundation", "feedback": "Show a clean sign-in preview before Runtime exists."})
+	if product.Engineering.Status != delivery.EngineeringFrontendQueued || product.Engineering.FrontendReviewFeedback != "Show a clean sign-in preview before Runtime exists." || product.Engineering.PreviewEntry != "" || product.Engineering.FrontendCompletedAt != nil {
+		t.Fatalf("revision request did not reopen frontend initialization: %#v", product.Engineering)
+	}
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	if product.Engineering.FrontendReviewFeedback != "" {
+		t.Fatalf("completed frontend retained addressed review feedback: %#v", product.Engineering)
 	}
 }
 
@@ -489,6 +518,7 @@ func newProduct(t *testing.T) delivery.Product {
 	product := newQueuedProduct(t)
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	mustApplyProduct(t, &product, human("product-owner"), "product.engineering.frontend.approve", frontendApproval())
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence())
@@ -500,6 +530,10 @@ func frontendEvidence() map[string]any {
 		"code_revision": "git:frontend-foundation", "artifact_ref": "deck-artifact://sha256/frontend-foundation",
 		"design_contract_ref": "deck-evidence://sha256/design", "login_entry": "frontend/src/pages/Login.tsx", "shell_entry": "frontend/src/AppShell.tsx", "preview_entry": "frontend/dist/index.html",
 	}
+}
+
+func frontendApproval() map[string]any {
+	return map[string]any{"code_revision": "git:frontend-foundation"}
 }
 
 func foundationStartEvidence() map[string]any {

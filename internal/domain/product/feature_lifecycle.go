@@ -254,7 +254,12 @@ func ProductProjectionFor(product Product) ProductProjection {
 		case EngineeringFrontendInitializing:
 			add(commandProductFrontendFinish, product.ID)
 		case EngineeringFoundationPending:
-			add(commandProductFoundationStart, product.ID)
+			if product.Engineering.FrontendApprovedAt == nil {
+				add(commandProductFrontendApprove, product.ID)
+				add(commandProductFrontendRevise, product.ID)
+			} else {
+				add(commandProductFoundationStart, product.ID)
+			}
 		case EngineeringFoundationInstalling:
 			add(commandProductFoundationFinish, product.ID)
 			add(commandProductFoundationFail, product.ID)

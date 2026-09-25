@@ -61,12 +61,19 @@ Product commands come from the typed command catalog:
 
 - `product.create`, `product.delete`
 - `product.engineering.frontend.start`,
-  `product.engineering.frontend.complete`
+  `product.engineering.frontend.complete`,
+  `product.engineering.frontend.approve`,
+  `product.engineering.frontend.revise`
 - `product.engineering.foundation.started`,
   `product.engineering.foundation.completed`,
   `product.engineering.foundation.failed`
 - `feature.discovery.open`, `feature.discovery.replace`, `feature.confirm`
 - `feature.delivery.start` through the DeliveryRun creation endpoint
+
+Frontend completion exposes a human review gate. A user either approves the
+reviewed frontend before Foundation can start or requests a revision with
+`feedback`; the latter queues another frontend initialization. Foundation
+commands are rejected until approval is recorded on the Product.
 
 Feature confirmation freezes the complete discovery and specification as one
 immutable FeatureRevision against its exact ProductRevision baseline. Starting

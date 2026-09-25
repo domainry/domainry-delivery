@@ -256,6 +256,12 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 	if !ok || domainError.Code != "permission_denied" {
 		t.Fatalf("expected deployment permission denial, got %#v", err)
 	}
+	product, err = service.DispatchProduct(humanContext, "workspace-1", product.ID, delivery.Command{
+		ClientID: "frontend-approve", ExpectedRevision: product.Revision, Type: "product.engineering.frontend.approve", Payload: json.RawMessage(`{"code_revision":"git:frontend"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	systemContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorAgent},
 		application.PermissionProductRead, application.PermissionDeploymentRecord,
