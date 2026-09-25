@@ -8,21 +8,25 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
+	ormquery "github.com/domainry/domainry-orm/query"
 )
 
 func (store *Store) Get(ctx context.Context, workspaceID, deliveryRunID string) (deliveryrun.DeliveryRun, error) {
-	return loadRunState(ctx, store.db, workspaceID, deliveryRunID)
+	return loadRunState(ctx, store.db, store.renderer, workspaceID, deliveryRunID)
 }
 
 func (store *Store) ListDeliveryRuns(ctx context.Context, workspaceID, productID string) ([]deliveryrun.DeliveryRun, error) {
-	query := `SELECT run_id FROM runs WHERE workspace_id = ?`
-	arguments := []any{workspaceID}
+	builder := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableRuns, workspaceID).Columns("run_id")
 	if productID != "" {
-		query += ` AND product_id = ?`
-		arguments = append(arguments, productID)
+		builder.Where(ormquery.Equal("product_id", productID))
 	}
-	query += ` ORDER BY updated_at DESC, run_id`
-	rows, err := store.db.QueryContext(ctx, query, arguments...)
+	statement, arguments, err := builder.
+		OrderBy(ormquery.Descending("updated_at"), ormquery.Ascending("run_id")).
+		Build()
+	if err != nil {
+		return nil, storageError(err)
+	}
+	rows, err := store.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -43,7 +47,7 @@ func (store *Store) ListDeliveryRuns(ctx context.Context, workspaceID, productID
 	}
 	runs := make([]deliveryrun.DeliveryRun, 0, len(ids))
 	for _, id := range ids {
-		run, err := loadRunState(ctx, store.db, workspaceID, id)
+		run, err := loadRunState(ctx, store.db, store.renderer, workspaceID, id)
 		if err != nil {
 			return nil, err
 		}
@@ -64,7 +68,7 @@ func (store *Store) Transact(
 	return executeCommand(ctx, store, commandTarget{
 		workspaceID: workspaceID, resourceType: "delivery_run", resourceID: deliveryRunID, operationKind: "delivery_run_command",
 	}, mutation, func(transaction *sql.Tx) (deliveryrun.DeliveryRun, error) {
-		run, err := loadRunState(ctx, transaction, workspaceID, deliveryRunID)
+		run, err := loadRunState(ctx, transaction, store.renderer, workspaceID, deliveryRunID)
 		if err != nil {
 			return deliveryrun.DeliveryRun{}, err
 		}
@@ -76,7 +80,7 @@ func (store *Store) Transact(
 			return deliveryrun.DeliveryRun{}, err
 		}
 		if run.Stage == deliveryrun.StageLive && install != nil {
-			product, err := loadProductState(ctx, transaction, workspaceID, run.Product.ID)
+			product, err := loadProductState(ctx, transaction, store.renderer, workspaceID, run.Product.ID)
 			if err != nil {
 				return deliveryrun.DeliveryRun{}, err
 			}

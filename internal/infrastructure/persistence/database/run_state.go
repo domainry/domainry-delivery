@@ -8,18 +8,25 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
+	ormquery "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-func loadRunState(ctx context.Context, database sqlhost.DBTX, workspaceID, runID string) (deliveryrun.DeliveryRun, error) {
+func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRenderer, workspaceID, runID string) (deliveryrun.DeliveryRun, error) {
+	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(renderer, TableRuns, workspaceID).
+		Columns(
+			"run_id", "workspace_id", "name", "code", "goal", "target_date", "stage", "revision", "product_snapshot_json",
+			"feature_snapshot_json", "members_json", "active_delivery_unit_id", "executable_revision_json", "created_at", "updated_at",
+		).
+		Where(ormquery.Equal("run_id", runID)).
+		Build()
+	if err != nil {
+		return deliveryrun.DeliveryRun{}, storageError(err)
+	}
 	var run deliveryrun.DeliveryRun
 	var productJSON, featureJSON, membersJSON, executableJSON []byte
 	var createdAt, updatedAt string
-	err := database.QueryRowContext(ctx, `
-SELECT run_id, workspace_id, name, code, goal, target_date, stage, revision, product_snapshot_json,
-       feature_snapshot_json, members_json, active_delivery_unit_id, executable_revision_json, created_at, updated_at
-FROM runs WHERE workspace_id = ? AND run_id = ?
-`, workspaceID, runID).Scan(
+	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
 		&run.ID, &run.WorkspaceID, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
 		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &createdAt, &updatedAt,
 	)
@@ -50,35 +57,40 @@ FROM runs WHERE workspace_id = ? AND run_id = ?
 	if run.UpdatedAt, err = parseStoredTime(updatedAt); err != nil {
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
-	if run.DeliveryUnits, err = loadRunComponents[deliveryrun.DeliveryUnit](ctx, database, TableDeliveryUnits, workspaceID, runID); err != nil {
+	if run.DeliveryUnits, err = loadRunComponents[deliveryrun.DeliveryUnit](ctx, database, renderer, TableDeliveryUnits, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.TestCases, err = loadRunComponents[deliveryrun.TestCase](ctx, database, TableTestCases, workspaceID, runID); err != nil {
+	if run.TestCases, err = loadRunComponents[deliveryrun.TestCase](ctx, database, renderer, TableTestCases, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.QualityRuns, err = loadRunComponents[deliveryrun.QualityRun](ctx, database, TableQualityRuns, workspaceID, runID); err != nil {
+	if run.QualityRuns, err = loadRunComponents[deliveryrun.QualityRun](ctx, database, renderer, TableQualityRuns, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.AcceptanceCases, err = loadRunComponents[deliveryrun.AcceptanceCase](ctx, database, TableAcceptanceCases, workspaceID, runID); err != nil {
+	if run.AcceptanceCases, err = loadRunComponents[deliveryrun.AcceptanceCase](ctx, database, renderer, TableAcceptanceCases, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.AcceptanceConfirmations, err = loadRunComponents[deliveryrun.AcceptanceConfirmation](ctx, database, TableAcceptanceConfirmations, workspaceID, runID); err != nil {
+	if run.AcceptanceConfirmations, err = loadRunComponents[deliveryrun.AcceptanceConfirmation](ctx, database, renderer, TableAcceptanceConfirmations, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.ReleaseChecks, err = loadRunComponents[deliveryrun.ReleaseCheck](ctx, database, TableReleaseChecks, workspaceID, runID); err != nil {
+	if run.ReleaseChecks, err = loadRunComponents[deliveryrun.ReleaseCheck](ctx, database, renderer, TableReleaseChecks, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.Releases, err = loadRunComponents[deliveryrun.Release](ctx, database, TableReleases, workspaceID, runID); err != nil {
+	if run.Releases, err = loadRunComponents[deliveryrun.Release](ctx, database, renderer, TableReleases, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
-	if run.Activity, err = loadRunComponents[deliveryrun.ActivityEvent](ctx, database, TableActivity, workspaceID, runID); err != nil {
+	if run.Activity, err = loadRunComponents[deliveryrun.ActivityEvent](ctx, database, renderer, TableActivity, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
 	return run, nil
 }
 
-func loadRunComponents[T any](ctx context.Context, database sqlhost.DBTX, table, workspaceID, runID string) ([]T, error) {
-	return loadJSONRows[T](ctx, database, "SELECT value_json FROM "+table+" WHERE workspace_id = ? AND run_id = ? ORDER BY ordinal", workspaceID, runID)
+func loadRunComponents[T any](ctx context.Context, database sqlhost.DBTX, renderer sqlRenderer, table, workspaceID, runID string) ([]T, error) {
+	return loadJSONRows[T](ctx, database,
+		ormquery.NewWorkspaceSelectBuilder(renderer, table, workspaceID).
+			Columns("value_json").
+			Where(ormquery.Equal("run_id", runID)).
+			OrderBy(ormquery.Ascending("ordinal")),
+	)
 }
 
 func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX, run deliveryrun.DeliveryRun) error {
@@ -86,16 +98,22 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 	if err != nil {
 		return err
 	}
-	_, err = transaction.ExecContext(ctx, `
-INSERT INTO runs (
-  workspace_id, run_id, product_id, name, code, goal, target_date, stage, revision,
-  product_snapshot_json, feature_snapshot_json, members_json, active_delivery_unit_id,
-  executable_revision_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, run.WorkspaceID, run.ID, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
-		productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON,
-		run.CreatedAt.Format(timeFormat), run.UpdatedAt.Format(timeFormat))
+	statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableRuns, run.WorkspaceID).
+		Columns(
+			"run_id", "product_id", "name", "code", "goal", "target_date", "stage", "revision",
+			"product_snapshot_json", "feature_snapshot_json", "members_json", "active_delivery_unit_id",
+			"executable_revision_json", "created_at", "updated_at",
+		).
+		Values(
+			run.ID, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
+			productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON,
+			run.CreatedAt.Format(timeFormat), run.UpdatedAt.Format(timeFormat),
+		).
+		Build()
 	if err != nil {
+		return storageError(err)
+	}
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 		return storageError(err)
 	}
 	return store.persistRunRelations(ctx, transaction, run)
@@ -106,15 +124,29 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 	if err != nil {
 		return err
 	}
-	result, err := transaction.ExecContext(ctx, `
-UPDATE runs
-SET product_id = ?, name = ?, code = ?, goal = ?, target_date = ?, stage = ?, revision = ?,
-    product_snapshot_json = ?, feature_snapshot_json = ?, members_json = ?, active_delivery_unit_id = ?,
-    executable_revision_json = ?, updated_at = ?
-WHERE workspace_id = ? AND run_id = ? AND revision = ?
-`, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
-		productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON, run.UpdatedAt.Format(timeFormat),
-		run.WorkspaceID, run.ID, expectedRevision)
+	statement, arguments, err := ormquery.NewWorkspaceUpdateBuilder(store.renderer, TableRuns, run.WorkspaceID).
+		Set("product_id", run.Product.ID).
+		Set("name", run.Name).
+		Set("code", run.Code).
+		Set("goal", run.Goal).
+		Set("target_date", run.TargetDate).
+		Set("stage", run.Stage).
+		Set("revision", run.Revision).
+		Set("product_snapshot_json", productJSON).
+		Set("feature_snapshot_json", featureJSON).
+		Set("members_json", membersJSON).
+		Set("active_delivery_unit_id", run.ActiveDeliveryUnitID).
+		Set("executable_revision_json", executableJSON).
+		Set("updated_at", run.UpdatedAt.Format(timeFormat)).
+		Where(ormquery.And(
+			ormquery.Equal("run_id", run.ID),
+			ormquery.Equal("revision", expectedRevision),
+		)).
+		Build()
+	if err != nil {
+		return storageError(err)
+	}
+	result, err := transaction.ExecContext(ctx, statement, arguments...)
 	if err != nil {
 		return storageError(err)
 	}
@@ -184,8 +216,15 @@ func (store *Store) persistImmutableRunComponents(ctx context.Context, transacti
 		if err != nil {
 			return storageError(err)
 		}
-		statement := insertIgnoreForDialect("INSERT INTO "+table+" (workspace_id, run_id, "+idColumn+", ordinal, value_json) VALUES (?, ?, ?, ?, ?)", store.dialect)
-		if _, err := transaction.ExecContext(ctx, statement, workspaceID, runID, id, ordinal, raw); err != nil {
+		statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, table, workspaceID).
+			Columns("run_id", idColumn, "ordinal", "value_json").
+			Values(runID, id, ordinal, raw).
+			OnConflictDoNothing("workspace_id", "run_id", idColumn).
+			Build()
+		if err != nil {
+			return storageError(err)
+		}
+		if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 			return storageError(err)
 		}
 	}
@@ -199,13 +238,21 @@ func (store *Store) persistMutableRunComponents(ctx context.Context, transaction
 		if err != nil {
 			return storageError(err)
 		}
-		statement := "INSERT INTO " + table + " (workspace_id, run_id, " + idColumn + ", ordinal, value_json) VALUES (?, ?, ?, ?, ?)"
-		if store.dialect == "mysql" {
-			statement += " ON DUPLICATE KEY UPDATE ordinal=VALUES(ordinal), value_json=VALUES(value_json)"
-		} else {
-			statement += " ON CONFLICT(workspace_id, run_id, " + idColumn + ") DO UPDATE SET ordinal=excluded.ordinal, value_json=excluded.value_json"
+		insert := ormquery.NewWorkspaceInsertBuilder(store.renderer, table, workspaceID).
+			Columns("run_id", idColumn, "ordinal", "value_json").
+			Values(runID, id, ordinal, raw)
+		insert, err = store.profile.ApplyUpsert(insert, []string{"workspace_id", "run_id", idColumn},
+			ormquery.AssignExpression("ordinal", ormquery.InsertedValue("ordinal")),
+			ormquery.AssignExpression("value_json", ormquery.InsertedValue("value_json")),
+		)
+		if err != nil {
+			return storageError(err)
 		}
-		if _, err := transaction.ExecContext(ctx, statement, workspaceID, runID, id, ordinal, raw); err != nil {
+		statement, arguments, err := insert.Build()
+		if err != nil {
+			return storageError(err)
+		}
+		if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 			return storageError(err)
 		}
 	}
@@ -213,7 +260,13 @@ func (store *Store) persistMutableRunComponents(ctx context.Context, transaction
 }
 
 func (store *Store) replaceRunComponents(ctx context.Context, transaction sqlhost.DBTX, table, idColumn, workspaceID, runID string, count int, at componentAt) error {
-	if _, err := transaction.ExecContext(ctx, "DELETE FROM "+table+" WHERE workspace_id = ? AND run_id = ?", workspaceID, runID); err != nil {
+	statement, arguments, err := ormquery.NewWorkspaceDeleteBuilder(store.renderer, table, workspaceID).
+		Where(ormquery.Equal("run_id", runID)).
+		Build()
+	if err != nil {
+		return storageError(err)
+	}
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 		return storageError(err)
 	}
 	return store.persistMutableRunComponents(ctx, transaction, table, idColumn, workspaceID, runID, count, at)

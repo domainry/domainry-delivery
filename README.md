@@ -24,8 +24,9 @@ The implementation is physically split by responsibility:
 - `internal/domain/deliveryrun`: the single DeliveryUnit lifecycle.
 - `internal/domain/lifecycle`: cross-aggregate start/install transitions.
 - `internal/application`: use cases and narrow repository ports.
-- `internal/infrastructure/persistence`: shared relational persistence plus
-  MySQL and SQLite adapters.
+- `internal/infrastructure/persistence`: shared relational persistence built
+  exclusively with `domainry-orm` schema/query builders, plus MySQL and SQLite
+  adapters; repositories contain no handwritten SQL.
 - `internal/assembly/module` and `internal/assembly/saas`: separate composition
   roots using the same domain, application and schema.
 - `internal/transport/http`: authenticated SaaS transport only.

@@ -24,7 +24,10 @@ func TestOwnedTableNamesDoNotRepeatDatabaseName(t *testing.T) {
 
 func TestSchemaHasOnePortableSourceForSQLiteAndMySQL(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql"} {
-		statements := SchemaStatements(driver)
+		statements, err := SchemaStatements(driver)
+		if err != nil {
+			t.Fatal(err)
+		}
 		joined := strings.Join(statements, "\n")
 		for _, table := range OwnedTables() {
 			if !strings.Contains(joined, table) {
@@ -38,14 +41,21 @@ func TestSchemaHasOnePortableSourceForSQLiteAndMySQL(t *testing.T) {
 			t.Fatalf("%s schema retained a redundant delivery_ table prefix", driver)
 		}
 	}
-	if !strings.Contains(strings.Join(SchemaStatements("mysql"), "\n"), "LONGBLOB") {
+	mysqlStatements, err := SchemaStatements("mysql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(mysqlStatements, "\n"), "LONGBLOB") {
 		t.Fatal("MySQL schema did not render bounded aggregate documents for MySQL")
 	}
 }
 
 func TestSchemaMigrationsAreTheSamePhysicalBaseline(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql"} {
-		migrations := Migrations(driver)
+		migrations, err := Migrations(driver)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Baseline == nil || len(migrations[0].Baseline.Tables) != len(OwnedTables()) {
 			t.Fatalf("%s migration baseline=%#v", driver, migrations)
 		}

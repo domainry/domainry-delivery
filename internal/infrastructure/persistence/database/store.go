@@ -8,6 +8,7 @@ import (
 	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	identity "github.com/domainry/domainry-identity-sdk"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
+	ormdriver "github.com/domainry/domainry-orm/driver"
 	"github.com/domainry/domainry-orm/sqlhost"
 
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/identityhost"
@@ -16,7 +17,8 @@ import (
 type Store struct {
 	db         sqlhost.Database
 	dialect    string
-	renderer   ormdialect.Renderer
+	renderer   sqlRenderer
+	profile    ormdriver.Profile
 	registrar  directMigrationRegistrar
 	operations sharedoperation.Store
 	closer     interface{ Close() error }
@@ -32,19 +34,31 @@ func New(ctx context.Context, db sqlhost.Database, dialect string, ownsDatabase 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	renderer, err := ormdialect.ParseRenderer(dialect, "", "")
+	baseRenderer, err := ormdialect.ParseRenderer(dialect, "", "")
+	if err != nil {
+		return nil, err
+	}
+	renderer, err := deliveryRenderer(dialect, baseRenderer)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := deliveryProfile(dialect)
+	if err != nil {
+		return nil, err
+	}
+	migrationValues, err := migrationsForRenderer(dialect, renderer)
 	if err != nil {
 		return nil, err
 	}
 	registrar := directMigrationRegistrar{database: db, renderer: renderer, driver: dialect}
-	if err := registrar.ApplyOwnedMigrations(ctx, "delivery", Migrations(dialect)); err != nil {
+	if err := registrar.ApplyOwnedMigrations(ctx, "delivery", migrationValues); err != nil {
 		return nil, err
 	}
 	operations, err := sharedoperation.Open(ctx, db, sharedoperation.AdaptDialect(renderer), registrar)
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, dialect: dialect, renderer: renderer, registrar: registrar, operations: operations}
+	store := &Store{db: db, dialect: dialect, renderer: renderer, profile: profile, registrar: registrar, operations: operations}
 	if ownsDatabase {
 		store.closer, _ = db.(interface{ Close() error })
 	}
@@ -69,16 +83,28 @@ func (store *Store) ExternalIdentityDatabaseHandle(ctx context.Context) (identit
 	return identityhost.NewDatabaseHandle(ctx, database, store.dialect, store.renderer, store.registrar)
 }
 
-func NewBorrowed(ctx context.Context, db sqlhost.Database, dialect string, renderer sharedoperation.Renderer, migrations sharedoperation.MigrationRegistrar) (*Store, error) {
-	if ctx == nil || db == nil || renderer == nil || migrations == nil || (dialect != "sqlite" && dialect != "mysql") {
+func NewBorrowed(ctx context.Context, db sqlhost.Database, dialect string, hostRenderer sharedoperation.Dialect, migrations sharedoperation.MigrationRegistrar) (*Store, error) {
+	if ctx == nil || db == nil || hostRenderer == nil || migrations == nil || (dialect != "sqlite" && dialect != "mysql") {
 		return nil, fmt.Errorf("Delivery borrowed database and supported dialect are required")
 	}
-	if err := migrations.ApplyOwnedMigrations(ctx, "delivery", Migrations(dialect)); err != nil {
-		return nil, err
-	}
-	operations, err := sharedoperation.Open(ctx, db, sharedoperation.AdaptDialect(renderer), migrations)
+	renderer, err := deliveryRenderer(dialect, hostRenderer)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{db: db, dialect: dialect, operations: operations}, nil
+	profile, err := deliveryProfile(dialect)
+	if err != nil {
+		return nil, err
+	}
+	migrationValues, err := migrationsForRenderer(dialect, renderer)
+	if err != nil {
+		return nil, err
+	}
+	if err := migrations.ApplyOwnedMigrations(ctx, "delivery", migrationValues); err != nil {
+		return nil, err
+	}
+	operations, err := sharedoperation.Open(ctx, db, hostRenderer, migrations)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{db: db, dialect: dialect, renderer: renderer, profile: profile, operations: operations}, nil
 }

@@ -8,16 +8,22 @@ import (
 	"github.com/domainry/domainry-delivery/internal/application"
 	"github.com/domainry/domainry-delivery/internal/domain"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
+	ormquery "github.com/domainry/domainry-orm/query"
 )
 
 func (store *Store) GetProduct(ctx context.Context, workspaceID, productID string) (productdomain.Product, error) {
-	return loadProductState(ctx, store.db, workspaceID, productID)
+	return loadProductState(ctx, store.db, store.renderer, workspaceID, productID)
 }
 
 func (store *Store) ListProducts(ctx context.Context, workspaceID string) ([]productdomain.Product, error) {
-	rows, err := store.db.QueryContext(ctx, `
-SELECT product_id FROM products WHERE workspace_id = ? ORDER BY updated_at DESC, product_id
-`, workspaceID)
+	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableProducts, workspaceID).
+		Columns("product_id").
+		OrderBy(ormquery.Descending("updated_at"), ormquery.Ascending("product_id")).
+		Build()
+	if err != nil {
+		return nil, storageError(err)
+	}
+	rows, err := store.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -38,7 +44,7 @@ SELECT product_id FROM products WHERE workspace_id = ? ORDER BY updated_at DESC,
 	}
 	products := make([]productdomain.Product, 0, len(ids))
 	for _, id := range ids {
-		product, err := loadProductState(ctx, store.db, workspaceID, id)
+		product, err := loadProductState(ctx, store.db, store.renderer, workspaceID, id)
 		if err != nil {
 			return nil, err
 		}
@@ -59,7 +65,14 @@ func (store *Store) CreateProduct(
 		workspaceID: workspaceID, resourceType: "product", resourceID: productID, operationKind: "product_command",
 	}, mutation, func(transaction *sql.Tx) (productdomain.Product, error) {
 		var actualRevision uint64
-		err := transaction.QueryRowContext(ctx, `SELECT revision FROM products WHERE workspace_id = ? AND product_id = ?`, workspaceID, productID).Scan(&actualRevision)
+		statement, arguments, buildErr := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableProducts, workspaceID).
+			Columns("revision").
+			Where(ormquery.Equal("product_id", productID)).
+			Build()
+		if buildErr != nil {
+			return productdomain.Product{}, storageError(buildErr)
+		}
+		err := transaction.QueryRowContext(ctx, statement, arguments...).Scan(&actualRevision)
 		if err == nil {
 			return productdomain.Product{}, domain.Conflict(actualRevision)
 		}
@@ -74,7 +87,14 @@ func (store *Store) CreateProduct(
 			return productdomain.Product{}, err
 		}
 		var existingProductID string
-		err = transaction.QueryRowContext(ctx, `SELECT product_id FROM products WHERE workspace_id = ? AND code = ?`, workspaceID, product.Code).Scan(&existingProductID)
+		statement, arguments, buildErr = ormquery.NewWorkspaceSelectBuilder(store.renderer, TableProducts, workspaceID).
+			Columns("product_id").
+			Where(ormquery.Equal("code", product.Code)).
+			Build()
+		if buildErr != nil {
+			return productdomain.Product{}, storageError(buildErr)
+		}
+		err = transaction.QueryRowContext(ctx, statement, arguments...).Scan(&existingProductID)
 		if err == nil {
 			return productdomain.Product{}, domain.Invalid("product_code_duplicate")
 		}
@@ -99,7 +119,7 @@ func (store *Store) TransactProduct(
 	return executeCommand(ctx, store, commandTarget{
 		workspaceID: workspaceID, resourceType: "product", resourceID: productID, operationKind: "product_command",
 	}, mutation, func(transaction *sql.Tx) (productdomain.Product, error) {
-		product, err := loadProductState(ctx, transaction, workspaceID, productID)
+		product, err := loadProductState(ctx, transaction, store.renderer, workspaceID, productID)
 		if err != nil {
 			return productdomain.Product{}, err
 		}

@@ -6,24 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
+	ormquery "github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/sqlhost"
 )
 
-func loadProductState(ctx context.Context, database sqlhost.DBTX, workspaceID, productID string) (productdomain.Product, error) {
+func loadProductState(ctx context.Context, database sqlhost.DBTX, renderer sqlRenderer, workspaceID, productID string) (productdomain.Product, error) {
+	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(renderer, TableProducts, workspaceID).
+		Columns(
+			"product_id", "workspace_id", "name", "code", "goal", "industry", "engineering_json", "status", "revision",
+			"current_definition_revision", "current_release_revision", "current_deployment_json", "created_at", "updated_at",
+		).
+		Where(ormquery.Equal("product_id", productID)).
+		Build()
+	if err != nil {
+		return productdomain.Product{}, storageError(err)
+	}
 	var product productdomain.Product
 	var engineeringJSON []byte
 	var deploymentJSON []byte
 	var createdAt, updatedAt string
-	err := database.QueryRowContext(ctx, `
-SELECT product_id, workspace_id, name, code, goal, industry, engineering_json, status, revision,
-       current_definition_revision, current_release_revision, current_deployment_json, created_at, updated_at
-FROM products WHERE workspace_id = ? AND product_id = ?
-`, workspaceID, productID).Scan(
+	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
 		&product.ID, &product.WorkspaceID, &product.Name, &product.Code, &product.Goal, &product.Industry,
 		&engineeringJSON, &product.Status, &product.Revision, &product.CurrentDefinitionRevision,
 		&product.CurrentReleaseRevision, &deploymentJSON, &createdAt, &updatedAt,
@@ -49,25 +55,33 @@ FROM products WHERE workspace_id = ? AND product_id = ?
 	if product.UpdatedAt, err = parseStoredTime(updatedAt); err != nil {
 		return productdomain.Product{}, storageError(err)
 	}
-	if product.Revisions, err = loadJSONRows[productdomain.ProductRevision](ctx, database, `
-SELECT revision_json FROM product_revisions
-WHERE workspace_id = ? AND product_id = ? ORDER BY revision_number
-`, workspaceID, productID); err != nil {
+	if product.Revisions, err = loadJSONRows[productdomain.ProductRevision](ctx, database,
+		ormquery.NewWorkspaceSelectBuilder(renderer, TableProductRevisions, workspaceID).
+			Columns("revision_json").
+			Where(ormquery.Equal("product_id", productID)).
+			OrderBy(ormquery.Ascending("revision_number")),
+	); err != nil {
 		return productdomain.Product{}, err
 	}
-	if product.Features, err = loadFeatures(ctx, database, workspaceID, productID); err != nil {
+	if product.Features, err = loadFeatures(ctx, database, renderer, workspaceID, productID); err != nil {
 		return productdomain.Product{}, err
 	}
 	return product, nil
 }
 
-func loadFeatures(ctx context.Context, database sqlhost.DBTX, workspaceID, productID string) ([]productdomain.Feature, error) {
-	rows, err := database.QueryContext(ctx, `
-SELECT feature_id, code, status, current_revision, confirmed_revision, delivery_sequence,
-       queued_at, delivery_run_id, installed_release_id, draft_json, created_at, updated_at
-FROM features WHERE workspace_id = ? AND product_id = ?
-ORDER BY created_at, feature_id
-`, workspaceID, productID)
+func loadFeatures(ctx context.Context, database sqlhost.DBTX, renderer sqlRenderer, workspaceID, productID string) ([]productdomain.Feature, error) {
+	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(renderer, TableFeatures, workspaceID).
+		Columns(
+			"feature_id", "code", "status", "current_revision", "confirmed_revision", "delivery_sequence",
+			"queued_at", "delivery_run_id", "installed_release_id", "draft_json", "created_at", "updated_at",
+		).
+		Where(ormquery.Equal("product_id", productID)).
+		OrderBy(ormquery.Ascending("created_at"), ormquery.Ascending("feature_id")).
+		Build()
+	if err != nil {
+		return nil, storageError(err)
+	}
+	rows, err := database.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, storageError(err)
 	}
@@ -109,10 +123,15 @@ ORDER BY created_at, feature_id
 		return nil, storageError(err)
 	}
 	for index := range features {
-		features[index].Revisions, err = loadJSONRows[productdomain.FeatureRevision](ctx, database, `
-SELECT revision_json FROM feature_revisions
-WHERE workspace_id = ? AND product_id = ? AND feature_id = ? ORDER BY revision_number
-`, workspaceID, productID, features[index].ID)
+		features[index].Revisions, err = loadJSONRows[productdomain.FeatureRevision](ctx, database,
+			ormquery.NewWorkspaceSelectBuilder(renderer, TableFeatureRevisions, workspaceID).
+				Columns("revision_json").
+				Where(ormquery.And(
+					ormquery.Equal("product_id", productID),
+					ormquery.Equal("feature_id", features[index].ID),
+				)).
+				OrderBy(ormquery.Ascending("revision_number")),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -129,15 +148,21 @@ func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.
 	if err != nil {
 		return storageError(err)
 	}
-	_, err = transaction.ExecContext(ctx, `
-INSERT INTO products (
-  workspace_id, product_id, name, code, goal, industry, engineering_json, status, revision,
-  current_definition_revision, current_release_revision, current_deployment_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, product.WorkspaceID, product.ID, product.Name, product.Code, product.Goal, product.Industry, engineeringJSON,
-		product.Status, product.Revision, product.CurrentDefinitionRevision, product.CurrentReleaseRevision,
-		deploymentJSON, product.CreatedAt.Format(timeFormat), product.UpdatedAt.Format(timeFormat))
+	statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableProducts, product.WorkspaceID).
+		Columns(
+			"product_id", "name", "code", "goal", "industry", "engineering_json", "status", "revision",
+			"current_definition_revision", "current_release_revision", "current_deployment_json", "created_at", "updated_at",
+		).
+		Values(
+			product.ID, product.Name, product.Code, product.Goal, product.Industry, engineeringJSON, product.Status, product.Revision,
+			product.CurrentDefinitionRevision, product.CurrentReleaseRevision, deploymentJSON,
+			product.CreatedAt.Format(timeFormat), product.UpdatedAt.Format(timeFormat),
+		).
+		Build()
 	if err != nil {
+		return storageError(err)
+	}
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 		return storageError(err)
 	}
 	return store.persistProductRelations(ctx, transaction, product)
@@ -152,14 +177,27 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 	if err != nil {
 		return storageError(err)
 	}
-	result, err := transaction.ExecContext(ctx, `
-UPDATE products
-SET name = ?, code = ?, goal = ?, industry = ?, engineering_json = ?, status = ?, revision = ?,
-    current_definition_revision = ?, current_release_revision = ?, current_deployment_json = ?, updated_at = ?
-WHERE workspace_id = ? AND product_id = ? AND revision = ?
-`, product.Name, product.Code, product.Goal, product.Industry, engineeringJSON, product.Status, product.Revision,
-		product.CurrentDefinitionRevision, product.CurrentReleaseRevision, deploymentJSON, product.UpdatedAt.Format(timeFormat),
-		product.WorkspaceID, product.ID, expectedRevision)
+	statement, arguments, err := ormquery.NewWorkspaceUpdateBuilder(store.renderer, TableProducts, product.WorkspaceID).
+		Set("name", product.Name).
+		Set("code", product.Code).
+		Set("goal", product.Goal).
+		Set("industry", product.Industry).
+		Set("engineering_json", engineeringJSON).
+		Set("status", product.Status).
+		Set("revision", product.Revision).
+		Set("current_definition_revision", product.CurrentDefinitionRevision).
+		Set("current_release_revision", product.CurrentReleaseRevision).
+		Set("current_deployment_json", deploymentJSON).
+		Set("updated_at", product.UpdatedAt.Format(timeFormat)).
+		Where(ormquery.And(
+			ormquery.Equal("product_id", product.ID),
+			ormquery.Equal("revision", expectedRevision),
+		)).
+		Build()
+	if err != nil {
+		return storageError(err)
+	}
+	result, err := transaction.ExecContext(ctx, statement, arguments...)
 	if err != nil {
 		return storageError(err)
 	}
@@ -174,47 +212,66 @@ WHERE workspace_id = ? AND product_id = ? AND revision = ?
 }
 
 func (store *Store) persistProductRelations(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product) error {
-	return persistProductRelationsWithDialect(ctx, transaction, product, store.dialect)
-}
-
-func persistProductRelationsWithDialect(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product, dialect string) error {
 	for _, revision := range product.Revisions {
 		valueJSON, err := json.Marshal(revision)
 		if err != nil {
 			return storageError(err)
 		}
-		if _, err := transaction.ExecContext(ctx, insertIgnoreForDialect(`
-INSERT INTO product_revisions (workspace_id, product_id, revision_number, revision_json, created_at)
-VALUES (?, ?, ?, ?, ?)
-`, dialect), product.WorkspaceID, product.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)); err != nil {
+		statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableProductRevisions, product.WorkspaceID).
+			Columns("product_id", "revision_number", "revision_json", "created_at").
+			Values(product.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)).
+			OnConflictDoNothing("workspace_id", "product_id", "revision_number").
+			Build()
+		if err != nil {
+			return storageError(err)
+		}
+		if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 			return storageError(err)
 		}
 	}
 	for _, feature := range product.Features {
-		if err := persistFeatureWithDialect(ctx, transaction, product, feature, dialect); err != nil {
+		if err := store.persistFeature(ctx, transaction, product, feature); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func persistFeatureWithDialect(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product, feature productdomain.Feature, dialect string) error {
+func (store *Store) persistFeature(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product, feature productdomain.Feature) error {
 	draftJSON, err := nullableJSON(feature.Draft)
 	if err != nil {
 		return storageError(err)
 	}
-	queuedAt := nullableTime(feature.QueuedAt)
-	statement := `
-INSERT INTO features (
-  workspace_id, product_id, feature_id, code, status, current_revision, confirmed_revision, delivery_sequence,
-  queued_at, delivery_run_id, installed_release_id, draft_json, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	if dialect == "mysql" {
-		statement += ` ON DUPLICATE KEY UPDATE code=VALUES(code), status=VALUES(status), current_revision=VALUES(current_revision), confirmed_revision=VALUES(confirmed_revision), delivery_sequence=VALUES(delivery_sequence), queued_at=VALUES(queued_at), delivery_run_id=VALUES(delivery_run_id), installed_release_id=VALUES(installed_release_id), draft_json=VALUES(draft_json), updated_at=VALUES(updated_at)`
-	} else {
-		statement += ` ON CONFLICT(workspace_id, product_id, feature_id) DO UPDATE SET code=excluded.code, status=excluded.status, current_revision=excluded.current_revision, confirmed_revision=excluded.confirmed_revision, delivery_sequence=excluded.delivery_sequence, queued_at=excluded.queued_at, delivery_run_id=excluded.delivery_run_id, installed_release_id=excluded.installed_release_id, draft_json=excluded.draft_json, updated_at=excluded.updated_at`
+	insert := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableFeatures, product.WorkspaceID).
+		Columns(
+			"product_id", "feature_id", "code", "status", "current_revision", "confirmed_revision", "delivery_sequence",
+			"queued_at", "delivery_run_id", "installed_release_id", "draft_json", "created_at", "updated_at",
+		).
+		Values(
+			product.ID, feature.ID, feature.Code, feature.Status, feature.CurrentRevision, feature.ConfirmedRevision, feature.DeliverySequence,
+			nullableTime(feature.QueuedAt), feature.DeliveryRunID, feature.InstalledReleaseID, draftJSON,
+			feature.CreatedAt.Format(timeFormat), feature.UpdatedAt.Format(timeFormat),
+		)
+	insert, err = store.profile.ApplyUpsert(insert, []string{"workspace_id", "product_id", "feature_id"},
+		ormquery.AssignExpression("code", ormquery.InsertedValue("code")),
+		ormquery.AssignExpression("status", ormquery.InsertedValue("status")),
+		ormquery.AssignExpression("current_revision", ormquery.InsertedValue("current_revision")),
+		ormquery.AssignExpression("confirmed_revision", ormquery.InsertedValue("confirmed_revision")),
+		ormquery.AssignExpression("delivery_sequence", ormquery.InsertedValue("delivery_sequence")),
+		ormquery.AssignExpression("queued_at", ormquery.InsertedValue("queued_at")),
+		ormquery.AssignExpression("delivery_run_id", ormquery.InsertedValue("delivery_run_id")),
+		ormquery.AssignExpression("installed_release_id", ormquery.InsertedValue("installed_release_id")),
+		ormquery.AssignExpression("draft_json", ormquery.InsertedValue("draft_json")),
+		ormquery.AssignExpression("updated_at", ormquery.InsertedValue("updated_at")),
+	)
+	if err != nil {
+		return storageError(err)
 	}
-	if _, err := transaction.ExecContext(ctx, statement, product.WorkspaceID, product.ID, feature.ID, feature.Code, feature.Status, feature.CurrentRevision, feature.ConfirmedRevision, feature.DeliverySequence, queuedAt, feature.DeliveryRunID, feature.InstalledReleaseID, draftJSON, feature.CreatedAt.Format(timeFormat), feature.UpdatedAt.Format(timeFormat)); err != nil {
+	statement, arguments, err := insert.Build()
+	if err != nil {
+		return storageError(err)
+	}
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 		return storageError(err)
 	}
 	for _, revision := range feature.Revisions {
@@ -222,22 +279,19 @@ INSERT INTO features (
 		if err != nil {
 			return storageError(err)
 		}
-		if _, err := transaction.ExecContext(ctx, insertIgnoreForDialect(`
-INSERT INTO feature_revisions (workspace_id, product_id, feature_id, revision_number, revision_json, created_at)
-VALUES (?, ?, ?, ?, ?, ?)
-`, dialect), product.WorkspaceID, product.ID, feature.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)); err != nil {
+		statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableFeatureRevisions, product.WorkspaceID).
+			Columns("product_id", "feature_id", "revision_number", "revision_json", "created_at").
+			Values(product.ID, feature.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)).
+			OnConflictDoNothing("workspace_id", "product_id", "feature_id", "revision_number").
+			Build()
+		if err != nil {
+			return storageError(err)
+		}
+		if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
 			return storageError(err)
 		}
 	}
 	return nil
-}
-
-func insertIgnoreForDialect(statement, dialect string) string {
-	statement = strings.TrimSpace(statement)
-	if dialect == "mysql" {
-		return strings.Replace(statement, "INSERT INTO", "INSERT IGNORE INTO", 1)
-	}
-	return statement + " ON CONFLICT DO NOTHING"
 }
 
 func nullableJSON(value any) ([]byte, error) {
@@ -261,8 +315,12 @@ func nullableTime(value *time.Time) any {
 	return value.Format(timeFormat)
 }
 
-func loadJSONRows[T any](ctx context.Context, database sqlhost.DBTX, query string, arguments ...any) ([]T, error) {
-	rows, err := database.QueryContext(ctx, query, arguments...)
+func loadJSONRows[T any](ctx context.Context, database sqlhost.DBTX, builder *ormquery.SelectBuilder) ([]T, error) {
+	statement, arguments, err := builder.Build()
+	if err != nil {
+		return nil, storageError(err)
+	}
+	rows, err := database.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, storageError(err)
 	}

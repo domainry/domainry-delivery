@@ -167,7 +167,7 @@ domainry-delivery/
 
 ### R07：重做持久化与代码分层
 
-- [x] R07.1 使用 `domainry-orm` dialect 与 migration descriptors 定义 Delivery owned schema；删除 `sqlite.OpenBorrowed` 内的裸 SQLite DDL。
+- [x] R07.1 Delivery owned DDL 全部由 `domainry-orm/schema` builder 生成，SELECT/INSERT/UPDATE/DELETE 全部由 `domainry-orm/query` builder 生成，MySQL/SQLite upsert 通过 ORM driver profile 选择。已删除 Repository 手写 SQL 和 `sqlite.OpenBorrowed` 内的裸 SQLite DDL，架构门禁会拒绝生产 persistence 代码重新引入 SQL 字面量。
 - [x] R07.2 Module/SaaS 共用同一 schema source 与私有 Store，表归属和 migration owner 唯一；standalone SaaS 通过 `_schema_migrations(owner, version)` 分别记录 Delivery 与 shared Operations 的不可变 checksum，重启不重复执行 DDL。因 SaaS 独占 `delivery` database，业务表直接命名为 `products`、`runs`、`units`、`workspaces` 等，不重复添加 `delivery_` 前缀；开发期直接清空旧数据库，不编写旧表迁移。
 - [x] R07.3 按 aggregate 边界持久化 Product、ProductRevision、Feature、FeatureRevision、DeliveryRun、DeliveryUnit、quality、acceptance、release；只对不可变文档 payload 使用有界 JSON，不再每次重写整个 Product/Run 历史 BLOB。
 - [x] R07.4 为 Workspace、product code、Feature/Run identity、revision、delivery queue 和当前状态建立真实约束与索引；数据库约束与 domain invariant 保持同一语义。

@@ -1,9 +1,11 @@
 package database
 
 import (
-	"strings"
+	"fmt"
 
+	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
+	ormschema "github.com/domainry/domainry-orm/schema"
 )
 
 const (
@@ -32,72 +34,189 @@ func OwnedTables() []string {
 }
 
 // SchemaStatements is the one physical baseline shared by Module and SaaS.
-// Mutable aggregate headers are relational rows. Only bounded value documents
-// and immutable revision payloads use JSON columns.
-func SchemaStatements(dialect string) []string {
-	keyType, jsonType, uintType, longText := "TEXT", "BLOB", "INTEGER", "TEXT"
-	productsIndex, featuresIndex, runsIndex := "", "", ""
-	if dialect == "mysql" {
-		keyType, jsonType, uintType, longText = "VARCHAR(191)", "LONGBLOB", "BIGINT UNSIGNED", "LONGTEXT"
-		productsIndex = ", INDEX products_updated (workspace_id, updated_at, product_id)"
-		featuresIndex = ", INDEX features_queue (workspace_id, product_id, status, delivery_sequence)"
-		runsIndex = ", INDEX runs_product_stage (workspace_id, product_id, stage, updated_at)"
+// Every DDL statement is rendered by domainry-orm; repositories never own
+// handwritten SQL or dialect branches.
+func SchemaStatements(driver string) ([]string, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, "", "")
+	if err != nil {
+		return nil, err
 	}
-	statements := []string{
-		"CREATE TABLE IF NOT EXISTS " + TableProducts + " (" +
-			"workspace_id " + keyType + " NOT NULL, product_id " + keyType + " NOT NULL, name " + longText + " NOT NULL, code " + keyType + " NOT NULL, goal " + longText + " NOT NULL, industry " + longText + " NOT NULL, " +
-			"engineering_json " + jsonType + " NOT NULL, status " + keyType + " NOT NULL, revision " + uintType + " NOT NULL, current_definition_revision " + uintType + " NOT NULL, current_release_revision " + uintType + " NOT NULL, current_deployment_json " + jsonType + " NULL, " +
-			"created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, PRIMARY KEY (workspace_id, product_id), UNIQUE (workspace_id, code)" + productsIndex + ")",
-		"CREATE TABLE IF NOT EXISTS " + TableProductRevisions + " (" +
-			"workspace_id " + keyType + " NOT NULL, product_id " + keyType + " NOT NULL, revision_number " + uintType + " NOT NULL, revision_json " + jsonType + " NOT NULL, created_at VARCHAR(40) NOT NULL, PRIMARY KEY (workspace_id, product_id, revision_number))",
-		"CREATE TABLE IF NOT EXISTS " + TableFeatures + " (" +
-			"workspace_id " + keyType + " NOT NULL, product_id " + keyType + " NOT NULL, feature_id " + keyType + " NOT NULL, code " + keyType + " NOT NULL, status " + keyType + " NOT NULL, current_revision " + uintType + " NOT NULL, confirmed_revision " + uintType + " NOT NULL, delivery_sequence " + uintType + " NOT NULL, " +
-			"queued_at VARCHAR(40) NULL, delivery_run_id " + keyType + " NOT NULL, installed_release_id " + keyType + " NOT NULL, draft_json " + jsonType + " NULL, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, PRIMARY KEY (workspace_id, product_id, feature_id), UNIQUE (workspace_id, product_id, code)" + featuresIndex + ")",
-		"CREATE TABLE IF NOT EXISTS " + TableFeatureRevisions + " (" +
-			"workspace_id " + keyType + " NOT NULL, product_id " + keyType + " NOT NULL, feature_id " + keyType + " NOT NULL, revision_number " + uintType + " NOT NULL, revision_json " + jsonType + " NOT NULL, created_at VARCHAR(40) NOT NULL, PRIMARY KEY (workspace_id, product_id, feature_id, revision_number))",
-		"CREATE TABLE IF NOT EXISTS " + TableRuns + " (" +
-			"workspace_id " + keyType + " NOT NULL, run_id " + keyType + " NOT NULL, product_id " + keyType + " NOT NULL, name " + longText + " NOT NULL, code " + keyType + " NOT NULL, goal " + longText + " NOT NULL, target_date " + keyType + " NOT NULL, stage " + keyType + " NOT NULL, revision " + uintType + " NOT NULL, " +
-			"product_snapshot_json " + jsonType + " NOT NULL, feature_snapshot_json " + jsonType + " NOT NULL, members_json " + jsonType + " NOT NULL, active_delivery_unit_id " + keyType + " NOT NULL, executable_revision_json " + jsonType + " NULL, created_at VARCHAR(40) NOT NULL, updated_at VARCHAR(40) NOT NULL, PRIMARY KEY (workspace_id, run_id)" + runsIndex + ")",
-		componentTableSQL(TableDeliveryUnits, keyType, jsonType, uintType, "unit_id"),
-		componentTableSQL(TableTestCases, keyType, jsonType, uintType, "test_case_id"),
-		componentTableSQL(TableQualityRuns, keyType, jsonType, uintType, "quality_run_id"),
-		componentTableSQL(TableAcceptanceCases, keyType, jsonType, uintType, "acceptance_case_id"),
-		componentTableSQL(TableAcceptanceConfirmations, keyType, jsonType, uintType, "confirmation_id"),
-		componentTableSQL(TableReleaseChecks, keyType, jsonType, uintType, "check_id"),
-		componentTableSQL(TableReleases, keyType, jsonType, uintType, "release_id"),
-		componentTableSQL(TableActivity, keyType, jsonType, uintType, "event_id"),
-	}
-	if dialect != "mysql" {
-		statements = append(statements,
-			"CREATE INDEX IF NOT EXISTS products_updated ON products (workspace_id, updated_at, product_id)",
-			"CREATE INDEX IF NOT EXISTS features_queue ON features (workspace_id, product_id, status, delivery_sequence)",
-			"CREATE INDEX IF NOT EXISTS runs_product_stage ON runs (workspace_id, product_id, stage, updated_at)",
-		)
-	}
-	return statements
+	return schemaStatements(driver, renderer)
 }
 
-func componentTableSQL(table, keyType, jsonType, uintType, idColumn string) string {
-	return "CREATE TABLE IF NOT EXISTS " + table + " (" +
-		"workspace_id " + keyType + " NOT NULL, run_id " + keyType + " NOT NULL, " + idColumn + " " + keyType + " NOT NULL, ordinal " + uintType + " NOT NULL, value_json " + jsonType + " NOT NULL, " +
-		"PRIMARY KEY (workspace_id, run_id, " + idColumn + "))"
+func schemaStatements(driver string, renderer baseSQLRenderer) ([]string, error) {
+	named, err := deliveryRenderer(driver, renderer)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := deliveryProfile(driver)
+	if err != nil {
+		return nil, err
+	}
+	tables := []struct {
+		name    string
+		builder *ormschema.TableBuilder
+	}{
+		{name: TableProducts, builder: productsTable(named)},
+		{name: TableProductRevisions, builder: productRevisionsTable(named)},
+		{name: TableFeatures, builder: featuresTable(named)},
+		{name: TableFeatureRevisions, builder: featureRevisionsTable(named)},
+		{name: TableRuns, builder: runsTable(named)},
+		{name: TableDeliveryUnits, builder: componentTable(named, TableDeliveryUnits, "unit_id")},
+		{name: TableTestCases, builder: componentTable(named, TableTestCases, "test_case_id")},
+		{name: TableQualityRuns, builder: componentTable(named, TableQualityRuns, "quality_run_id")},
+		{name: TableAcceptanceCases, builder: componentTable(named, TableAcceptanceCases, "acceptance_case_id")},
+		{name: TableAcceptanceConfirmations, builder: componentTable(named, TableAcceptanceConfirmations, "confirmation_id")},
+		{name: TableReleaseChecks, builder: componentTable(named, TableReleaseChecks, "check_id")},
+		{name: TableReleases, builder: componentTable(named, TableReleases, "release_id")},
+		{name: TableActivity, builder: componentTable(named, TableActivity, "event_id")},
+	}
+	statements := make([]string, 0, len(tables)+3)
+	for _, table := range tables {
+		statement, arguments, buildErr := table.builder.Build()
+		if buildErr != nil {
+			return nil, fmt.Errorf("build Delivery table %s: %w", table.name, buildErr)
+		}
+		if len(arguments) != 0 {
+			return nil, fmt.Errorf("Delivery table %s unexpectedly contains bound DDL values", table.name)
+		}
+		statements = append(statements, statement)
+	}
+	for _, index := range []struct {
+		name    string
+		table   string
+		columns []string
+	}{
+		{name: "products_updated", table: TableProducts, columns: []string{"workspace_id", "updated_at", "product_id"}},
+		{name: "features_queue", table: TableFeatures, columns: []string{"workspace_id", "product_id", "status", "delivery_sequence"}},
+		{name: "runs_product_stage", table: TableRuns, columns: []string{"workspace_id", "product_id", "stage", "updated_at"}},
+	} {
+		builder := profile.ApplyCreateIndex(ormschema.NewIndex(named, index.name, index.table).Columns(index.columns...))
+		statement, arguments, buildErr := builder.Build()
+		if buildErr != nil {
+			return nil, fmt.Errorf("build Delivery index %s: %w", index.name, buildErr)
+		}
+		if len(arguments) != 0 {
+			return nil, fmt.Errorf("Delivery index %s unexpectedly contains bound DDL values", index.name)
+		}
+		statements = append(statements, statement)
+	}
+	return statements, nil
 }
 
-func Migrations(dialect string) []ormmigration.Migration {
+func productsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, TableProducts).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("name", ormschema.LongText()),
+		requiredColumn("code", ormschema.TextKey(191)),
+		requiredColumn("goal", ormschema.LongText()),
+		requiredColumn("industry", ormschema.LongText()),
+		requiredColumn("engineering_json", ormschema.Binary()),
+		requiredColumn("status", ormschema.TextKey(191)),
+		requiredColumn("revision", ormschema.BigInt()),
+		requiredColumn("current_definition_revision", ormschema.BigInt()),
+		requiredColumn("current_release_revision", ormschema.BigInt()),
+		ormschema.Column("current_deployment_json", ormschema.Binary()),
+		requiredColumn("created_at", ormschema.TextKey(40)),
+		requiredColumn("updated_at", ormschema.TextKey(40)),
+	).PrimaryKey("workspace_id", "product_id").Unique("workspace_id", "code")
+}
+
+func productRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, TableProductRevisions).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("revision_number", ormschema.BigInt()),
+		requiredColumn("revision_json", ormschema.Binary()),
+		requiredColumn("created_at", ormschema.TextKey(40)),
+	).PrimaryKey("workspace_id", "product_id", "revision_number")
+}
+
+func featuresTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, TableFeatures).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("feature_id", ormschema.TextKey(191)),
+		requiredColumn("code", ormschema.TextKey(191)),
+		requiredColumn("status", ormschema.TextKey(191)),
+		requiredColumn("current_revision", ormschema.BigInt()),
+		requiredColumn("confirmed_revision", ormschema.BigInt()),
+		requiredColumn("delivery_sequence", ormschema.BigInt()),
+		ormschema.Column("queued_at", ormschema.TextKey(40)),
+		requiredColumn("delivery_run_id", ormschema.TextKey(191)),
+		requiredColumn("installed_release_id", ormschema.TextKey(191)),
+		ormschema.Column("draft_json", ormschema.Binary()),
+		requiredColumn("created_at", ormschema.TextKey(40)),
+		requiredColumn("updated_at", ormschema.TextKey(40)),
+	).PrimaryKey("workspace_id", "product_id", "feature_id").Unique("workspace_id", "product_id", "code")
+}
+
+func featureRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, TableFeatureRevisions).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("feature_id", ormschema.TextKey(191)),
+		requiredColumn("revision_number", ormschema.BigInt()),
+		requiredColumn("revision_json", ormschema.Binary()),
+		requiredColumn("created_at", ormschema.TextKey(40)),
+	).PrimaryKey("workspace_id", "product_id", "feature_id", "revision_number")
+}
+
+func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, TableRuns).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("run_id", ormschema.TextKey(191)),
+		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("name", ormschema.LongText()),
+		requiredColumn("code", ormschema.TextKey(191)),
+		requiredColumn("goal", ormschema.LongText()),
+		requiredColumn("target_date", ormschema.TextKey(191)),
+		requiredColumn("stage", ormschema.TextKey(191)),
+		requiredColumn("revision", ormschema.BigInt()),
+		requiredColumn("product_snapshot_json", ormschema.Binary()),
+		requiredColumn("feature_snapshot_json", ormschema.Binary()),
+		requiredColumn("members_json", ormschema.Binary()),
+		requiredColumn("active_delivery_unit_id", ormschema.TextKey(191)),
+		ormschema.Column("executable_revision_json", ormschema.Binary()),
+		requiredColumn("created_at", ormschema.TextKey(40)),
+		requiredColumn("updated_at", ormschema.TextKey(40)),
+	).PrimaryKey("workspace_id", "run_id")
+}
+
+func componentTable(renderer ormschema.Renderer, table, idColumn string) *ormschema.TableBuilder {
+	return ormschema.NewTable(renderer, table).IfNotExists().Columns(
+		requiredColumn("workspace_id", ormschema.TextKey(191)),
+		requiredColumn("run_id", ormschema.TextKey(191)),
+		requiredColumn(idColumn, ormschema.TextKey(191)),
+		requiredColumn("ordinal", ormschema.BigInt()),
+		requiredColumn("value_json", ormschema.Binary()),
+	).PrimaryKey("workspace_id", "run_id", idColumn)
+}
+
+func requiredColumn(name string, kind ormschema.ColumnType) ormschema.ColumnDefinition {
+	return ormschema.Column(name, kind).NotNull()
+}
+
+func Migrations(driver string) ([]ormmigration.Migration, error) {
+	renderer, err := ormdialect.ParseRenderer(driver, "", "")
+	if err != nil {
+		return nil, err
+	}
+	return migrationsForRenderer(driver, renderer)
+}
+
+func migrationsForRenderer(driver string, renderer baseSQLRenderer) ([]ormmigration.Migration, error) {
+	statements, err := schemaStatements(driver, renderer)
+	if err != nil {
+		return nil, err
+	}
 	tables := make([]ormmigration.Table, 0, len(OwnedTables()))
 	for _, table := range OwnedTables() {
 		tables = append(tables, ormmigration.Table{Name: table})
 	}
 	return []ormmigration.Migration{{
-		Version: 1, Name: "delivery_relational_baseline", Statements: SchemaStatements(dialect),
+		Version: 1, Name: "delivery_relational_baseline", Statements: statements,
 		Baseline: &ormmigration.Baseline{Tables: tables},
-	}}
-}
-
-func (store *Store) insertIgnore(statement string) string {
-	statement = strings.TrimSpace(statement)
-	if store.dialect == "mysql" {
-		return strings.Replace(statement, "INSERT INTO", "INSERT IGNORE INTO", 1)
-	}
-	return statement + " ON CONFLICT DO NOTHING"
+	}}, nil
 }

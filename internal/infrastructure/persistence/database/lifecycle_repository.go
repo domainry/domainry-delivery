@@ -9,6 +9,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
+	ormquery "github.com/domainry/domainry-orm/query"
 )
 
 type startDeliveryResult struct {
@@ -28,7 +29,7 @@ func (store *Store) StartDelivery(
 	result, err := executeCommand(ctx, store, commandTarget{
 		workspaceID: workspaceID, resourceType: "product", resourceID: productID, operationKind: "start_delivery",
 	}, mutation, func(transaction *sql.Tx) (startDeliveryResult, error) {
-		product, err := loadProductState(ctx, transaction, workspaceID, productID)
+		product, err := loadProductState(ctx, transaction, store.renderer, workspaceID, productID)
 		if err != nil {
 			return startDeliveryResult{}, err
 		}
@@ -37,9 +38,14 @@ func (store *Store) StartDelivery(
 			return startDeliveryResult{}, domain.Conflict(actualRevision)
 		}
 		var existingRunID string
-		err = transaction.QueryRowContext(ctx, `
-SELECT run_id FROM runs WHERE workspace_id = ? AND run_id = ?
-`, workspaceID, deliveryRunID).Scan(&existingRunID)
+		statement, arguments, buildErr := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableRuns, workspaceID).
+			Columns("run_id").
+			Where(ormquery.Equal("run_id", deliveryRunID)).
+			Build()
+		if buildErr != nil {
+			return startDeliveryResult{}, storageError(buildErr)
+		}
+		err = transaction.QueryRowContext(ctx, statement, arguments...).Scan(&existingRunID)
 		if err == nil {
 			return startDeliveryResult{}, domain.Invalid("delivery_run_exists")
 		}

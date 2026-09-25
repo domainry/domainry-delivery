@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -283,12 +284,48 @@ func TestHTTPDocumentationCoversTheTypedCommandCatalogAndLocales(t *testing.T) {
 
 func TestOwnedSchemaHasNoAggregateBlobsOrPrivateReceipts(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql"} {
-		joined := strings.ToLower(strings.Join(deliverydb.SchemaStatements(driver), "\n"))
+		statements, err := deliverydb.SchemaStatements(driver)
+		if err != nil {
+			t.Fatal(err)
+		}
+		joined := strings.ToLower(strings.Join(statements, "\n"))
 		for _, forbidden := range []string{"state_json", "command_receipt", "feature_attachment"} {
 			if strings.Contains(joined, forbidden) {
 				t.Fatalf("%s Delivery schema retained forbidden ownership %q", driver, forbidden)
 			}
 		}
+	}
+}
+
+func TestDeliveryPersistenceUsesDomainryORMBuilders(t *testing.T) {
+	root := repositoryRoot(t)
+	rawSQL := regexp.MustCompile(`(?is)\b(select\s+.+\s+from|insert\s+into|update\s+[a-z_][a-z0-9_]*\s+set|delete\s+from|create\s+(table|index)|drop\s+table)\b`)
+	err := filepath.WalkDir(filepath.Join(root, "internal", "infrastructure", "persistence"), func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return walkErr
+		}
+		files := token.NewFileSet()
+		parsed, err := parser.ParseFile(files, path, nil, 0)
+		if err != nil {
+			return err
+		}
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			literal, ok := node.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(literal.Value)
+			if err != nil || !rawSQL.MatchString(value) {
+				return true
+			}
+			position := files.Position(literal.Pos())
+			t.Errorf("%s:%d contains handwritten SQL; use domainry-orm query/schema builders", strings.TrimPrefix(path, root+string(filepath.Separator)), position.Line)
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
