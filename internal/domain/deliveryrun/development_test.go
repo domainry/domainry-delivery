@@ -18,9 +18,24 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	if run.Feature.Discovery.Focus.Topic == "" {
 		t.Fatal("DeliveryRun discarded confirmed discovery facts")
 	}
+	phaseCategories := map[delivery.DeliveryUnitPhase]bool{}
+	for _, todo := range run.DeliveryUnits[0].DevelopmentTodos {
+		phaseCategories[todo.Phase] = true
+	}
+	if len(phaseCategories) != 7 || len(run.DeliveryUnits[0].DevelopmentTodos) <= len(phaseCategories) || run.DeliveryUnits[0].DevelopmentTodos[0].Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("new DeliveryRun has no authoritative seven-category development plan: %#v", run.DeliveryUnits[0].DevelopmentTodos)
+	}
+	for _, todo := range run.DeliveryUnits[0].DevelopmentTodos[1:] {
+		if todo.Status != delivery.DevelopmentTodoNotStarted || todo.Title == "" || todo.SourceID == "" {
+			t.Fatalf("new development todo has the wrong scope or status: %#v", todo)
+		}
+	}
 	assertPhaseAction(t, run, "interaction_modeling", "frontend", "delivery_unit.interaction.complete")
 
 	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
+	if todos := run.DeliveryUnits[0].DevelopmentTodos; todos[0].Status != delivery.DevelopmentTodoCompleted || len(todos[0].Evidence) != 1 || todos[1].Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("completed todo did not retain evidence and activate the next item: %#v", todos)
+	}
 	assertPhaseAction(t, run, "domain_modeling", "backend", "delivery_unit.model.complete")
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
 	assertPhaseAction(t, run, "model_verification", "system", "delivery_unit.model.verify")
@@ -260,6 +275,7 @@ func TestJourneyEvidenceMustMatchImplementationRevision(t *testing.T) {
 		"phase":            "journey_testing",
 		"git_revision":     strings.Repeat("c", 40),
 		"summary":          "Journey passed against an unrelated revision.",
+		"evidence_refs":    evidence.EvidenceRefs,
 		"backend_guide":    evidence,
 	})
 	if err != nil {
@@ -294,6 +310,7 @@ func TestContractEvidenceMustMatchTheVerifiedModelHash(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"delivery_unit_id": run.ActiveDeliveryUnitID, "phase": "contract_verification",
 		"git_revision": strings.Repeat("a", 40), "summary": "Contract passed against another model.",
+		"evidence_refs": evidence.EvidenceRefs,
 		"backend_guide": evidence,
 	})
 	if err != nil {
@@ -310,6 +327,28 @@ func advanceUnit(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, 
 
 func advanceUnitAtRevision(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, command, phase, revision string) {
 	t.Helper()
+	if actor.Kind == delivery.ActorAgent {
+		for {
+			var active *delivery.DevelopmentTodo
+			for index := range run.DeliveryUnits[0].DevelopmentTodos {
+				todo := &run.DeliveryUnits[0].DevelopmentTodos[index]
+				if todo.Phase == delivery.DeliveryUnitPhase(phase) && todo.Status == delivery.DevelopmentTodoInProgress {
+					active = todo
+					break
+				}
+			}
+			if active == nil {
+				break
+			}
+			mustApply(t, run, actor, "development_todo.complete", map[string]any{
+				"delivery_unit_id": run.ActiveDeliveryUnitID,
+				"todo_id":          active.ID,
+				"git_revision":     revision,
+				"summary":          "The business todo was implemented and verified.",
+				"evidence_refs":    []string{"git:" + revision + "#evidence:" + active.SourceID + ".json"},
+			})
+		}
+	}
 	if err := applyUnitAtRevision(run, actor, command, phase, revision, "", nil); err != nil {
 		t.Fatalf("advance %s: %v", phase, err)
 	}
@@ -351,6 +390,7 @@ func applyUnitAtRevision(run *delivery.DeliveryRun, actor delivery.Actor, comman
 		"phase":            phase,
 		"git_revision":     revision,
 		"summary":          "The deterministic phase gate passed.",
+		"evidence_refs":    []string{"git:" + revision + "#evidence:" + phase + ".json"},
 	}
 	if command == "delivery_unit.gap.report" {
 		payloadValue["diagnostics"] = diagnostics
@@ -407,8 +447,24 @@ func assertPhaseAction(t *testing.T, run delivery.DeliveryRun, phase, role, comm
 		t.Fatalf("unexpected DeliveryUnit assignment: %#v", unit)
 	}
 	projection := delivery.ProjectionFor(run)
-	if len(projection.Workflow.AvailableActions) == 0 || projection.Workflow.AvailableActions[0].Command != command {
-		t.Fatalf("phase %s did not expose %s: %#v", phase, command, projection.Workflow.AvailableActions)
+	if role == "system" {
+		if !hasProjectedAction(projection, command, unit.ID) {
+			t.Fatalf("system phase %s did not expose %s: %#v", phase, command, projection.Workflow.AvailableActions)
+		}
+	} else {
+		todo := unit.DevelopmentTodos[0]
+		for _, candidate := range unit.DevelopmentTodos {
+			if candidate.Phase == unit.Phase && candidate.Status == delivery.DevelopmentTodoInProgress {
+				todo = candidate
+				break
+			}
+		}
+		if !hasProjectedAction(projection, "development_todo.complete", todo.ID) {
+			t.Fatalf("agent phase %s did not expose its current business todo: %#v", phase, projection.Workflow.AvailableActions)
+		}
+		if hasProjectedAction(projection, command, unit.ID) {
+			t.Fatalf("agent phase %s exposed its gate before every business todo completed: %#v", phase, projection.Workflow.AvailableActions)
+		}
 	}
 	if hasProjectedAction(projection, "work.plan.replace", "") {
 		t.Fatal("DeliveryUnit exposed the removed WorkPlan development path")

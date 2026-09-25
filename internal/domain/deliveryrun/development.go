@@ -19,6 +19,7 @@ func newDeliveryUnits(feature FeatureSnapshot) ([]DeliveryUnit, string) {
 		FrontendStatus:    DeliveryGatePending,
 		ContractStatus:    DeliveryGatePending,
 		JourneyStatus:     DeliveryGatePending,
+		DevelopmentTodos:  newDevelopmentTodos(feature),
 	}
 	return []DeliveryUnit{unit}, unit.ID
 }
@@ -36,7 +37,13 @@ func deliveryUnitActions(run *DeliveryRun) ([]AvailableAction, bool) {
 		return []AvailableAction{}, true
 	}
 	_ = actorKind // catalog is the single source of projected actor metadata.
-	actions := []AvailableAction{catalogAction(command, unit.ID)}
+	actions := []AvailableAction{}
+	if todo := activeDevelopmentTodo(unit); todo != nil && unit.ActiveRole != "system" {
+		actions = append(actions, catalogAction(commandDevelopmentTodoComplete, todo.ID))
+	}
+	if unit.ActiveRole == "system" || developmentPhaseTodosCompleted(unit, unit.Phase) {
+		actions = append(actions, catalogAction(command, unit.ID))
+	}
 	if phaseCanReportGap(unit.Phase) {
 		actions = append(actions, catalogAction(commandGapReport, unit.ID))
 	}
@@ -106,6 +113,9 @@ func lifecycleActions(run *DeliveryRun) []AvailableAction {
 }
 
 func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) (bool, error) {
+	if command.Type == commandDevelopmentTodoComplete {
+		return true, completeDevelopmentTodo(run, command, now)
+	}
 	if !isDeliveryUnitCommand(command.Type) {
 		return false, nil
 	}
@@ -121,6 +131,9 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	if command.Type != expectedCommand {
 		return true, Invalid("delivery_unit_command_invalid")
 	}
+	if command.Type != commandGapReport && unit.ActiveRole != "system" && !developmentPhaseTodosCompleted(unit, unit.Phase) {
+		return true, Invalid("development_todos_incomplete")
+	}
 	if command.Actor.Kind != expectedActor {
 		return true, Invalid("delivery_unit_actor_invalid")
 	}
@@ -135,6 +148,7 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 		payload.BackendGuide.ExecutedBy = command.Actor.ID
 		payload.BackendGuide.OccurredAt = now
 	}
+	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
 	if err := validateDeliveryUnitPayload(run, unit, command, payload); err != nil {
 		return true, err
 	}
@@ -148,10 +162,14 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	if command.Type == commandGapReport {
 		status = DeliveryGateNeedsChange
 	}
-	unit.LatestGate = &DeliveryGateResult{
+	gate := DeliveryGateResult{
 		Phase: unit.Phase, Status: status, GitRevision: strings.TrimSpace(payload.GitRevision),
-		Summary: strings.TrimSpace(payload.Summary), Diagnostics: clone(payload.Diagnostics), FailureOwner: strings.TrimSpace(payload.FailureOwner), BackendGuide: clone(payload.BackendGuide),
+		Summary: strings.TrimSpace(payload.Summary), EvidenceRefs: clone(payload.EvidenceRefs), Diagnostics: clone(payload.Diagnostics), FailureOwner: strings.TrimSpace(payload.FailureOwner), BackendGuide: clone(payload.BackendGuide),
 		RecordedBy: command.Actor.ID, RecordedAt: now,
+	}
+	unit.LatestGate = &gate
+	if unit.ActiveRole == "system" && command.Type != commandGapReport {
+		completeSystemPhaseTodos(unit, gate)
 	}
 	advanceDeliveryUnit(run, unit, command.Type, payload)
 	appendActivity(run, command.Actor, "delivery_unit_phase_recorded", unit.ID+" phase recorded", string(payload.Phase)+": "+strings.TrimSpace(payload.Summary), now)
@@ -167,7 +185,7 @@ func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, e
 		}
 		return deliveryUnitResult{
 			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary,
+			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs,
 		}, nil
 	case commandModelVerify, commandContractVerify, commandJourneyComplete:
 		var payload deliveryUnitVerificationPayload
@@ -176,7 +194,7 @@ func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, e
 		}
 		return deliveryUnitResult{
 			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary, BackendGuide: payload.BackendGuide,
+			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, BackendGuide: payload.BackendGuide,
 		}, nil
 	case commandGapReport:
 		var payload deliveryUnitGapPayload
@@ -186,7 +204,7 @@ func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, e
 		return deliveryUnitResult{
 			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
 			GitRevision: payload.GitRevision, Summary: payload.Summary,
-			Diagnostics: payload.Diagnostics, FailureOwner: payload.FailureOwner,
+			EvidenceRefs: payload.EvidenceRefs, Diagnostics: payload.Diagnostics, FailureOwner: payload.FailureOwner,
 		}, nil
 	default:
 		return deliveryUnitResult{}, Invalid("delivery_unit_command_invalid")
@@ -202,6 +220,14 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
 	if !validGitRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 {
 		return Invalid("delivery_unit_gate_invalid")
+	}
+	if len(payload.EvidenceRefs) == 0 || len(payload.EvidenceRefs) > 100 {
+		return Invalid("delivery_unit_evidence_invalid")
+	}
+	for _, evidenceRef := range payload.EvidenceRefs {
+		if strings.TrimSpace(evidenceRef) == "" || len(evidenceRef) > 1024 {
+			return Invalid("delivery_unit_evidence_invalid")
+		}
 	}
 	if len(payload.Diagnostics) > 100 {
 		return Invalid("delivery_unit_diagnostics_invalid")
@@ -382,6 +408,7 @@ func routeDeliveryUnitGap(unit *DeliveryUnit, owner string) {
 		unit.IntegratedGitRevision = ""
 		setDeliveryUnitPhase(unit, DeliveryUnitFrontendConvergence)
 	}
+	resetDevelopmentTodosFromPhase(unit, unit.Phase)
 }
 
 func validDeliveryGapOwner(owner string) bool {
@@ -435,42 +462,7 @@ func deliveryUnitByID(run *DeliveryRun, id string) *DeliveryUnit {
 func setDeliveryUnitPhase(unit *DeliveryUnit, phase DeliveryUnitPhase) {
 	unit.Phase = phase
 	unit.ActiveRole = activeRoleForPhase(phase)
-}
-
-func activeRoleForPhase(phase DeliveryUnitPhase) string {
-	switch phase {
-	case DeliveryUnitInteractionModeling, DeliveryUnitFrontendConvergence:
-		return "frontend"
-	case DeliveryUnitDomainModeling, DeliveryUnitBackendImplementation:
-		return "backend"
-	case DeliveryUnitModelVerification, DeliveryUnitContractVerification, DeliveryUnitJourneyTesting:
-		return "system"
-	case DeliveryUnitPlanned, DeliveryUnitComplete:
-		return ""
-	}
-	return ""
-}
-
-func commandForPhase(phase DeliveryUnitPhase) (string, ActorKind) {
-	switch phase {
-	case DeliveryUnitInteractionModeling:
-		return commandInteractionComplete, ActorAgent
-	case DeliveryUnitDomainModeling:
-		return commandModelComplete, ActorAgent
-	case DeliveryUnitModelVerification:
-		return commandModelVerify, ActorSystem
-	case DeliveryUnitBackendImplementation:
-		return commandBackendComplete, ActorAgent
-	case DeliveryUnitFrontendConvergence:
-		return commandFrontendComplete, ActorAgent
-	case DeliveryUnitContractVerification:
-		return commandContractVerify, ActorSystem
-	case DeliveryUnitJourneyTesting:
-		return commandJourneyComplete, ActorSystem
-	case DeliveryUnitPlanned, DeliveryUnitComplete:
-		return "", ""
-	}
-	return "", ""
+	syncDevelopmentTodoStatuses(unit)
 }
 
 func isDeliveryUnitCommand(command string) bool {

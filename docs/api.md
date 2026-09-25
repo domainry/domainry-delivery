@@ -90,6 +90,7 @@ POST /api/v1/workspaces/{workspace_id}/delivery-runs/{delivery_run_id}/commands
 
 Agent commands:
 
+- `development_todo.complete`
 - `delivery_unit.interaction.complete`
 - `delivery_unit.model.complete`
 - `delivery_unit.backend.complete`
@@ -114,6 +115,13 @@ Human commands:
 The server projection is authoritative for `available_actions` and
 `release_gates`. Clients must reread it immediately before a mutation and must
 not reproduce the state machine.
+
+`development_todo.complete` records one concrete business Todo inside the
+current development category. Its payload contains `delivery_unit_id`,
+`todo_id`, the clean `git_revision`, a human-readable `summary`, and one or
+more Git-bound `evidence_refs`. Delivery advances only the next Todo in that
+category; the category gate becomes available after every contained Todo is
+completed.
 
 ## Command envelope and replay
 

@@ -28,15 +28,24 @@ const (
 	DeliveryGateNeedsChange DeliveryGateStatus = "needs_change"
 )
 
+type DevelopmentTodoStatus string
+
 const (
-	commandInteractionComplete = commanddomain.DeliveryUnitInteractionComplete
-	commandModelComplete       = commanddomain.DeliveryUnitModelComplete
-	commandModelVerify         = commanddomain.DeliveryUnitModelVerify
-	commandBackendComplete     = commanddomain.DeliveryUnitBackendComplete
-	commandFrontendComplete    = commanddomain.DeliveryUnitFrontendComplete
-	commandContractVerify      = commanddomain.DeliveryUnitContractVerify
-	commandGapReport           = commanddomain.DeliveryUnitGapReport
-	commandJourneyComplete     = commanddomain.DeliveryUnitJourneyComplete
+	DevelopmentTodoNotStarted DevelopmentTodoStatus = "not_started"
+	DevelopmentTodoInProgress DevelopmentTodoStatus = "in_progress"
+	DevelopmentTodoCompleted  DevelopmentTodoStatus = "completed"
+)
+
+const (
+	commandInteractionComplete     = commanddomain.DeliveryUnitInteractionComplete
+	commandModelComplete           = commanddomain.DeliveryUnitModelComplete
+	commandModelVerify             = commanddomain.DeliveryUnitModelVerify
+	commandBackendComplete         = commanddomain.DeliveryUnitBackendComplete
+	commandFrontendComplete        = commanddomain.DeliveryUnitFrontendComplete
+	commandContractVerify          = commanddomain.DeliveryUnitContractVerify
+	commandGapReport               = commanddomain.DeliveryUnitGapReport
+	commandJourneyComplete         = commanddomain.DeliveryUnitJourneyComplete
+	commandDevelopmentTodoComplete = commanddomain.DevelopmentTodoComplete
 )
 
 type DeliveryUnit struct {
@@ -59,6 +68,32 @@ type DeliveryUnit struct {
 	ContractEvidence                 *BackendGuideEvidence `json:"contract_evidence,omitempty"`
 	JourneyEvidence                  *BackendGuideEvidence `json:"journey_evidence,omitempty"`
 	LatestGate                       *DeliveryGateResult   `json:"latest_gate,omitempty"`
+	DevelopmentTodos                 []DevelopmentTodo     `json:"development_todos"`
+}
+
+// DevelopmentTodo is the authoritative, durable progress item for one of the
+// seven development categories. Evidence is append-only so a later rework
+// route never erases what previously passed or why it was invalidated.
+type DevelopmentTodo struct {
+	ID         string                    `json:"id"`
+	Phase      DeliveryUnitPhase         `json:"phase"`
+	SourceKind string                    `json:"source_kind"`
+	SourceID   string                    `json:"source_id"`
+	Title      string                    `json:"title"`
+	Detail     string                    `json:"detail"`
+	Status     DevelopmentTodoStatus     `json:"status"`
+	Evidence   []DevelopmentTodoEvidence `json:"evidence"`
+}
+
+type DevelopmentTodoEvidence struct {
+	Status       DeliveryGateStatus    `json:"status"`
+	GitRevision  string                `json:"git_revision"`
+	Summary      string                `json:"summary"`
+	EvidenceRefs []string              `json:"evidence_refs"`
+	Diagnostics  []GateDiagnostic      `json:"diagnostics"`
+	BackendGuide *BackendGuideEvidence `json:"backend_guide,omitempty"`
+	RecordedBy   string                `json:"recorded_by"`
+	RecordedAt   time.Time             `json:"recorded_at"`
 }
 
 type DeliveryGateResult struct {
@@ -66,6 +101,7 @@ type DeliveryGateResult struct {
 	Status       DeliveryGateStatus    `json:"status"`
 	GitRevision  string                `json:"git_revision"`
 	Summary      string                `json:"summary"`
+	EvidenceRefs []string              `json:"evidence_refs"`
 	Diagnostics  []GateDiagnostic      `json:"diagnostics"`
 	FailureOwner string                `json:"failure_owner,omitempty"`
 	BackendGuide *BackendGuideEvidence `json:"backend_guide,omitempty"`
@@ -129,6 +165,7 @@ type deliveryUnitImplementationPayload struct {
 	Phase          DeliveryUnitPhase `json:"phase"`
 	GitRevision    string            `json:"git_revision"`
 	Summary        string            `json:"summary"`
+	EvidenceRefs   []string          `json:"evidence_refs"`
 }
 
 type deliveryUnitVerificationPayload struct {
@@ -136,6 +173,7 @@ type deliveryUnitVerificationPayload struct {
 	Phase          DeliveryUnitPhase     `json:"phase"`
 	GitRevision    string                `json:"git_revision"`
 	Summary        string                `json:"summary"`
+	EvidenceRefs   []string              `json:"evidence_refs"`
 	BackendGuide   *BackendGuideEvidence `json:"backend_guide"`
 }
 
@@ -144,8 +182,17 @@ type deliveryUnitGapPayload struct {
 	Phase          DeliveryUnitPhase `json:"phase"`
 	GitRevision    string            `json:"git_revision"`
 	Summary        string            `json:"summary"`
+	EvidenceRefs   []string          `json:"evidence_refs"`
 	Diagnostics    []GateDiagnostic  `json:"diagnostics"`
 	FailureOwner   string            `json:"failure_owner"`
+}
+
+type developmentTodoCompletePayload struct {
+	DeliveryUnitID string   `json:"delivery_unit_id"`
+	TodoID         string   `json:"todo_id"`
+	GitRevision    string   `json:"git_revision"`
+	Summary        string   `json:"summary"`
+	EvidenceRefs   []string `json:"evidence_refs"`
 }
 
 // deliveryUnitResult is the normalized domain input after one of the three
@@ -155,6 +202,7 @@ type deliveryUnitResult struct {
 	Phase          DeliveryUnitPhase
 	GitRevision    string
 	Summary        string
+	EvidenceRefs   []string
 	Diagnostics    []GateDiagnostic
 	FailureOwner   string
 	BackendGuide   *BackendGuideEvidence

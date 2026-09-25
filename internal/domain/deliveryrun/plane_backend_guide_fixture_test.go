@@ -59,11 +59,40 @@ func TestPlaneBackendGuideFixtureCompletesTheAuthoritativeDeliveryUnit(t *testin
 
 func applyFixturePhase(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, command string, phase delivery.DeliveryUnitPhase, revision string, evidence *delivery.BackendGuideEvidence) {
 	t.Helper()
+	if actor.Kind == delivery.ActorAgent {
+		for {
+			var todo *delivery.DevelopmentTodo
+			for index := range run.DeliveryUnits[0].DevelopmentTodos {
+				candidate := &run.DeliveryUnits[0].DevelopmentTodos[index]
+				if candidate.Phase == phase && candidate.Status == delivery.DevelopmentTodoInProgress {
+					todo = candidate
+					break
+				}
+			}
+			if todo == nil {
+				break
+			}
+			payload, marshalErr := json.Marshal(map[string]any{
+				"delivery_unit_id": run.ActiveDeliveryUnitID,
+				"todo_id":          todo.ID,
+				"git_revision":     revision,
+				"summary":          "The business todo passed the fixture check.",
+				"evidence_refs":    []string{"git:" + revision + "#evidence:" + todo.SourceID + ".json"},
+			})
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			if applyErr := delivery.Apply(run, delivery.Command{Actor: actor, Type: "development_todo.complete", Payload: payload}, time.Now().UTC()); applyErr != nil {
+				t.Fatalf("complete todo %s: %v", todo.ID, applyErr)
+			}
+		}
+	}
 	payloadValue := map[string]any{
 		"delivery_unit_id": run.ActiveDeliveryUnitID,
 		"phase":            phase,
 		"git_revision":     revision,
 		"summary":          "The Plane backend guide check passed.",
+		"evidence_refs":    []string{"git:" + revision + "#evidence:" + string(phase) + ".json"},
 	}
 	if evidence != nil {
 		payloadValue["backend_guide"] = evidence

@@ -65,15 +65,25 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	defer store.Close()
 	service := application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store})
 	ctx := context.Background()
-	seedRun(t, store, testfixture.DemoDeliveryRun(time.Now().UTC()))
+	seed := testfixture.DemoDeliveryRun(time.Now().UTC())
+	seedRun(t, store, seed)
+	actor := delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent}
+	dispatchContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, actor, application.PermissionDeliveryRunWrite)
+	interactionTodo := delivery.Command{
+		ClientID: "todo-interaction", ExpectedRevision: 1, Actor: actor, Type: "development_todo.complete",
+		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:interaction_modeling:scenario:F-001-scenario","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
+	}
+	interactionProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, interactionTodo)
+	if err != nil || interactionProgress.Revision != 2 {
+		t.Fatalf("complete interaction todo: revision=%d error=%v", interactionProgress.Revision, err)
+	}
 	command := delivery.Command{
 		ClientID:         "client-once",
-		ExpectedRevision: 1,
-		Actor:            delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent},
+		ExpectedRevision: 2,
+		Actor:            actor,
 		Type:             "delivery_unit.interaction.complete",
-		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed"}`),
+		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed","evidence_refs":["git:0123456#evidence:interaction.json"]}`),
 	}
-	dispatchContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, command.Actor, application.PermissionDeliveryRunWrite)
 	first, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
 	if err != nil {
 		t.Fatal(err)
@@ -82,19 +92,34 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Revision != 2 || second.Revision != 2 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
+	if first.Revision != 3 || second.Revision != 3 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
 		t.Fatalf("idempotent retry changed state: first=%d second=%d", first.Revision, second.Revision)
+	}
+	domainTodo := first.DeliveryUnits[0].DevelopmentTodos[1]
+	domainTodoPayload, err := json.Marshal(map[string]any{
+		"delivery_unit_id": "F-001", "todo_id": domainTodo.ID, "git_revision": "0123456",
+		"summary": "domain todo completed", "evidence_refs": []string{"git:0123456#evidence:domain-todo.json"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	domainProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, delivery.Command{
+		ClientID: "todo-domain", ExpectedRevision: 3, Actor: actor, Type: "development_todo.complete",
+		Payload: domainTodoPayload,
+	})
+	if err != nil || domainProgress.Revision != 4 {
+		t.Fatalf("complete domain todo: revision=%d error=%v", domainProgress.Revision, err)
 	}
 	progress := command
 	progress.ClientID = "client-progress"
-	progress.ExpectedRevision = 2
+	progress.ExpectedRevision = 4
 	progress.Type = "delivery_unit.model.complete"
-	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed"}`)
+	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["git:0123456#evidence:model.json"]}`)
 	current, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Revision != 3 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitModelVerification {
+	if current.Revision != 5 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitModelVerification {
 		t.Fatalf("progress command did not advance current state: %#v", current)
 	}
 	lateReplay, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
@@ -114,7 +139,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	stale := command
 	stale.ClientID = "client-stale"
 	stale.Type = "delivery_unit.model.complete"
-	stale.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed"}`)
+	stale.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["git:0123456#evidence:model.json"]}`)
 	_, err = service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, stale)
 	domainError, ok = err.(*delivery.Error)
 	if !ok || domainError.Code != "revision_conflict" {
@@ -349,9 +374,29 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 		{"journey", delivery.Actor{ID: "journey-runner", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing"},
 	}
 	for _, phase := range phaseCommands {
+		if phase.actor.Kind == delivery.ActorAgent {
+			for {
+				var todo *deliveryrun.DevelopmentTodo
+				for index := range run.DeliveryUnits[0].DevelopmentTodos {
+					candidate := &run.DeliveryUnits[0].DevelopmentTodos[index]
+					if string(candidate.Phase) == phase.phase && candidate.Status == deliveryrun.DevelopmentTodoInProgress {
+						todo = candidate
+						break
+					}
+				}
+				if todo == nil {
+					break
+				}
+				run = dispatchRunCommand(t, ctx, service, run, phase.client+"-todo", phase.actor, "development_todo.complete", map[string]any{
+					"delivery_unit_id": run.Feature.ID, "todo_id": todo.ID, "git_revision": verifiedGitRevision,
+					"summary": "The business todo completed.", "evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + todo.SourceID + ".json"},
+				})
+			}
+		}
 		payload := map[string]any{
 			"delivery_unit_id": run.Feature.ID, "phase": phase.phase,
 			"git_revision": verifiedGitRevision, "summary": "The trusted delivery phase completed.",
+			"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + phase.phase + ".json"},
 		}
 		if evidence := storeBackendGuideEvidence(run, phase.actor, phase.command, verifiedGitRevision); evidence != nil {
 			payload["backend_guide"] = evidence
