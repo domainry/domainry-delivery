@@ -187,6 +187,7 @@ type FeatureScenario struct {
 	MainFlow       []string `json:"main_flow"`
 	AlternateFlows []string `json:"alternate_flows"`
 	Outcome        string   `json:"outcome"`
+	SourceIDs      []string `json:"source_ids"`
 }
 
 type FeatureImpact struct {
@@ -196,6 +197,7 @@ type FeatureImpact struct {
 	TargetID   string   `json:"target_id"`
 	Summary    string   `json:"summary"`
 	Details    []string `json:"details"`
+	SourceIDs  []string `json:"source_ids"`
 }
 
 // FeatureAuthorization makes access an explicit part of every Feature. The
@@ -224,11 +226,12 @@ type FeatureAccessGrant struct {
 }
 
 type FeatureAcceptanceScenario struct {
-	ID    string   `json:"id"`
-	Title string   `json:"title"`
-	Given []string `json:"given"`
-	When  string   `json:"when"`
-	Then  []string `json:"then"`
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Given     []string `json:"given"`
+	When      string   `json:"when"`
+	Then      []string `json:"then"`
+	SourceIDs []string `json:"source_ids"`
 }
 
 type FeatureReadiness struct {

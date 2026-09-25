@@ -39,6 +39,7 @@ func normalizeFeatureSpecification(specification FeatureSpecification) FeatureSp
 		scenario.MainFlow = cleanStrings(scenario.MainFlow)
 		scenario.AlternateFlows = cleanStrings(scenario.AlternateFlows)
 		scenario.Outcome = strings.TrimSpace(scenario.Outcome)
+		scenario.SourceIDs = cleanStrings(scenario.SourceIDs)
 	}
 	for index := range specification.Impacts {
 		impact := &specification.Impacts[index]
@@ -48,6 +49,7 @@ func normalizeFeatureSpecification(specification FeatureSpecification) FeatureSp
 		impact.TargetID = strings.TrimSpace(impact.TargetID)
 		impact.Summary = strings.TrimSpace(impact.Summary)
 		impact.Details = cleanStrings(impact.Details)
+		impact.SourceIDs = cleanStrings(impact.SourceIDs)
 	}
 	specification.Authorization.Mode = strings.TrimSpace(specification.Authorization.Mode)
 	specification.Authorization.Authentication = strings.TrimSpace(specification.Authorization.Authentication)
@@ -82,6 +84,7 @@ func normalizeFeatureSpecification(specification FeatureSpecification) FeatureSp
 		acceptance.Given = cleanStrings(acceptance.Given)
 		acceptance.When = strings.TrimSpace(acceptance.When)
 		acceptance.Then = cleanStrings(acceptance.Then)
+		acceptance.SourceIDs = cleanStrings(acceptance.SourceIDs)
 	}
 	return specification
 }
