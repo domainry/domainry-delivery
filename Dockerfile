@@ -26,7 +26,7 @@ RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata && \
 
 WORKDIR /app
 COPY --from=builder /out/domainry-delivery /app/domainry-delivery
-COPY config /app/config
+COPY conf/identity-external.json /app/conf/identity-external.json
 
 ENV DELIVERY_ADDR=:8096
 USER 10001:10001

@@ -67,7 +67,7 @@ Environment:
 - `DELIVERY_DB`: SQLite path when the driver is `sqlite`.
 - `DELIVERY_MYSQL_DSN`: Go MySQL driver DSN when the driver is `mysql`.
 - `DOMAINRY_IDENTITY_BRIDGE_CONFIG_FILE`: strict external-provider bridge
-  configuration, default `config/identity-external.json`. The packaged
+  configuration, default `conf/identity-external.json`. The packaged
   configuration validates Verdent Passport access tokens and creates one
   personal Delivery Workspace per verified user. Delivery does not require a
   remote Identity service or service credential.
