@@ -40,24 +40,24 @@ func (client *attachmentS3ClientStub) GetObject(_ context.Context, input *s3.Get
 
 func TestS3StoreKeepsOriginalBytesPrivate(t *testing.T) {
 	client := &attachmentS3ClientStub{}
-	store, err := New(Config{Region: "us-east-2", Bucket: "private-bucket", Prefix: "dev"}, client)
+	store, err := New(Config{Region: "us-east-1", Bucket: "verdent-image", Prefix: "delivery"}, client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	content := []byte("original attachment bytes")
 	digest := sha256.Sum256(content)
 	request := attachmentdomain.PutRequest{
-		WorkspaceID: "workspace-1", ObjectKey: "workspaces/feature/original.txt", ContentType: "text/plain",
+		WorkspaceID: "workspace-1", ObjectKey: "20260925/attachment-123-original.txt", ContentType: "text/plain",
 		Content: content, ContentSHA256: hex.EncodeToString(digest[:]), IdempotencyKey: "upload-1",
 	}
 	stored, err := store.Put(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.ContentRef != "dev/workspaces/feature/original.txt" || stored.ETag != "etag" {
+	if stored.ContentRef != "delivery/20260925/attachment-123-original.txt" || stored.ETag != "etag" {
 		t.Fatalf("stored S3 reference = %+v", stored)
 	}
-	if aws.ToString(client.put.Bucket) != "private-bucket" || aws.ToString(client.put.Key) != stored.ContentRef || client.put.ServerSideEncryption != types.ServerSideEncryptionAes256 {
+	if aws.ToString(client.put.Bucket) != "verdent-image" || aws.ToString(client.put.Key) != stored.ContentRef || client.put.ServerSideEncryption != types.ServerSideEncryptionAes256 {
 		t.Fatalf("S3 write parameters = %+v", client.put)
 	}
 	if client.put.Metadata["content-sha256"] != request.ContentSHA256 || client.put.Metadata["workspace-sha256"] != identityDigest(request.WorkspaceID) {
@@ -67,7 +67,7 @@ func TestS3StoreKeepsOriginalBytesPrivate(t *testing.T) {
 	if err != nil || !bytes.Equal(got, content) {
 		t.Fatalf("read original bytes: got=%q err=%v", got, err)
 	}
-	_, err = store.Get(context.Background(), request.WorkspaceID, "other-prefix/workspaces/feature/original.txt")
+	_, err = store.Get(context.Background(), request.WorkspaceID, "other-prefix/20260925/attachment-123-original.txt")
 	if !errors.Is(err, attachmentdomain.ErrContentNotFound) {
 		t.Fatalf("other prefix lookup error = %v", err)
 	}

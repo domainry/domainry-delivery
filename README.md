@@ -71,8 +71,8 @@ Environment:
   bytes in local development. Either this setting or S3 storage is required
   at startup.
 - `DELIVERY_ATTACHMENT_S3_REGION`, `DELIVERY_ATTACHMENT_S3_BUCKET`, and
-  optional `DELIVERY_ATTACHMENT_S3_PREFIX`: private S3 object storage used by
-  the dev deployment through IRSA. Configure either the file path or S3,
+  optional `DELIVERY_ATTACHMENT_S3_PREFIX`: S3 object storage used by the dev
+  deployment through IRSA. Configure either the file path or S3,
   never both. S3 startup retrieves credentials immediately so a missing IAM
   role or token fails before serving requests.
 - `DOMAINRY_IDENTITY_BRIDGE_CONFIG_FILE`: strict external-provider bridge
@@ -85,9 +85,11 @@ Environment:
 
 The dev Kubernetes configuration lives in the separate devops repository at
 `domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
-the packaged Identity Bridge configuration, a private attachment S3 bucket
-and dedicated IRSA role, Jenkins image builds, ECR, and Argo CD; no database
-values are committed.
+the packaged Identity Bridge configuration, the existing Office S3 bucket
+and IAM role, Jenkins image builds, ECR, and Argo CD; no database values are
+committed. Original bytes use `delivery/YYYYMMDD/` with a UTC date and hashed
+filename. The dev bucket grants public object reads, so uploaded originals
+are not confidential from anyone who knows their S3 key.
 
 All Delivery-owned Product, Feature, DeliveryRun, conversation and attachment
 timestamp columns and API fields use UTC Unix milliseconds. Foundation-owned

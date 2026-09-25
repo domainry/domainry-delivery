@@ -58,7 +58,8 @@ func (service *Service) UploadFeatureAttachment(ctx context.Context, workspaceID
 	if len(current) >= attachment.MaxPerFeature {
 		return attachment.Metadata{}, domain.Invalid("attachment_limit_exceeded")
 	}
-	objectKey := attachment.BuildObjectKey(workspaceID, productID, featureID, sha, extension)
+	createdAt := service.now().UTC()
+	objectKey := attachment.BuildObjectKey(createdAt, id, sha, extension)
 	stored, err := service.ports.Attachments.Put(ctx, attachment.PutRequest{
 		WorkspaceID: workspaceID, ObjectKey: objectKey, ContentType: contentType,
 		Content: input.Data, ContentSHA256: sha, IdempotencyKey: input.ClientID,
@@ -69,7 +70,7 @@ func (service *Service) UploadFeatureAttachment(ctx context.Context, workspaceID
 	metadata := attachment.Metadata{
 		ID: id, Filename: input.Filename, ContentType: contentType, Bytes: int64(len(input.Data)),
 		SHA256: sha, ContentRef: stored.ContentRef, Active: true, Revision: 1,
-		CreatedBy: actor.ID, DeviceID: input.DeviceID, CreatedAt: service.now().UnixMilli(),
+		CreatedBy: actor.ID, DeviceID: input.DeviceID, CreatedAt: createdAt.UnixMilli(),
 	}
 	return service.ports.AttachmentRecords.PutAttachment(ctx, workspaceID, productID, featureID, metadata)
 }

@@ -3,11 +3,10 @@ package attachment
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 )
@@ -60,20 +59,13 @@ func ClassifyContent(content []byte) (string, string, bool) {
 	return contentType, extension, ok
 }
 
-// BuildObjectKey creates a content-addressed hierarchy without leaking raw
-// Workspace, Product, or Feature identifiers into object storage.
-func BuildObjectKey(workspaceID, productID, featureID, contentSHA256, extension string) string {
+// BuildObjectKey groups originals by UTC upload day without exposing the
+// user-supplied filename or business identifiers in the public S3 key.
+func BuildObjectKey(createdAt time.Time, attachmentID, contentSHA256, extension string) string {
 	return path.Join(
-		"workspaces", identitySegment(workspaceID),
-		"products", identitySegment(productID),
-		"features", identitySegment(featureID),
-		strings.ToLower(contentSHA256)+extension,
+		createdAt.UTC().Format("20060102"),
+		attachmentID+"-"+strings.ToLower(contentSHA256)+extension,
 	)
-}
-
-func identitySegment(value string) string {
-	digest := sha256.Sum256([]byte(strings.TrimSpace(value)))
-	return hex.EncodeToString(digest[:16])
 }
 
 type PutRequest struct {
