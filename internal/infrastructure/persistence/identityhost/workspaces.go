@@ -12,7 +12,7 @@ import (
 	"github.com/domainry/domainry-orm/schema"
 )
 
-const workspaceTable = "delivery_workspaces"
+const workspaceTable = "workspaces"
 
 type Workspaces struct {
 	db         *sql.DB

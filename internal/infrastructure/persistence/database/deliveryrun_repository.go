@@ -15,7 +15,7 @@ func (store *Store) Get(ctx context.Context, workspaceID, deliveryRunID string) 
 }
 
 func (store *Store) ListDeliveryRuns(ctx context.Context, workspaceID, productID string) ([]deliveryrun.DeliveryRun, error) {
-	query := `SELECT run_id FROM delivery_runs WHERE workspace_id = ?`
+	query := `SELECT run_id FROM runs WHERE workspace_id = ?`
 	arguments := []any{workspaceID}
 	if productID != "" {
 		query += ` AND product_id = ?`

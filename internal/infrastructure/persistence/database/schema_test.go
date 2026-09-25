@@ -1,9 +1,26 @@
 package database
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestOwnedTableNamesDoNotRepeatDatabaseName(t *testing.T) {
+	want := []string{
+		"products", "product_revisions", "features", "feature_revisions",
+		"runs", "units", "test_cases", "quality_runs", "acceptance_cases",
+		"acceptance_confirmations", "release_checks", "releases", "activity",
+	}
+	if got := OwnedTables(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("owned tables = %#v, want %#v", got, want)
+	}
+	for _, table := range OwnedTables() {
+		if strings.HasPrefix(table, "delivery_") {
+			t.Fatalf("table %q repeats the standalone database name", table)
+		}
+	}
+}
 
 func TestSchemaHasOnePortableSourceForSQLiteAndMySQL(t *testing.T) {
 	for _, driver := range []string{"sqlite", "mysql"} {
@@ -16,6 +33,9 @@ func TestSchemaHasOnePortableSourceForSQLiteAndMySQL(t *testing.T) {
 		}
 		if strings.Contains(joined, "delivery_feature_attachments") {
 			t.Fatalf("%s schema retained Agent-owned attachment bytes", driver)
+		}
+		if strings.Contains(joined, "TABLE IF NOT EXISTS delivery_") {
+			t.Fatalf("%s schema retained a redundant delivery_ table prefix", driver)
 		}
 	}
 	if !strings.Contains(strings.Join(SchemaStatements("mysql"), "\n"), "LONGBLOB") {

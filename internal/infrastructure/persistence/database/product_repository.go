@@ -16,7 +16,7 @@ func (store *Store) GetProduct(ctx context.Context, workspaceID, productID strin
 
 func (store *Store) ListProducts(ctx context.Context, workspaceID string) ([]productdomain.Product, error) {
 	rows, err := store.db.QueryContext(ctx, `
-SELECT product_id FROM delivery_products WHERE workspace_id = ? ORDER BY updated_at DESC, product_id
+SELECT product_id FROM products WHERE workspace_id = ? ORDER BY updated_at DESC, product_id
 `, workspaceID)
 	if err != nil {
 		return nil, storageError(err)
@@ -59,7 +59,7 @@ func (store *Store) CreateProduct(
 		workspaceID: workspaceID, resourceType: "product", resourceID: productID, operationKind: "product_command",
 	}, mutation, func(transaction *sql.Tx) (productdomain.Product, error) {
 		var actualRevision uint64
-		err := transaction.QueryRowContext(ctx, `SELECT revision FROM delivery_products WHERE workspace_id = ? AND product_id = ?`, workspaceID, productID).Scan(&actualRevision)
+		err := transaction.QueryRowContext(ctx, `SELECT revision FROM products WHERE workspace_id = ? AND product_id = ?`, workspaceID, productID).Scan(&actualRevision)
 		if err == nil {
 			return productdomain.Product{}, domain.Conflict(actualRevision)
 		}
@@ -74,7 +74,7 @@ func (store *Store) CreateProduct(
 			return productdomain.Product{}, err
 		}
 		var existingProductID string
-		err = transaction.QueryRowContext(ctx, `SELECT product_id FROM delivery_products WHERE workspace_id = ? AND code = ?`, workspaceID, product.Code).Scan(&existingProductID)
+		err = transaction.QueryRowContext(ctx, `SELECT product_id FROM products WHERE workspace_id = ? AND code = ?`, workspaceID, product.Code).Scan(&existingProductID)
 		if err == nil {
 			return productdomain.Product{}, domain.Invalid("product_code_duplicate")
 		}

@@ -38,7 +38,7 @@ func (store *Store) StartDelivery(
 		}
 		var existingRunID string
 		err = transaction.QueryRowContext(ctx, `
-SELECT run_id FROM delivery_runs WHERE workspace_id = ? AND run_id = ?
+SELECT run_id FROM runs WHERE workspace_id = ? AND run_id = ?
 `, workspaceID, deliveryRunID).Scan(&existingRunID)
 		if err == nil {
 			return startDeliveryResult{}, domain.Invalid("delivery_run_exists")

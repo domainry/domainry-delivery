@@ -22,7 +22,7 @@ func loadProductState(ctx context.Context, database sqlhost.DBTX, workspaceID, p
 	err := database.QueryRowContext(ctx, `
 SELECT product_id, workspace_id, name, code, goal, industry, engineering_json, status, revision,
        current_definition_revision, current_release_revision, current_deployment_json, created_at, updated_at
-FROM delivery_products WHERE workspace_id = ? AND product_id = ?
+FROM products WHERE workspace_id = ? AND product_id = ?
 `, workspaceID, productID).Scan(
 		&product.ID, &product.WorkspaceID, &product.Name, &product.Code, &product.Goal, &product.Industry,
 		&engineeringJSON, &product.Status, &product.Revision, &product.CurrentDefinitionRevision,
@@ -50,7 +50,7 @@ FROM delivery_products WHERE workspace_id = ? AND product_id = ?
 		return productdomain.Product{}, storageError(err)
 	}
 	if product.Revisions, err = loadJSONRows[productdomain.ProductRevision](ctx, database, `
-SELECT revision_json FROM delivery_product_revisions
+SELECT revision_json FROM product_revisions
 WHERE workspace_id = ? AND product_id = ? ORDER BY revision_number
 `, workspaceID, productID); err != nil {
 		return productdomain.Product{}, err
@@ -65,7 +65,7 @@ func loadFeatures(ctx context.Context, database sqlhost.DBTX, workspaceID, produ
 	rows, err := database.QueryContext(ctx, `
 SELECT feature_id, code, status, current_revision, confirmed_revision, delivery_sequence,
        queued_at, delivery_run_id, installed_release_id, draft_json, created_at, updated_at
-FROM delivery_features WHERE workspace_id = ? AND product_id = ?
+FROM features WHERE workspace_id = ? AND product_id = ?
 ORDER BY created_at, feature_id
 `, workspaceID, productID)
 	if err != nil {
@@ -110,7 +110,7 @@ ORDER BY created_at, feature_id
 	}
 	for index := range features {
 		features[index].Revisions, err = loadJSONRows[productdomain.FeatureRevision](ctx, database, `
-SELECT revision_json FROM delivery_feature_revisions
+SELECT revision_json FROM feature_revisions
 WHERE workspace_id = ? AND product_id = ? AND feature_id = ? ORDER BY revision_number
 `, workspaceID, productID, features[index].ID)
 		if err != nil {
@@ -130,7 +130,7 @@ func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.
 		return storageError(err)
 	}
 	_, err = transaction.ExecContext(ctx, `
-INSERT INTO delivery_products (
+INSERT INTO products (
   workspace_id, product_id, name, code, goal, industry, engineering_json, status, revision,
   current_definition_revision, current_release_revision, current_deployment_json, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -153,7 +153,7 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 		return storageError(err)
 	}
 	result, err := transaction.ExecContext(ctx, `
-UPDATE delivery_products
+UPDATE products
 SET name = ?, code = ?, goal = ?, industry = ?, engineering_json = ?, status = ?, revision = ?,
     current_definition_revision = ?, current_release_revision = ?, current_deployment_json = ?, updated_at = ?
 WHERE workspace_id = ? AND product_id = ? AND revision = ?
@@ -184,7 +184,7 @@ func persistProductRelationsWithDialect(ctx context.Context, transaction sqlhost
 			return storageError(err)
 		}
 		if _, err := transaction.ExecContext(ctx, insertIgnoreForDialect(`
-INSERT INTO delivery_product_revisions (workspace_id, product_id, revision_number, revision_json, created_at)
+INSERT INTO product_revisions (workspace_id, product_id, revision_number, revision_json, created_at)
 VALUES (?, ?, ?, ?, ?)
 `, dialect), product.WorkspaceID, product.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)); err != nil {
 			return storageError(err)
@@ -205,7 +205,7 @@ func persistFeatureWithDialect(ctx context.Context, transaction sqlhost.DBTX, pr
 	}
 	queuedAt := nullableTime(feature.QueuedAt)
 	statement := `
-INSERT INTO delivery_features (
+INSERT INTO features (
   workspace_id, product_id, feature_id, code, status, current_revision, confirmed_revision, delivery_sequence,
   queued_at, delivery_run_id, installed_release_id, draft_json, created_at, updated_at
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -223,7 +223,7 @@ INSERT INTO delivery_features (
 			return storageError(err)
 		}
 		if _, err := transaction.ExecContext(ctx, insertIgnoreForDialect(`
-INSERT INTO delivery_feature_revisions (workspace_id, product_id, feature_id, revision_number, revision_json, created_at)
+INSERT INTO feature_revisions (workspace_id, product_id, feature_id, revision_number, revision_json, created_at)
 VALUES (?, ?, ?, ?, ?, ?)
 `, dialect), product.WorkspaceID, product.ID, feature.ID, revision.Number, valueJSON, revision.CreatedAt.Format(timeFormat)); err != nil {
 			return storageError(err)

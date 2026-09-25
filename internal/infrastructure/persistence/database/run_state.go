@@ -18,7 +18,7 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, workspaceID, runID
 	err := database.QueryRowContext(ctx, `
 SELECT run_id, workspace_id, name, code, goal, target_date, stage, revision, product_snapshot_json,
        feature_snapshot_json, members_json, active_delivery_unit_id, executable_revision_json, created_at, updated_at
-FROM delivery_runs WHERE workspace_id = ? AND run_id = ?
+FROM runs WHERE workspace_id = ? AND run_id = ?
 `, workspaceID, runID).Scan(
 		&run.ID, &run.WorkspaceID, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
 		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &createdAt, &updatedAt,
@@ -87,7 +87,7 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 		return err
 	}
 	_, err = transaction.ExecContext(ctx, `
-INSERT INTO delivery_runs (
+INSERT INTO runs (
   workspace_id, run_id, product_id, name, code, goal, target_date, stage, revision,
   product_snapshot_json, feature_snapshot_json, members_json, active_delivery_unit_id,
   executable_revision_json, created_at, updated_at
@@ -107,7 +107,7 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 		return err
 	}
 	result, err := transaction.ExecContext(ctx, `
-UPDATE delivery_runs
+UPDATE runs
 SET product_id = ?, name = ?, code = ?, goal = ?, target_date = ?, stage = ?, revision = ?,
     product_snapshot_json = ?, feature_snapshot_json = ?, members_json = ?, active_delivery_unit_id = ?,
     executable_revision_json = ?, updated_at = ?

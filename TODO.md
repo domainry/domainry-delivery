@@ -168,7 +168,7 @@ domainry-delivery/
 ### R07：重做持久化与代码分层
 
 - [x] R07.1 使用 `domainry-orm` dialect 与 migration descriptors 定义 Delivery owned schema；删除 `sqlite.OpenBorrowed` 内的裸 SQLite DDL。
-- [x] R07.2 Module/SaaS 共用同一 schema source 与私有 Store，表归属和 migration owner 唯一；standalone SaaS 通过 `_schema_migrations(owner, version)` 分别记录 Delivery 与 shared Operations 的不可变 checksum，重启不重复执行 DDL；开发期直接清空旧数据库，不编写旧表迁移。
+- [x] R07.2 Module/SaaS 共用同一 schema source 与私有 Store，表归属和 migration owner 唯一；standalone SaaS 通过 `_schema_migrations(owner, version)` 分别记录 Delivery 与 shared Operations 的不可变 checksum，重启不重复执行 DDL。因 SaaS 独占 `delivery` database，业务表直接命名为 `products`、`runs`、`units`、`workspaces` 等，不重复添加 `delivery_` 前缀；开发期直接清空旧数据库，不编写旧表迁移。
 - [x] R07.3 按 aggregate 边界持久化 Product、ProductRevision、Feature、FeatureRevision、DeliveryRun、DeliveryUnit、quality、acceptance、release；只对不可变文档 payload 使用有界 JSON，不再每次重写整个 Product/Run 历史 BLOB。
 - [x] R07.4 为 Workspace、product code、Feature/Run identity、revision、delivery queue 和当前状态建立真实约束与索引；数据库约束与 domain invariant 保持同一语义。
 - [x] R07.5 application 拆成按 Product、Feature、DeliveryRun 用例组织的窄 ports；Store 接口不再是一个包含所有读写的巨型 Repository。
@@ -218,7 +218,7 @@ domainry-delivery/
 
 - [x] R11.1 Delivery SaaS 直接嵌入 `domainry-identity-bridge`，与 Delivery 共用数据库连接和唯一 migration ledger；不再依赖远端 Identity endpoint、workspace 或 service token。
 - [x] R11.2 Bridge 通过严格配置调用 Verdent Passport token validation；provider 域名、路径、响应字段和检查规则不进入 Go 业务代码。
-- [x] R11.3 Verdent 用户首次访问时，在一个事务内创建个人 `delivery_workspaces`、外部身份 ownership 和 `delivery_owner` 初始角色；重启后复用同一 Workspace，不共享跨用户数据。
+- [x] R11.3 Verdent 用户首次访问时，在一个事务内创建个人 `workspaces`、外部身份 ownership 和 `delivery_owner` 初始角色；重启后复用同一 Workspace，不共享跨用户数据。
 - [x] R11.4 Delivery 发布五个真实权限并由 Bridge 生成授权包；所有业务请求继续校验 token 中的 Workspace 和 permission。PM/RD/QA/OP/System 是 Deck 本地执行角色，不再映射成多套远端 workload token。
 - [x] R11.5 Deck Rust 实现 Verdent desktop PKCE：随机 state/verifier、SHA-256 challenge、loopback callback、一次性 code exchange 和 refresh rotation。access/refresh token 只存在 Rust 内存；TypeScript 只获得 Delivery Session。
 - [x] R11.6 Delivery 外部身份集成测试覆盖两用户隔离、权限分配和重启稳定性；Deck 129 个 Rust 单测、TypeScript boundary/check 与 2 个前端测试通过。
