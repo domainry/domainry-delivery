@@ -1,6 +1,6 @@
 # Domainry Delivery 架构重构 TODO
 
-状态：代码重构和自动化测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；Delivery 已删除对 Agent 服务的反向运行依赖，并嵌入 Identity Bridge 对接 Verdent 登录。dev 数据库配置已改为与 Japan Office 一致的 Noah/config-generator/ConfigMap 链路，共用同一 MySQL 账号并选择预建的 `delivery` database；`v0.1.8` 仍需发布验收。`[x]` 表示已有代码、测试或发布证据，`[ ]` 表示仍有真实缺口。
+状态：代码重构和自动化测试已完成。Delivery 实现仓库及跨仓 source/artifact owner 切换已完成；Delivery 已删除对 Agent 服务的反向运行依赖，并嵌入 Identity Bridge 对接 Verdent 登录。dev 数据库配置已改为与 Japan Office 一致的 Noah/config-generator/ConfigMap 链路，共用同一 MySQL 账号并选择预建的 `delivery` database；Identity 静态契约已收口到 `conf/identity-external.json`，不再保留重复的顶层 `config/` 目录。`v0.1.9` 已由 Jenkins #17 成功发布到 dev，并完成 Pod Running 验证。`[x]` 表示已有代码、测试或发布证据，`[ ]` 表示仍有真实缺口。
 
 本清单是后续重构的唯一执行顺序。只有代码、架构门禁、定向测试和跨仓消费者同时完成，任务才能勾选；不保留旧命令、旧数据库、旧 HTTP 合同或双运行分支。
 
@@ -209,7 +209,7 @@ domainry-delivery/
 - [x] R10.3 dev Deployment 显式使用 `DELIVERY_DB_DRIVER=mysql`。Delivery 源码标签内的 `noahes/dev/env.properties` 和 `conf/template/runtime.env.tpl` 由共享 Jenkins config-generator 派生 `domainry-delivery-dev-config/runtime.env`，Pod 直接挂载该 ConfigMap 并组装 DSN。Delivery 与 Japan Office 使用同一 MySQL host 和账号，仅以 `MYSQL_DATABASE=delivery` 选择预建的 Delivery database；Jenkins 不创建数据库、不创建账号、不授权、不复制 Japan Office ConfigMap，也不生成第二套凭据。Identity Bridge 的 Verdent provider contract 随镜像发布，不需要远端 Identity Secret；Delivery 也没有 Agent endpoint/token 配置。本机 MySQL 9.5 已完成空库启动、HTTP 创建 Product、进程停止、同库重启及 ProductRevision 读取验证（201 → 200，migration ledger 两个 owner 均为 clean）。
 - [x] R10.4 Kubernetes ServiceAccount、Deployment、Service、Ingress、Kustomization 和 Argo CD Application 已配置；YAML 可解析且 `kubectl kustomize` 渲染通过。
 - [x] R10.5 `verdent-dev` 已存在平台预建的 `delivery` database；Delivery Noah dev 配置复用 Japan Office 的 MySQL 账号参数，并将 `MYSQL_DATABASE` 设为 `delivery`。
-- [ ] R10.6 需用 immutable tag `v0.1.8` 重新执行 Jenkins `domainry-delivery-dev`，确认标准配置派生阶段生成 `domainry-delivery-dev-config`、Argo CD 同步成功且 Pod 使用 Noah ConfigMap 健康启动。build #14 只证明旧的自造账号/Secret 方案可运行，不再作为本项完成证据。
+- [x] R10.6 immutable tag `v0.1.9` 已通过 Jenkins `domainry-delivery-dev` build #17 发布。该次构建使用 Delivery 提交 `55850e8a052baae01a6873015988beec8756a0aa` 和 devops 提交 `ac7102f4c7141a5e742d70b048772d89cb0ae64f`；标准配置派生、配置验证、镜像构建推送和 dev 部署阶段均成功，流水线最终校验 `verdent-dev` 中所有 Delivery Pod 为 Running。build #14 的旧自造账号/Secret 方案不作为完成证据；build #15 暴露并促成了 config-generator 凭据与产品仓凭据分离，build #16 因镜像和配置路径版本不一致被取消，最终证据仅以 #17 为准。
 - [ ] R10.7 集群外已验证 `/healthz` 200、descriptor 200、Identity Bridge external config 200，且无 token 的 session/业务请求正确返回 401。还需真实 Verdent bearer 完成鉴权 MySQL 写入，然后重启 Pod 并读回同一业务数据，才能满足本节完成标准。
 
 完成标准：不是“YAML 已写”，而是 Jenkins 成功推送唯一 image digest、Argo CD 健康同步、Pod 使用 MySQL 启动，且真实写入与重启旅程通过。
