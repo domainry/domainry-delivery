@@ -35,6 +35,16 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
 	advanceUnit(t, &run, delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
 	assertPhaseAction(t, run, "backend_implementation", "backend", "delivery_unit.backend.complete")
+	if !hasProjectedAction(delivery.ProjectionFor(run), "delivery_unit.gap.report", run.Feature.ID) {
+		t.Fatal("Backend implementation cannot route a deterministically verified model gap")
+	}
+	reportGap(t, &run, "model", "backend_implementation", strings.Repeat("a", 40))
+	unit = run.DeliveryUnits[0]
+	if unit.Phase != delivery.DeliveryUnitDomainModeling || unit.ModelStatus != delivery.DeliveryGateNeedsChange || unit.ModelGitRevision != "" || unit.ModelEvidence != nil {
+		t.Fatalf("Backend implementation model gap retained stale model evidence: %#v", unit)
+	}
+	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
+	advanceUnit(t, &run, delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation")
 	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_convergence")
 	assertPhaseAction(t, run, "contract_verification", "system", "delivery_unit.contract.verify")

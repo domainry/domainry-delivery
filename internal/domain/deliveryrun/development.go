@@ -389,7 +389,7 @@ func validDeliveryGapOwner(owner string) bool {
 }
 
 func phaseCanReportGap(phase DeliveryUnitPhase) bool {
-	return phase == DeliveryUnitModelVerification || phase == DeliveryUnitContractVerification || phase == DeliveryUnitJourneyTesting
+	return phase == DeliveryUnitModelVerification || phase == DeliveryUnitBackendImplementation || phase == DeliveryUnitContractVerification || phase == DeliveryUnitJourneyTesting
 }
 
 func activateNextDeliveryUnit(run *DeliveryRun) {
