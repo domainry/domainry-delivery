@@ -137,6 +137,15 @@ func validateFeatureLineageReferences(discovery FeatureDiscovery, specification 
 	for _, role := range specification.Authorization.Roles {
 		used = append(used, role.SourceIDs...)
 	}
+	for _, scenario := range specification.Scenarios {
+		used = append(used, scenario.SourceIDs...)
+	}
+	for _, impact := range specification.Impacts {
+		used = append(used, impact.SourceIDs...)
+	}
+	for _, acceptance := range specification.Acceptance {
+		used = append(used, acceptance.SourceIDs...)
+	}
 	for _, decision := range decisions {
 		used = append(used, decision.SourceIDs...)
 	}
