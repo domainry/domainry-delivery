@@ -79,7 +79,7 @@ func TestNewProductQueuesEngineeringInitializationBeforeFeatureDelivery(t *testi
 	}
 }
 
-func TestProductFoundationFailureRetainsIdentityForExactRetry(t *testing.T) {
+func TestProductFoundationFailureAllowsRetryAgainstCurrentDelivery(t *testing.T) {
 	product := newQueuedProduct(t)
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
@@ -88,17 +88,23 @@ func TestProductFoundationFailureRetainsIdentityForExactRetry(t *testing.T) {
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.failed", map[string]any{"code": "verification_failed", "message": "runtime check rejected the installed source"})
 
-	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.ApplicationDeliverySHA256 != strings.Repeat("a", 64) || product.Engineering.FoundationIdempotencyKey != strings.Repeat("b", 64) {
-		t.Fatalf("foundation failure lost its retry identity: %#v", product.Engineering)
+	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.ApplicationDeliverySHA256 != "" || product.Engineering.FoundationIdempotencyKey != "" {
+		t.Fatalf("foundation failure retained an obsolete retry identity: %#v", product.Engineering)
 	}
-	conflicting := foundationStartEvidence()
-	conflicting["idempotency_key"] = strings.Repeat("f", 64)
-	err := applyProduct(&product, systemActor, "product.engineering.foundation.started", conflicting)
-	assertCode(t, err, "product_foundation_retry_conflict")
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence())
+	// A Product persisted by an older Delivery build can still carry the failed
+	// attempt identity. The recorded failure makes replacing it safe.
+	product.Engineering.ApplicationDeliverySHA256 = strings.Repeat("a", 64)
+	product.Engineering.FoundationIdempotencyKey = strings.Repeat("b", 64)
+	retry := foundationStartEvidence()
+	retry["application_delivery_sha256"] = strings.Repeat("e", 64)
+	retry["idempotency_key"] = strings.Repeat("f", 64)
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", retry)
+	completed := foundationCompleteEvidence()
+	completed["application_delivery_sha256"] = strings.Repeat("e", 64)
+	completed["idempotency_key"] = strings.Repeat("f", 64)
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", completed)
 	if product.Engineering.Status != delivery.EngineeringReady {
-		t.Fatalf("exact foundation retry did not complete: %#v", product.Engineering)
+		t.Fatalf("fresh foundation retry did not complete: %#v", product.Engineering)
 	}
 }
 

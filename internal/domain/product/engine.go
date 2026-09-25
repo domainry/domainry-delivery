@@ -270,7 +270,8 @@ func startProductFoundation(product *Product, command Command, now time.Time) er
 		return Invalid("product_foundation_identity_invalid")
 	}
 	if product.Engineering.ApplicationDeliverySHA256 != "" &&
-		(product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey) {
+		(product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey) &&
+		product.Engineering.FoundationFailureCode == "" {
 		return Invalid("product_foundation_retry_conflict")
 	}
 	product.Engineering.Status = EngineeringFoundationInstalling
@@ -352,6 +353,8 @@ func failProductFoundation(product *Product, command Command) error {
 		return Invalid("product_foundation_failure_invalid")
 	}
 	product.Engineering.Status = EngineeringFoundationPending
+	product.Engineering.ApplicationDeliverySHA256 = ""
+	product.Engineering.FoundationIdempotencyKey = ""
 	product.Engineering.FoundationFailureCode = payload.Code
 	product.Engineering.FoundationFailureMessage = payload.Message
 	return nil
