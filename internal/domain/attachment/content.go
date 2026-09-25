@@ -4,6 +4,7 @@ package attachment
 import (
 	"context"
 	"errors"
+	"mime"
 	"path"
 	"strings"
 	"time"
@@ -51,7 +52,10 @@ func init() { mimetype.SetLimit(uint32(MaxUploadBytes)) }
 // Active formats such as SVG, HTML, JavaScript, and executables are excluded.
 func ClassifyContent(content []byte) (string, string, bool) {
 	detected := mimetype.Detect(content)
-	contentType := detected.String()
+	contentType, _, err := mime.ParseMediaType(detected.String())
+	if err != nil {
+		return "", "", false
+	}
 	if strings.HasPrefix(contentType, "image/") && contentType != "image/svg+xml" && detected.Extension() != "" {
 		return contentType, detected.Extension(), true
 	}

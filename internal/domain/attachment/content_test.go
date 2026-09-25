@@ -13,3 +13,10 @@ func TestBuildObjectKeyUsesUTCUploadDay(t *testing.T) {
 		t.Fatalf("S3 object key = %q, want %q", got, want)
 	}
 }
+
+func TestClassifyContentAcceptsUTF8TextWithoutCharsetInMediaType(t *testing.T) {
+	contentType, extension, supported := ClassifyContent([]byte("Fictional Delivery attachment test.\n"))
+	if !supported || contentType != "text/plain" || extension != ".txt" {
+		t.Fatalf("ClassifyContent() = (%q, %q, %t), want (%q, %q, true)", contentType, extension, supported, "text/plain", ".txt")
+	}
+}
