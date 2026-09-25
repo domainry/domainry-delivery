@@ -68,11 +68,13 @@ Environment:
 - `DELIVERY_DB`: SQLite path when the driver is `sqlite`.
 - `DELIVERY_MYSQL_DSN`: Go MySQL driver DSN when the driver is `mysql`.
 - `DELIVERY_ATTACHMENT_STORAGE_PATH`: absolute path for original attachment
-  bytes on a persistent volume. Set this for the dev deployment. Either this
-  setting or S3 storage is required at startup.
+  bytes in local development. Either this setting or S3 storage is required
+  at startup.
 - `DELIVERY_ATTACHMENT_S3_REGION`, `DELIVERY_ATTACHMENT_S3_BUCKET`, and
-  optional `DELIVERY_ATTACHMENT_S3_PREFIX`: alternative S3 object storage.
-  Configure either the file path or S3, never both.
+  optional `DELIVERY_ATTACHMENT_S3_PREFIX`: private S3 object storage used by
+  the dev deployment through IRSA. Configure either the file path or S3,
+  never both. S3 startup retrieves credentials immediately so a missing IAM
+  role or token fails before serving requests.
 - `DOMAINRY_IDENTITY_BRIDGE_CONFIG_FILE`: strict external-provider bridge
   configuration, default `conf/identity-external.json`. The packaged
   configuration validates Verdent Passport access tokens and creates one
@@ -80,10 +82,12 @@ Environment:
   remote Identity service or service credential.
 - `DELIVERY_DEV_IDENTITY`: optional local-only test identity, deliberately
   restricted to loopback listeners and never used by the dev deployment.
+
 The dev Kubernetes configuration lives in the separate devops repository at
 `domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
-the packaged Identity Bridge configuration, a dedicated attachment PVC,
-Jenkins image builds, ECR, and Argo CD; no database values are committed.
+the packaged Identity Bridge configuration, a private attachment S3 bucket
+and dedicated IRSA role, Jenkins image builds, ECR, and Argo CD; no database
+values are committed.
 
 All Delivery-owned Product, Feature, DeliveryRun, conversation and attachment
 timestamp columns and API fields use UTC Unix milliseconds. Foundation-owned

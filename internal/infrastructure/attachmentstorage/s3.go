@@ -76,6 +76,9 @@ func NewFromEnvironment(ctx context.Context) (attachmentdomain.Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load AWS attachment configuration: %w", err)
 	}
+	if _, err := awsConfiguration.Credentials.Retrieve(ctx); err != nil {
+		return nil, fmt.Errorf("retrieve AWS attachment credentials: %w", err)
+	}
 	client := s3.NewFromConfig(awsConfiguration, func(options *s3.Options) {
 		if config.Endpoint != "" {
 			options.BaseEndpoint = aws.String(config.Endpoint)
