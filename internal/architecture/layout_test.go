@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	deliverycontract "github.com/domainry/domainry-delivery-sdk/contract"
 	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
 )
@@ -262,6 +263,9 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	}
 	if !slices.Equal(actual, expected) {
 		t.Fatalf("command inventory changed without updating the architecture gate:\nactual=%v\nexpected=%v", actual, expected)
+	}
+	if sdkCommands := deliverycontract.CommandTypes(); !slices.Equal(actual, sdkCommands) {
+		t.Fatalf("domain command inventory drifted from SDK transport validation:\ndomain=%v\nsdk=%v", actual, sdkCommands)
 	}
 }
 
