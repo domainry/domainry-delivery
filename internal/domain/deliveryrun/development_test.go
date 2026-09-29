@@ -19,7 +19,7 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 		t.Fatal("DeliveryRun discarded confirmed discovery facts")
 	}
 	todos := run.DeliveryUnits[0].DevelopmentTodos
-	if len(todos) != 8 || todos[0].Status != delivery.DevelopmentTodoInProgress {
+	if len(todos) != 2 || todos[0].Status != delivery.DevelopmentTodoInProgress {
 		t.Fatalf("development Todo batch was not initialized: %#v", todos)
 	}
 	categories := map[string]bool{}
@@ -31,12 +31,15 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 		if index > 0 && (todo.Status != delivery.DevelopmentTodoNotStarted || todo.Title == "" || todo.SourceID == "") {
 			t.Fatalf("new development todo has the wrong scope or status: %#v", todo)
 		}
+		if len(todo.PhaseWorkItems) == 0 {
+			t.Fatalf("development capability lost its technical phase plan: %#v", todo)
+		}
 	}
 	if len(categories) >= 7 {
 		t.Fatalf("Todo categories were incorrectly coupled to the seven technical phases: %#v", categories)
 	}
 	skipPayload, err := json.Marshal(map[string]any{
-		"delivery_unit_id": run.ActiveDeliveryUnitID, "todo_id": todos[1].ID,
+		"delivery_unit_id": run.ActiveDeliveryUnitID, "todo_id": todos[1].PhaseWorkItems[0].ID,
 		"git_revision": strings.Repeat("a", 40), "summary": "Skipped ahead.",
 		"evidence_refs": []string{"git:" + strings.Repeat("a", 40) + "#evidence:skip.json"},
 	})
@@ -48,8 +51,8 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	assertPhaseAction(t, run, "interaction_modeling", "frontend", "delivery_unit.interaction.complete")
 
 	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
-	if todos := run.DeliveryUnits[0].DevelopmentTodos; todos[0].Status != delivery.DevelopmentTodoCompleted || len(todos[0].Evidence) != 1 || todos[1].Status != delivery.DevelopmentTodoInProgress {
-		t.Fatalf("completed todo did not retain evidence and activate the next item: %#v", todos)
+	if todos := run.DeliveryUnits[0].DevelopmentTodos; todos[0].Status != delivery.DevelopmentTodoInProgress || len(todos[0].PhaseWorkItems[0].Evidence) != 1 || todos[0].PhaseWorkItems[1].Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("completed phase work did not retain evidence and activate the next phase: %#v", todos)
 	}
 	assertPhaseAction(t, run, "domain_modeling", "backend", "delivery_unit.model.complete")
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
@@ -57,10 +60,27 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	if !hasProjectedAction(delivery.ProjectionFor(run), "delivery_unit.gap.report", run.Feature.ID) {
 		t.Fatal("Model verification cannot route a structured failure")
 	}
+	originalTodoCount := len(run.DeliveryUnits[0].DevelopmentTodos)
+	originalStatuses := make([]delivery.DevelopmentTodoStatus, originalTodoCount)
+	for index, todo := range run.DeliveryUnits[0].DevelopmentTodos {
+		originalStatuses[index] = todo.Status
+	}
 	reportGap(t, &run, "model", "model_verification", strings.Repeat("a", 40))
 	unit := run.DeliveryUnits[0]
 	if unit.Phase != delivery.DeliveryUnitDomainModeling || unit.ModelStatus != delivery.DeliveryGateNeedsChange {
 		t.Fatalf("Model verification failure did not return to Domain Modeling: %#v", unit)
+	}
+	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 1 {
+		t.Fatalf("Model verification gap changed business Todos instead of creating one internal repair: todos=%#v repairs=%#v", unit.DevelopmentTodos, unit.DevelopmentRepairItems)
+	}
+	for index, status := range originalStatuses {
+		if unit.DevelopmentTodos[index].Status != status {
+			t.Fatalf("Model verification gap reset unrelated work at index %d: before=%s after=%s", index, status, unit.DevelopmentTodos[index].Status)
+		}
+	}
+	repairTodo := unit.DevelopmentRepairItems[0]
+	if repairTodo.Phase != delivery.DeliveryUnitDomainModeling || repairTodo.Status != delivery.DevelopmentTodoInProgress || repairTodo.SourceKind != "verification_gap" {
+		t.Fatalf("Model verification gap did not activate the targeted repair Todo: %#v", repairTodo)
 	}
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
 	advanceUnit(t, &run, delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
@@ -68,10 +88,18 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	if !hasProjectedAction(delivery.ProjectionFor(run), "delivery_unit.gap.report", run.Feature.ID) {
 		t.Fatal("Backend implementation cannot route a deterministically verified model gap")
 	}
+	repairTodoCount := len(run.DeliveryUnits[0].DevelopmentRepairItems)
 	reportGap(t, &run, "model", "backend_implementation", strings.Repeat("a", 40))
 	unit = run.DeliveryUnits[0]
 	if unit.Phase != delivery.DeliveryUnitDomainModeling || unit.ModelStatus != delivery.DeliveryGateNeedsChange || unit.ModelGitRevision != "" || unit.ModelEvidence != nil {
 		t.Fatalf("Backend implementation model gap retained stale model evidence: %#v", unit)
+	}
+	if len(unit.DevelopmentRepairItems) != repairTodoCount {
+		t.Fatalf("Repeated verification gap duplicated its repair Todo: %#v", unit.DevelopmentRepairItems)
+	}
+	reopenedRepair := unit.DevelopmentRepairItems[0]
+	if reopenedRepair.Status != delivery.DevelopmentTodoInProgress || len(reopenedRepair.Evidence) != 1 {
+		t.Fatalf("Repeated verification gap did not reopen the same repair Todo with its evidence preserved: %#v", reopenedRepair)
 	}
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
 	advanceUnit(t, &run, delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
@@ -110,6 +138,7 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testing.T) {
 	run := completedRun(t)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision
+	originalTodoCount := len(run.DeliveryUnits[0].DevelopmentTodos)
 	err := apply(&run, agent("qa-agent"), "quality.record", map[string]any{
 		"test_case_id": run.TestCases[0].ID, "git_revision": strings.Repeat("b", 40),
 		"result": "pass", "note": "Observed the complete business flow", "evidence_refs": []string{"git:bad#evidence/qa.md"},
@@ -124,6 +153,18 @@ func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testin
 	if run.Stage != delivery.StageDevelopment || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.IntegratedGitRevision != "" {
 		t.Fatalf("Backend QA failure did not reopen the Backend gate: run=%s unit=%#v", run.Stage, unit)
 	}
+	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 1 {
+		t.Fatalf("Backend QA failure changed business Todos instead of creating one targeted repair: todos=%#v repairs=%#v", unit.DevelopmentTodos, unit.DevelopmentRepairItems)
+	}
+	for _, todo := range unit.DevelopmentTodos[:originalTodoCount] {
+		if todo.Status != delivery.DevelopmentTodoCompleted {
+			t.Fatalf("Backend QA failure reset completed development work: %#v", todo)
+		}
+	}
+	repairTodo := unit.DevelopmentRepairItems[0]
+	if repairTodo.SourceKind != "quality_case" || repairTodo.SourceID != run.TestCases[0].ID || repairTodo.Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("Backend QA failure did not activate its exact quality repair: %#v", repairTodo)
+	}
 }
 
 func TestIndependentQualityPassesEveryCaseBeforeAcceptance(t *testing.T) {
@@ -136,26 +177,101 @@ func TestIndependentQualityPassesEveryCaseBeforeAcceptance(t *testing.T) {
 		})
 	}
 	projection := delivery.ProjectionFor(run)
-	if run.Stage != delivery.StageAcceptance || len(projection.Workflow.AvailableActions) != len(run.AcceptanceCases) || !projection.Workflow.ReleaseGates[5].OK || projection.Workflow.ReleaseGates[6].OK {
+	if run.Stage != delivery.StageAcceptance || run.AcceptanceReview == nil || !hasProjectedAction(projection, "acceptance.environment.ready", run.AcceptanceReview.ID) || !projection.Workflow.ReleaseGates[5].OK || projection.Workflow.ReleaseGates[6].OK {
 		t.Fatalf("Independent QA did not hand off to acceptance: stage=%s workflow=%#v", run.Stage, projection.Workflow)
 	}
 }
 
-func TestBusinessAcceptanceFailureReopensFrontend(t *testing.T) {
+func TestAcceptanceBugTriageReopensFrontendWithoutLeavingAcceptance(t *testing.T) {
 	run := completedRun(t)
 	passIndependentQuality(t, &run)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision
-	mustApply(t, &run, human("m-business"), "acceptance.confirm", map[string]any{
-		"acceptance_case_id": run.AcceptanceCases[0].ID,
-		"git_revision":       revision,
-		"result":             "fail",
-		"failure_owner":      "frontend",
-		"note":               "The approval state is not visible after returning to the list.",
-		"evidence_refs":      []string{"git:" + revision + "#evidence:evidence/acceptance/UAT-01.md"},
+	readyAcceptanceEnvironment(t, &run)
+	mustApply(t, &run, human("m-business"), "acceptance.bug.report", map[string]any{
+		"git_revision": revision, "title": "Approval state disappears",
+		"description": "Returning to the list loses the approved state.", "expected": "The approved state remains visible.",
+		"actual": "The row returns to pending.", "severity": "major", "evidence_refs": []string{"attachment://attachment-visual-1"},
+	})
+	bug := run.AcceptanceReview.Bugs[0]
+	originalTodoCount := len(run.DeliveryUnits[0].DevelopmentTodos)
+	mustApply(t, &run, agent("qa-agent"), "acceptance.bug.triage", map[string]any{
+		"bug_id": bug.ID, "outcome": "reproduced", "owner": "frontend", "delivery_unit_id": run.Feature.ID,
+		"note": "Reproduced after returning from the detail page.", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/acceptance/triage.md"},
 	})
 	unit := run.DeliveryUnits[0]
-	if run.Stage != delivery.StageDevelopment || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitFrontendConvergence || unit.IntegratedGitRevision != "" {
-		t.Fatalf("Business acceptance failure did not reopen the Frontend gate: run=%s unit=%#v", run.Stage, unit)
+	if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitFrontendConvergence || unit.IntegratedGitRevision != "" || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
+		t.Fatalf("Acceptance bug did not enter the repair loop: run=%s unit=%#v review=%#v", run.Stage, unit, run.AcceptanceReview)
+	}
+	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 1 {
+		t.Fatalf("Acceptance bug changed business Todos instead of creating one targeted repair: todos=%#v repairs=%#v", unit.DevelopmentTodos, unit.DevelopmentRepairItems)
+	}
+	for _, todo := range unit.DevelopmentTodos[:originalTodoCount] {
+		if todo.Status != delivery.DevelopmentTodoCompleted {
+			t.Fatalf("Acceptance bug reset completed development work: %#v", todo)
+		}
+	}
+	repairTodo := unit.DevelopmentRepairItems[0]
+	if repairTodo.SourceKind != "acceptance_bug" || repairTodo.SourceID != bug.ID || repairTodo.Status != delivery.DevelopmentTodoInProgress {
+		t.Fatalf("Acceptance bug did not activate its exact repair: %#v", repairTodo)
+	}
+}
+
+func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing.T) {
+	run := completedRun(t)
+	passIndependentQuality(t, &run)
+	readyAcceptanceEnvironment(t, &run)
+	originalRevision := run.AcceptanceReview.CandidateGitRevision
+	mustApply(t, &run, human("m-business"), "acceptance.bug.report", map[string]any{
+		"git_revision": originalRevision, "title": "Approval state disappears",
+		"description": "Returning to the list loses the approved state.", "expected": "The approved state remains visible.",
+		"actual": "The row returns to pending.", "severity": "major", "evidence_refs": []string{"attachment://attachment-acceptance-1"},
+	})
+	bugID := run.AcceptanceReview.Bugs[0].ID
+	mustApply(t, &run, agent("qa-agent"), "acceptance.bug.triage", map[string]any{
+		"bug_id": bugID, "outcome": "reproduced", "owner": "frontend", "delivery_unit_id": run.Feature.ID,
+		"note": "Reproduced against the acceptance Runtime.", "evidence_refs": []string{"git:" + originalRevision + "#evidence:evidence/acceptance/triage.md"},
+	})
+	if run.Stage != delivery.StageAcceptance || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
+		t.Fatalf("triage left the acceptance repair loop: stage=%s review=%#v", run.Stage, run.AcceptanceReview)
+	}
+
+	repairedRevision := strings.Repeat("b", 40)
+	advanceUnitAtRevision(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_convergence", repairedRevision)
+	advanceUnitAtRevision(t, &run, delivery.Actor{ID: "contract-check", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", repairedRevision)
+	advanceUnitAtRevision(t, &run, delivery.Actor{ID: "journey-runner", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing", repairedRevision)
+	product := testfixture.DemoProduct(time.Now().UTC())
+	revision := product.Revisions[0]
+	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
+		"content":       map[string]any{"story": revision.Story, "definition": revision.Definition, "decisions": revision.Decisions},
+		"evidence_ref":  "git:" + repairedRevision + "#evidence:evidence/product-revision.json",
+		"code_revision": repairedRevision, "model_sha256": strings.Repeat("d", 64),
+	})
+	passIndependentQuality(t, &run)
+	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.bug.fix.ready", bugID) {
+		t.Fatal("verified repair did not expose the trusted retest handoff")
+	}
+	mustApply(t, &run, delivery.Actor{ID: "acceptance-runner", Kind: delivery.ActorSystem}, "acceptance.bug.fix.ready", map[string]any{
+		"bug_id": bugID, "git_revision": repairedRevision,
+		"evidence_refs": []string{"git:" + repairedRevision + "#evidence:evidence/acceptance/fix-ready.md"},
+	})
+	readyAcceptanceEnvironment(t, &run)
+	if run.AcceptanceReview.CandidateGitRevision != repairedRevision || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugReadyForRetest {
+		t.Fatalf("repair was not published for user retest: %#v", run.AcceptanceReview)
+	}
+	if hasProjectedAction(delivery.ProjectionFor(run), "acceptance.confirm", run.AcceptanceReview.ID) {
+		t.Fatal("final acceptance was exposed before the user resolved the bug")
+	}
+	mustApply(t, &run, human("m-business"), "acceptance.bug.resolve", map[string]any{
+		"bug_id": bugID, "note": "Retested in the refreshed Runtime; the approved state remains visible.", "evidence_refs": []string{},
+	})
+	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.confirm", run.AcceptanceReview.ID) {
+		t.Fatal("resolved bugs did not expose final user acceptance")
+	}
+	mustApply(t, &run, human("m-business"), "acceptance.confirm", map[string]any{
+		"git_revision": repairedRevision, "note": "The repaired candidate satisfies the confirmed business outcome.",
+	})
+	if run.Stage != delivery.StageRelease || run.AcceptanceReview.Status != delivery.AcceptanceReviewAccepted {
+		t.Fatalf("final user acceptance did not close the review: stage=%s review=%#v", run.Stage, run.AcceptanceReview)
 	}
 }
 
@@ -212,6 +328,12 @@ func completedRun(t *testing.T) delivery.DeliveryRun {
 	unit.ModelEvidence = backendGuideEvidence("delivery_unit.model.verify")
 	unit.ContractEvidence = backendGuideEvidence("delivery_unit.contract.verify")
 	unit.JourneyEvidence = backendGuideEvidence("delivery_unit.journey.complete")
+	for index := range unit.DevelopmentTodos {
+		unit.DevelopmentTodos[index].Status = delivery.DevelopmentTodoCompleted
+		for workItemIndex := range unit.DevelopmentTodos[index].PhaseWorkItems {
+			unit.DevelopmentTodos[index].PhaseWorkItems[workItemIndex].Status = delivery.DevelopmentTodoCompleted
+		}
+	}
 	for _, evidence := range []*delivery.BackendGuideEvidence{unit.ModelEvidence, unit.ContractEvidence, unit.JourneyEvidence} {
 		evidence.WorkspaceID = run.WorkspaceID
 		evidence.ProductID = run.Product.ID
@@ -251,15 +373,20 @@ func passIndependentQuality(t *testing.T, run *delivery.DeliveryRun) {
 
 func passBusinessAcceptance(t *testing.T, run *delivery.DeliveryRun) {
 	t.Helper()
+	readyAcceptanceEnvironment(t, run)
 	revision := run.DeliveryUnits[len(run.DeliveryUnits)-1].IntegratedGitRevision
-	for _, acceptanceCase := range run.AcceptanceCases {
-		mustApply(t, run, human("m-business"), "acceptance.confirm", map[string]any{
-			"acceptance_case_id": acceptanceCase.ID, "result": "pass",
-			"git_revision":  revision,
-			"note":          "The delivered workflow satisfies the confirmed business outcome.",
-			"evidence_refs": []string{"git:" + revision + "#evidence:evidence/acceptance/" + acceptanceCase.ID + ".md"},
-		})
-	}
+	mustApply(t, run, human("m-business"), "acceptance.confirm", map[string]any{
+		"git_revision": revision, "note": "The delivered workflow satisfies the confirmed business outcome.",
+	})
+}
+
+func readyAcceptanceEnvironment(t *testing.T, run *delivery.DeliveryRun) {
+	t.Helper()
+	revision := run.DeliveryUnits[len(run.DeliveryUnits)-1].IntegratedGitRevision
+	mustApply(t, run, delivery.Actor{ID: "acceptance-runtime", Kind: delivery.ActorSystem}, "acceptance.environment.ready", map[string]any{
+		"git_revision": revision, "environment_ref": "acceptance://" + run.ID + "/" + revision,
+		"runtime_url": "http://127.0.0.1:4173",
+	})
 }
 
 func TestJourneyEvidenceMustMatchImplementationRevision(t *testing.T) {
@@ -335,6 +462,44 @@ func TestContractEvidenceMustMatchTheVerifiedModelHash(t *testing.T) {
 	assertCode(t, err, "backend_evidence_model_mismatch")
 }
 
+func TestDevelopmentInitializationKeepsThreeCapabilitiesAsThreeVisibleTodos(t *testing.T) {
+	now := time.Now().UTC()
+	run, err := delivery.NewDeliveryRun(testfixture.DemoProduct(now), "F-001", 1, delivery.DeliveryRunSpec{
+		ID: "three-capability-run", Name: "Three capability delivery", Code: "RUN-3", Goal: "Deliver three business capabilities.",
+		Members: []delivery.Member{
+			{ID: "product", Name: "Product", Roles: []string{delivery.RoleProductOwner}},
+			{ID: "development", Name: "Development", Roles: []string{delivery.RoleDevelopmentLead}},
+			{ID: "quality", Name: "Quality", Roles: []string{delivery.RoleQualityLead}},
+			{ID: "acceptance", Name: "Acceptance", Roles: []string{delivery.RoleBusinessAcceptor}},
+			{ID: "release", Name: "Release", Roles: []string{delivery.RoleReleaseApprover}},
+		},
+	}, agent("planning-agent"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	phasePlan := []string{"interaction_modeling", "domain_modeling", "model_verification", "backend_implementation", "frontend_convergence", "contract_verification", "journey_testing"}
+	mustApply(t, &run, agent("planning-agent"), "development_todos.initialize", map[string]any{
+		"delivery_unit_id": run.ActiveDeliveryUnitID,
+		"todos": []map[string]any{
+			{"capability_id": "capability-one", "category": "membership", "source_kind": "scenario", "source_id": "scenario-1", "title": "First capability", "detail": "Deliver the first observable outcome.", "phase_plan": phasePlan},
+			{"capability_id": "capability-two", "category": "membership", "source_kind": "scenario", "source_id": "scenario-2", "title": "Second capability", "detail": "Deliver the second observable outcome.", "phase_plan": phasePlan},
+			{"capability_id": "capability-three", "category": "membership", "source_kind": "acceptance", "source_id": "acceptance-3", "title": "Third capability", "detail": "Deliver the third observable outcome.", "phase_plan": phasePlan},
+		},
+	})
+
+	unit := run.DeliveryUnits[0]
+	if len(unit.DevelopmentTodos) != 3 {
+		t.Fatalf("three capabilities expanded into duplicate visible Todos: %#v", unit.DevelopmentTodos)
+	}
+	phaseWorkItemCount := 0
+	for _, capability := range unit.DevelopmentTodos {
+		phaseWorkItemCount += len(capability.PhaseWorkItems)
+	}
+	if phaseWorkItemCount != 21 || len(unit.DevelopmentRepairItems) != 0 {
+		t.Fatalf("technical phase tracking is incomplete or leaked into visible Todos: work_items=%d repairs=%#v", phaseWorkItemCount, unit.DevelopmentRepairItems)
+	}
+}
+
 func advanceUnit(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, command, phase string) {
 	t.Helper()
 	advanceUnitAtRevision(t, run, actor, command, phase, strings.Repeat("a", 40))
@@ -344,29 +509,41 @@ func advanceUnitAtRevision(t *testing.T, run *delivery.DeliveryRun, actor delive
 	t.Helper()
 	if actor.Kind == delivery.ActorAgent {
 		for {
-			var active *delivery.DevelopmentTodo
-			for index := range run.DeliveryUnits[0].DevelopmentTodos {
-				todo := &run.DeliveryUnits[0].DevelopmentTodos[index]
-				if todo.Phase == delivery.DeliveryUnitPhase(phase) && todo.Status == delivery.DevelopmentTodoInProgress {
-					active = todo
-					break
-				}
-			}
-			if active == nil {
+			workItemID, sourceID, ok := activeWorkItem(&run.DeliveryUnits[0], delivery.DeliveryUnitPhase(phase))
+			if !ok {
 				break
 			}
 			mustApply(t, run, actor, "development_todo.complete", map[string]any{
 				"delivery_unit_id": run.ActiveDeliveryUnitID,
-				"todo_id":          active.ID,
+				"todo_id":          workItemID,
 				"git_revision":     revision,
 				"summary":          "The business todo was implemented and verified.",
-				"evidence_refs":    []string{"git:" + revision + "#evidence:" + active.SourceID + ".json"},
+				"evidence_refs":    []string{"git:" + revision + "#evidence:" + sourceID + ".json"},
 			})
 		}
 	}
 	if err := applyUnitAtRevision(run, actor, command, phase, revision, "", nil); err != nil {
 		t.Fatalf("advance %s: %v", phase, err)
 	}
+}
+
+func activeWorkItem(unit *delivery.DeliveryUnit, phase delivery.DeliveryUnitPhase) (string, string, bool) {
+	for index := range unit.DevelopmentRepairItems {
+		repair := &unit.DevelopmentRepairItems[index]
+		if repair.Phase == phase && repair.Status == delivery.DevelopmentTodoInProgress {
+			return repair.ID, repair.SourceID, true
+		}
+	}
+	for todoIndex := range unit.DevelopmentTodos {
+		todo := &unit.DevelopmentTodos[todoIndex]
+		for workItemIndex := range todo.PhaseWorkItems {
+			workItem := &todo.PhaseWorkItems[workItemIndex]
+			if workItem.Phase == phase && workItem.Status == delivery.DevelopmentTodoInProgress {
+				return workItem.ID, todo.SourceID, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 func reportGap(t *testing.T, run *delivery.DeliveryRun, owner, phase, revision string) {
@@ -467,14 +644,8 @@ func assertPhaseAction(t *testing.T, run delivery.DeliveryRun, phase, role, comm
 			t.Fatalf("system phase %s did not expose %s: %#v", phase, command, projection.Workflow.AvailableActions)
 		}
 	} else {
-		todo := unit.DevelopmentTodos[0]
-		for _, candidate := range unit.DevelopmentTodos {
-			if candidate.Phase == unit.Phase && candidate.Status == delivery.DevelopmentTodoInProgress {
-				todo = candidate
-				break
-			}
-		}
-		if !hasProjectedAction(projection, "development_todo.complete", todo.ID) {
+		workItemID, _, ok := activeWorkItem(&unit, unit.Phase)
+		if !ok || !hasProjectedAction(projection, "development_todo.complete", workItemID) {
 			t.Fatalf("agent phase %s did not expose its current business todo: %#v", phase, projection.Workflow.AvailableActions)
 		}
 		if hasProjectedAction(projection, command, unit.ID) {

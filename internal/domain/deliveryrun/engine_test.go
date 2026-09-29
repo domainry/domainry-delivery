@@ -17,8 +17,8 @@ func TestDeliveryRunFreezesOneFeatureRevisionAndGeneratesTests(t *testing.T) {
 	if len(run.Feature.Source.ConversationIDs) != 1 || len(run.Feature.Source.AgentRuns) != 1 || run.Feature.Source.AgentRuns[0].RunID == "" {
 		t.Fatalf("run lost exact Agent source: %#v", run.Feature.Source)
 	}
-	if len(run.TestCases) != len(run.Feature.Specification.Acceptance) || len(run.AcceptanceCases) != len(run.Feature.Specification.Acceptance) || len(run.DeliveryUnits) == 0 {
-		t.Fatalf("run derived the wrong execution objects: units=%d tests=%d uat=%d", len(run.DeliveryUnits), len(run.TestCases), len(run.AcceptanceCases))
+	if len(run.TestCases) != len(run.Feature.Specification.Acceptance) || run.AcceptanceReview != nil || len(run.DeliveryUnits) == 0 {
+		t.Fatalf("run derived the wrong execution objects: units=%d tests=%d acceptance=%#v", len(run.DeliveryUnits), len(run.TestCases), run.AcceptanceReview)
 	}
 }
 

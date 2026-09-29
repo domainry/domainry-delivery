@@ -50,42 +50,57 @@ const (
 )
 
 type DeliveryUnit struct {
-	ID                               string                `json:"id"`
-	Title                            string                `json:"title"`
-	DependsOn                        []string              `json:"depends_on"`
-	Phase                            DeliveryUnitPhase     `json:"phase"`
-	ActiveRole                       string                `json:"active_role,omitempty"`
-	ModelGitRevision                 string                `json:"model_git_revision,omitempty"`
-	BackendGitRevision               string                `json:"backend_git_revision,omitempty"`
-	IntegratedGitRevision            string                `json:"integrated_git_revision,omitempty"`
-	InvalidatedIntegratedGitRevision string                `json:"invalidated_integrated_git_revision,omitempty"`
-	InteractionStatus                DeliveryGateStatus    `json:"interaction_status"`
-	ModelStatus                      DeliveryGateStatus    `json:"model_status"`
-	BackendStatus                    DeliveryGateStatus    `json:"backend_status"`
-	FrontendStatus                   DeliveryGateStatus    `json:"frontend_status"`
-	ContractStatus                   DeliveryGateStatus    `json:"contract_status"`
-	JourneyStatus                    DeliveryGateStatus    `json:"journey_status"`
-	ModelEvidence                    *BackendGuideEvidence `json:"model_evidence,omitempty"`
-	ContractEvidence                 *BackendGuideEvidence `json:"contract_evidence,omitempty"`
-	JourneyEvidence                  *BackendGuideEvidence `json:"journey_evidence,omitempty"`
-	LatestGate                       *DeliveryGateResult   `json:"latest_gate,omitempty"`
-	DevelopmentTodos                 []DevelopmentTodo     `json:"development_todos"`
+	ID                               string                      `json:"id"`
+	Title                            string                      `json:"title"`
+	DependsOn                        []string                    `json:"depends_on"`
+	Phase                            DeliveryUnitPhase           `json:"phase"`
+	ActiveRole                       string                      `json:"active_role,omitempty"`
+	ModelGitRevision                 string                      `json:"model_git_revision,omitempty"`
+	BackendGitRevision               string                      `json:"backend_git_revision,omitempty"`
+	IntegratedGitRevision            string                      `json:"integrated_git_revision,omitempty"`
+	InvalidatedIntegratedGitRevision string                      `json:"invalidated_integrated_git_revision,omitempty"`
+	InteractionStatus                DeliveryGateStatus          `json:"interaction_status"`
+	ModelStatus                      DeliveryGateStatus          `json:"model_status"`
+	BackendStatus                    DeliveryGateStatus          `json:"backend_status"`
+	FrontendStatus                   DeliveryGateStatus          `json:"frontend_status"`
+	ContractStatus                   DeliveryGateStatus          `json:"contract_status"`
+	JourneyStatus                    DeliveryGateStatus          `json:"journey_status"`
+	ModelEvidence                    *BackendGuideEvidence       `json:"model_evidence,omitempty"`
+	ContractEvidence                 *BackendGuideEvidence       `json:"contract_evidence,omitempty"`
+	JourneyEvidence                  *BackendGuideEvidence       `json:"journey_evidence,omitempty"`
+	LatestGate                       *DeliveryGateResult         `json:"latest_gate,omitempty"`
+	DevelopmentTodos                 []DevelopmentTodo           `json:"development_todos"`
+	DevelopmentRepairItems           []DevelopmentRepairWorkItem `json:"development_repair_items"`
 }
 
-// DevelopmentTodo is one ordered, authoritative unit of development work.
-// Category is batch-provided data rather than a fixed enum. Phase controls the
-// technical gate that owns the item and is not the Todo classification.
+// DevelopmentTodo is one user-visible business capability. Technical execution
+// is tracked by its phase work items instead of duplicating the capability once
+// per delivery phase.
 type DevelopmentTodo struct {
-	ID         string                    `json:"id"`
-	Sequence   int                       `json:"sequence"`
-	Phase      DeliveryUnitPhase         `json:"phase"`
-	Category   string                    `json:"category"`
-	SourceKind string                    `json:"source_kind"`
-	SourceID   string                    `json:"source_id"`
-	Title      string                    `json:"title"`
-	Detail     string                    `json:"detail"`
-	Status     DevelopmentTodoStatus     `json:"status"`
-	Evidence   []DevelopmentTodoEvidence `json:"evidence"`
+	ID             string                     `json:"id"`
+	Sequence       int                        `json:"sequence"`
+	Category       string                     `json:"category"`
+	SourceKind     string                     `json:"source_kind"`
+	SourceID       string                     `json:"source_id"`
+	Title          string                     `json:"title"`
+	Detail         string                     `json:"detail"`
+	Status         DevelopmentTodoStatus      `json:"status"`
+	PhaseWorkItems []DevelopmentPhaseWorkItem `json:"phase_work_items"`
+}
+
+type DevelopmentPhaseWorkItem struct {
+	ID       string                    `json:"id"`
+	Phase    DeliveryUnitPhase         `json:"phase"`
+	Status   DevelopmentTodoStatus     `json:"status"`
+	Evidence []DevelopmentTodoEvidence `json:"evidence"`
+}
+
+type DevelopmentRepairWorkItem struct {
+	DevelopmentPhaseWorkItem
+	SourceKind string `json:"source_kind"`
+	SourceID   string `json:"source_id"`
+	Title      string `json:"title"`
+	Detail     string `json:"detail"`
 }
 
 type DevelopmentTodoEvidence struct {
@@ -199,12 +214,13 @@ type developmentTodoCompletePayload struct {
 }
 
 type developmentTodoInitializeItem struct {
-	Phase      DeliveryUnitPhase `json:"phase"`
-	Category   string            `json:"category"`
-	SourceKind string            `json:"source_kind"`
-	SourceID   string            `json:"source_id"`
-	Title      string            `json:"title"`
-	Detail     string            `json:"detail"`
+	CapabilityID string              `json:"capability_id"`
+	Category     string              `json:"category"`
+	SourceKind   string              `json:"source_kind"`
+	SourceID     string              `json:"source_id"`
+	Title        string              `json:"title"`
+	Detail       string              `json:"detail"`
+	PhasePlan    []DeliveryUnitPhase `json:"phase_plan"`
 }
 
 type developmentTodosInitializePayload struct {

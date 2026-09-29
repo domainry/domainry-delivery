@@ -9,7 +9,6 @@ type Stage string
 const (
 	StageDevelopment Stage = "development"
 	StageTesting     Stage = "testing"
-	StageBugs        Stage = "bugs"
 	StageAcceptance  Stage = "acceptance"
 	StageRelease     Stage = "release"
 	StageLive        Stage = "live"
@@ -38,29 +37,28 @@ const (
 )
 
 type DeliveryRun struct {
-	ID                      string                     `json:"id"`
-	WorkspaceID             string                     `json:"workspace_id"`
-	Product                 ProductSnapshot            `json:"product"`
-	Feature                 FeatureSnapshot            `json:"feature"`
-	Name                    string                     `json:"name"`
-	Code                    string                     `json:"code"`
-	Goal                    string                     `json:"goal"`
-	TargetDate              string                     `json:"target_date"`
-	Revision                uint64                     `json:"revision"`
-	Stage                   Stage                      `json:"stage"`
-	Members                 []Member                   `json:"members"`
-	DeliveryUnits           []DeliveryUnit             `json:"delivery_units"`
-	ActiveDeliveryUnitID    string                     `json:"active_delivery_unit_id,omitempty"`
-	ExecutableRevision      *ExecutableProductRevision `json:"executable_product_revision,omitempty"`
-	TestCases               []TestCase                 `json:"test_cases"`
-	QualityRuns             []QualityRun               `json:"quality_runs"`
-	AcceptanceCases         []AcceptanceCase           `json:"acceptance_cases"`
-	AcceptanceConfirmations []AcceptanceConfirmation   `json:"acceptance_confirmations"`
-	ReleaseChecks           []ReleaseCheck             `json:"release_checks"`
-	Releases                []Release                  `json:"releases"`
-	Activity                []ActivityEvent            `json:"activity"`
-	CreatedAt               time.Time                  `json:"created_at"`
-	UpdatedAt               time.Time                  `json:"updated_at"`
+	ID                   string                     `json:"id"`
+	WorkspaceID          string                     `json:"workspace_id"`
+	Product              ProductSnapshot            `json:"product"`
+	Feature              FeatureSnapshot            `json:"feature"`
+	Name                 string                     `json:"name"`
+	Code                 string                     `json:"code"`
+	Goal                 string                     `json:"goal"`
+	TargetDate           string                     `json:"target_date"`
+	Revision             uint64                     `json:"revision"`
+	Stage                Stage                      `json:"stage"`
+	Members              []Member                   `json:"members"`
+	DeliveryUnits        []DeliveryUnit             `json:"delivery_units"`
+	ActiveDeliveryUnitID string                     `json:"active_delivery_unit_id,omitempty"`
+	ExecutableRevision   *ExecutableProductRevision `json:"executable_product_revision,omitempty"`
+	TestCases            []TestCase                 `json:"test_cases"`
+	QualityRuns          []QualityRun               `json:"quality_runs"`
+	AcceptanceReview     *AcceptanceReview          `json:"acceptance_review,omitempty"`
+	ReleaseChecks        []ReleaseCheck             `json:"release_checks"`
+	Releases             []Release                  `json:"releases"`
+	Activity             []ActivityEvent            `json:"activity"`
+	CreatedAt            time.Time                  `json:"created_at"`
+	UpdatedAt            time.Time                  `json:"updated_at"`
 }
 
 // ExecutableProductRevision is the complete runtime definition produced by RD
@@ -141,24 +139,66 @@ type QualityRun struct {
 	ExecutedAt   time.Time   `json:"executed_at"`
 }
 
-type AcceptanceCase struct {
-	ID            string             `json:"id"`
-	FeatureID     string             `json:"feature_id"`
-	Title         string             `json:"title"`
-	BusinessValue string             `json:"business_value"`
-	Source        FeatureRevisionRef `json:"source"`
+type AcceptanceReviewStatus string
+
+const (
+	AcceptanceReviewOpen     AcceptanceReviewStatus = "open"
+	AcceptanceReviewAccepted AcceptanceReviewStatus = "accepted"
+)
+
+type AcceptanceBugStatus string
+
+const (
+	AcceptanceBugReported       AcceptanceBugStatus = "reported"
+	AcceptanceBugFixing         AcceptanceBugStatus = "fixing"
+	AcceptanceBugReadyForRetest AcceptanceBugStatus = "ready_for_retest"
+	AcceptanceBugResolved       AcceptanceBugStatus = "resolved"
+)
+
+// AcceptanceReview is the one user acceptance session for a DeliveryRun. It
+// remains open while bugs move through report, repair and user retest, and is
+// accepted only by an explicit business acceptor command.
+type AcceptanceReview struct {
+	ID                   string                 `json:"id"`
+	Status               AcceptanceReviewStatus `json:"status"`
+	CandidateGitRevision string                 `json:"candidate_git_revision"`
+	EnvironmentRevision  string                 `json:"environment_revision,omitempty"`
+	EnvironmentRef       string                 `json:"environment_ref,omitempty"`
+	RuntimeURL           string                 `json:"runtime_url,omitempty"`
+	Bugs                 []AcceptanceBug        `json:"bugs"`
+	Events               []AcceptanceEvent      `json:"events"`
+	OpenedAt             time.Time              `json:"opened_at"`
+	AcceptedBy           string                 `json:"accepted_by,omitempty"`
+	AcceptedAt           *time.Time             `json:"accepted_at,omitempty"`
 }
 
-type AcceptanceConfirmation struct {
-	ID               string      `json:"id"`
-	GitRevision      string      `json:"git_revision"`
-	AcceptanceCaseID string      `json:"acceptance_case_id"`
-	Result           CheckResult `json:"result"`
-	Note             string      `json:"note"`
-	EvidenceRefs     []string    `json:"evidence_refs"`
-	FailureOwner     string      `json:"failure_owner,omitempty"`
-	ConfirmedBy      string      `json:"confirmed_by"`
-	ConfirmedAt      time.Time   `json:"confirmed_at"`
+type AcceptanceBug struct {
+	ID                      string              `json:"id"`
+	Title                   string              `json:"title"`
+	Description             string              `json:"description"`
+	Expected                string              `json:"expected"`
+	Actual                  string              `json:"actual"`
+	Severity                string              `json:"severity"`
+	Status                  AcceptanceBugStatus `json:"status"`
+	Owner                   string              `json:"owner,omitempty"`
+	DeliveryUnitID          string              `json:"delivery_unit_id,omitempty"`
+	ReportedAgainstRevision string              `json:"reported_against_revision"`
+	ReadyForRetestRevision  string              `json:"ready_for_retest_revision,omitempty"`
+	EvidenceRefs            []string            `json:"evidence_refs"`
+	ReportedBy              string              `json:"reported_by"`
+	ReportedAt              time.Time           `json:"reported_at"`
+	UpdatedAt               time.Time           `json:"updated_at"`
+}
+
+type AcceptanceEvent struct {
+	ID           string    `json:"id"`
+	BugID        string    `json:"bug_id,omitempty"`
+	Kind         string    `json:"kind"`
+	Note         string    `json:"note"`
+	GitRevision  string    `json:"git_revision,omitempty"`
+	EvidenceRefs []string  `json:"evidence_refs"`
+	ActorID      string    `json:"actor_id"`
+	OccurredAt   time.Time `json:"occurred_at"`
 }
 
 type ReleaseStatus string

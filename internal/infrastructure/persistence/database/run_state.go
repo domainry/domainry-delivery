@@ -17,7 +17,7 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(renderer, TableRuns, workspaceID).
 		Columns(
 			"run_id", "workspace_id", "name", "code", "goal", "target_date", "stage", "revision", "product_snapshot_json",
-			"feature_snapshot_json", "members_json", "active_delivery_unit_id", "executable_revision_json", "created_at", "updated_at",
+			"feature_snapshot_json", "members_json", "active_delivery_unit_id", "executable_revision_json", "acceptance_review_json", "created_at", "updated_at",
 		).
 		Where(ormquery.Equal("run_id", runID)).
 		Build()
@@ -25,11 +25,11 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 		return deliveryrun.DeliveryRun{}, storageError(err)
 	}
 	var run deliveryrun.DeliveryRun
-	var productJSON, featureJSON, membersJSON, executableJSON []byte
+	var productJSON, featureJSON, membersJSON, executableJSON, acceptanceJSON []byte
 	var createdAt, updatedAt int64
 	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
 		&run.ID, &run.WorkspaceID, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
-		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &createdAt, &updatedAt,
+		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &acceptanceJSON, &createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return deliveryrun.DeliveryRun{}, domain.NotFound("delivery run", runID)
@@ -52,6 +52,12 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 			return deliveryrun.DeliveryRun{}, storageError(err)
 		}
 	}
+	if len(acceptanceJSON) > 0 {
+		run.AcceptanceReview = &deliveryrun.AcceptanceReview{}
+		if err := utcjson.Unmarshal(acceptanceJSON, run.AcceptanceReview); err != nil {
+			return deliveryrun.DeliveryRun{}, storageError(err)
+		}
+	}
 	run.CreatedAt = time.UnixMilli(createdAt).UTC()
 	run.UpdatedAt = time.UnixMilli(updatedAt).UTC()
 	if run.DeliveryUnits, err = loadRunComponents[deliveryrun.DeliveryUnit](ctx, database, renderer, TableDeliveryUnits, workspaceID, runID); err != nil {
@@ -61,12 +67,6 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 		return deliveryrun.DeliveryRun{}, err
 	}
 	if run.QualityRuns, err = loadRunComponents[deliveryrun.QualityRun](ctx, database, renderer, TableQualityRuns, workspaceID, runID); err != nil {
-		return deliveryrun.DeliveryRun{}, err
-	}
-	if run.AcceptanceCases, err = loadRunComponents[deliveryrun.AcceptanceCase](ctx, database, renderer, TableAcceptanceCases, workspaceID, runID); err != nil {
-		return deliveryrun.DeliveryRun{}, err
-	}
-	if run.AcceptanceConfirmations, err = loadRunComponents[deliveryrun.AcceptanceConfirmation](ctx, database, renderer, TableAcceptanceConfirmations, workspaceID, runID); err != nil {
 		return deliveryrun.DeliveryRun{}, err
 	}
 	if run.ReleaseChecks, err = loadRunComponents[deliveryrun.ReleaseCheck](ctx, database, renderer, TableReleaseChecks, workspaceID, runID); err != nil {
@@ -91,7 +91,7 @@ func loadRunComponents[T any](ctx context.Context, database sqlhost.DBTX, render
 }
 
 func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX, run deliveryrun.DeliveryRun) error {
-	productJSON, featureJSON, membersJSON, executableJSON, err := marshalRunHeader(run)
+	productJSON, featureJSON, membersJSON, executableJSON, acceptanceJSON, err := marshalRunHeader(run)
 	if err != nil {
 		return err
 	}
@@ -99,11 +99,11 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 		Columns(
 			"run_id", "product_id", "name", "code", "goal", "target_date", "stage", "revision",
 			"product_snapshot_json", "feature_snapshot_json", "members_json", "active_delivery_unit_id",
-			"executable_revision_json", "created_at", "updated_at",
+			"executable_revision_json", "acceptance_review_json", "created_at", "updated_at",
 		).
 		Values(
 			run.ID, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
-			productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON,
+			productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON, acceptanceJSON,
 			run.CreatedAt.UnixMilli(), run.UpdatedAt.UnixMilli(),
 		).
 		Build()
@@ -117,7 +117,7 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 }
 
 func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX, run deliveryrun.DeliveryRun, expectedRevision uint64) error {
-	productJSON, featureJSON, membersJSON, executableJSON, err := marshalRunHeader(run)
+	productJSON, featureJSON, membersJSON, executableJSON, acceptanceJSON, err := marshalRunHeader(run)
 	if err != nil {
 		return err
 	}
@@ -134,6 +134,7 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 		Set("members_json", membersJSON).
 		Set("active_delivery_unit_id", run.ActiveDeliveryUnitID).
 		Set("executable_revision_json", executableJSON).
+		Set("acceptance_review_json", acceptanceJSON).
 		Set("updated_at", run.UpdatedAt.UnixMilli()).
 		Where(ormquery.And(
 			ormquery.Equal("run_id", run.ID),
@@ -157,24 +158,28 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 	return store.persistRunRelations(ctx, transaction, run)
 }
 
-func marshalRunHeader(run deliveryrun.DeliveryRun) ([]byte, []byte, []byte, []byte, error) {
+func marshalRunHeader(run deliveryrun.DeliveryRun) ([]byte, []byte, []byte, []byte, []byte, error) {
 	productJSON, err := utcjson.Marshal(run.Product)
 	if err != nil {
-		return nil, nil, nil, nil, storageError(err)
+		return nil, nil, nil, nil, nil, storageError(err)
 	}
 	featureJSON, err := utcjson.Marshal(run.Feature)
 	if err != nil {
-		return nil, nil, nil, nil, storageError(err)
+		return nil, nil, nil, nil, nil, storageError(err)
 	}
 	membersJSON, err := utcjson.Marshal(run.Members)
 	if err != nil {
-		return nil, nil, nil, nil, storageError(err)
+		return nil, nil, nil, nil, nil, storageError(err)
 	}
 	executableJSON, err := nullableJSON(run.ExecutableRevision)
 	if err != nil {
-		return nil, nil, nil, nil, storageError(err)
+		return nil, nil, nil, nil, nil, storageError(err)
 	}
-	return productJSON, featureJSON, membersJSON, executableJSON, nil
+	acceptanceJSON, err := nullableJSON(run.AcceptanceReview)
+	if err != nil {
+		return nil, nil, nil, nil, nil, storageError(err)
+	}
+	return productJSON, featureJSON, membersJSON, executableJSON, acceptanceJSON, nil
 }
 
 func (store *Store) persistRunRelations(ctx context.Context, transaction sqlhost.DBTX, run deliveryrun.DeliveryRun) error {
@@ -185,14 +190,6 @@ func (store *Store) persistRunRelations(ctx context.Context, transaction sqlhost
 		return err
 	}
 	if err := store.persistImmutableRunComponents(ctx, transaction, TableQualityRuns, "quality_run_id", run.WorkspaceID, run.ID, len(run.QualityRuns), func(index int) (string, any) { return run.QualityRuns[index].ID, run.QualityRuns[index] }); err != nil {
-		return err
-	}
-	if err := store.persistImmutableRunComponents(ctx, transaction, TableAcceptanceCases, "acceptance_case_id", run.WorkspaceID, run.ID, len(run.AcceptanceCases), func(index int) (string, any) { return run.AcceptanceCases[index].ID, run.AcceptanceCases[index] }); err != nil {
-		return err
-	}
-	if err := store.persistImmutableRunComponents(ctx, transaction, TableAcceptanceConfirmations, "confirmation_id", run.WorkspaceID, run.ID, len(run.AcceptanceConfirmations), func(index int) (string, any) {
-		return run.AcceptanceConfirmations[index].ID, run.AcceptanceConfirmations[index]
-	}); err != nil {
 		return err
 	}
 	if err := store.replaceRunComponents(ctx, transaction, TableReleaseChecks, "check_id", run.WorkspaceID, run.ID, len(run.ReleaseChecks), func(index int) (string, any) { return run.ReleaseChecks[index].ID, run.ReleaseChecks[index] }); err != nil {

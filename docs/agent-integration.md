@@ -31,6 +31,13 @@ Delivery verifies cited messages and attachments in the same Workspace,
 Product and Feature before `feature.discovery.replace` commits. Feature
 confirmation copies the lineage into the immutable FeatureRevision.
 
+User-acceptance screenshots are separate DeliveryRun-scoped remote
+attachments. Deck captures a PNG, uploads its base64 bytes to Delivery object
+storage, and records only an `attachment://` reference in the AcceptanceBug.
+Before automatic QA triage, Deck downloads and checksum-verifies that exact
+remote object and supplies it to the Agent as native image input. A local cache
+is disposable and is never the authoritative evidence copy.
+
 Every archive write records both an operation `client_id` and a persistent
 installation `device_id`. Delivery timestamps are UTC Unix milliseconds; Deck
 formats them in the user's local timezone.

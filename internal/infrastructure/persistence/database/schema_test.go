@@ -9,8 +9,7 @@ import (
 func TestOwnedTableNamesDoNotRepeatDatabaseName(t *testing.T) {
 	want := []string{
 		"products", "product_revisions", "features", "feature_revisions",
-		"runs", "units", "test_cases", "quality_runs", "acceptance_cases",
-		"acceptance_confirmations", "release_checks", "releases", "activity",
+		"runs", "units", "test_cases", "quality_runs", "release_checks", "releases", "activity",
 		"feature_messages", "feature_attachments",
 	}
 	if got := OwnedTables(); !reflect.DeepEqual(got, want) {

@@ -15,9 +15,11 @@ func ProjectionFor(run DeliveryRun) Projection {
 		workflow.AvailableActions, _ = deliveryUnitActions(&run)
 		return Projection{DeliveryRun: run, Workflow: workflow}
 	}
-	if _, ready := verifiedJourneyRevision(&run); ready && run.ExecutableRevision == nil {
-		workflow.AvailableActions = []AvailableAction{catalogAction(commandProductRevisionRecord, "")}
-		return Projection{DeliveryRun: run, Workflow: workflow}
+	if revision, ready := verifiedJourneyRevision(&run); ready {
+		if run.ExecutableRevision == nil || run.ExecutableRevision.CodeRevision != revision {
+			workflow.AvailableActions = []AvailableAction{catalogAction(commandProductRevisionRecord, "")}
+			return Projection{DeliveryRun: run, Workflow: workflow}
+		}
 	}
 	workflow.AvailableActions = lifecycleActions(&run)
 	return Projection{DeliveryRun: run, Workflow: workflow}

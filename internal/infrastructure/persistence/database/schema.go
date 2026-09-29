@@ -9,29 +9,26 @@ import (
 )
 
 const (
-	TableProducts                = "products"
-	TableProductRevisions        = "product_revisions"
-	TableFeatures                = "features"
-	TableFeatureRevisions        = "feature_revisions"
-	TableRuns                    = "runs"
-	TableDeliveryUnits           = "units"
-	TableTestCases               = "test_cases"
-	TableQualityRuns             = "quality_runs"
-	TableAcceptanceCases         = "acceptance_cases"
-	TableAcceptanceConfirmations = "acceptance_confirmations"
-	TableReleaseChecks           = "release_checks"
-	TableReleases                = "releases"
-	TableActivity                = "activity"
-	TableFeatureMessages         = "feature_messages"
-	TableFeatureAttachments      = "feature_attachments"
+	TableProducts           = "products"
+	TableProductRevisions   = "product_revisions"
+	TableFeatures           = "features"
+	TableFeatureRevisions   = "feature_revisions"
+	TableRuns               = "runs"
+	TableDeliveryUnits      = "units"
+	TableTestCases          = "test_cases"
+	TableQualityRuns        = "quality_runs"
+	TableReleaseChecks      = "release_checks"
+	TableReleases           = "releases"
+	TableActivity           = "activity"
+	TableFeatureMessages    = "feature_messages"
+	TableFeatureAttachments = "feature_attachments"
 )
 
 func baselineTables() []string {
 	return []string{
 		TableProducts, TableProductRevisions, TableFeatures, TableFeatureRevisions,
 		TableRuns, TableDeliveryUnits, TableTestCases, TableQualityRuns,
-		TableAcceptanceCases, TableAcceptanceConfirmations, TableReleaseChecks,
-		TableReleases, TableActivity, TableFeatureMessages, TableFeatureAttachments,
+		TableReleaseChecks, TableReleases, TableActivity, TableFeatureMessages, TableFeatureAttachments,
 	}
 }
 
@@ -122,8 +119,6 @@ func schemaStatements(driver string, renderer baseSQLRenderer) ([]string, error)
 		{name: TableDeliveryUnits, builder: componentTable(named, TableDeliveryUnits, "unit_id")},
 		{name: TableTestCases, builder: componentTable(named, TableTestCases, "test_case_id")},
 		{name: TableQualityRuns, builder: componentTable(named, TableQualityRuns, "quality_run_id")},
-		{name: TableAcceptanceCases, builder: componentTable(named, TableAcceptanceCases, "acceptance_case_id")},
-		{name: TableAcceptanceConfirmations, builder: componentTable(named, TableAcceptanceConfirmations, "confirmation_id")},
 		{name: TableReleaseChecks, builder: componentTable(named, TableReleaseChecks, "check_id")},
 		{name: TableReleases, builder: componentTable(named, TableReleases, "release_id")},
 		{name: TableActivity, builder: componentTable(named, TableActivity, "event_id")},
@@ -236,6 +231,7 @@ func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("members_json", ormschema.Binary()),
 		requiredColumn("active_delivery_unit_id", ormschema.TextKey(191)),
 		ormschema.Column("executable_revision_json", ormschema.Binary()),
+		ormschema.Column("acceptance_review_json", ormschema.Binary()),
 		requiredColumn("created_at", ormschema.BigInt()),
 		requiredColumn("updated_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "run_id")

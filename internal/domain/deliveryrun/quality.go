@@ -10,7 +10,7 @@ import (
 const commandQualityRecord = commanddomain.QualityRecord
 
 func qualityActions(run *DeliveryRun) []AvailableAction {
-	if run.Stage != StageTesting || run.ExecutableRevision == nil {
+	if (run.Stage != StageTesting && run.Stage != StageAcceptance) || run.ExecutableRevision == nil || activeDeliveryUnit(run) != nil {
 		return []AvailableAction{}
 	}
 	revision, ok := verifiedJourneyRevision(run)
@@ -28,7 +28,7 @@ func qualityActions(run *DeliveryRun) []AvailableAction {
 }
 
 func recordQuality(run *DeliveryRun, command Command, now time.Time) error {
-	if run.Stage != StageTesting || activeDeliveryUnit(run) != nil || run.ExecutableRevision == nil {
+	if (run.Stage != StageTesting && run.Stage != StageAcceptance) || activeDeliveryUnit(run) != nil || run.ExecutableRevision == nil {
 		return Invalid("quality_stage_invalid")
 	}
 	var payload struct {
@@ -72,35 +72,40 @@ func recordQuality(run *DeliveryRun, command Command, now time.Time) error {
 	})
 	appendActivity(run, command.Actor, "quality_recorded", testCase.ID+" independent QA result recorded", payload.Note, now)
 	if payload.Result == ResultFail {
-		return routeQualityFailure(run, testCase.FeatureID, payload.FailureOwner)
+		return routeQualityFailure(run, testCase, payload.FailureOwner, payload.Note)
 	}
 	return nil
 }
 
-func routeQualityFailure(run *DeliveryRun, deliveryUnitID, owner string) error {
-	return routeVerificationFailure(run, deliveryUnitID, owner)
+func routeQualityFailure(run *DeliveryRun, testCase *TestCase, owner, detail string) error {
+	return routeVerificationFailure(run, testCase.FeatureID, owner, []developmentRepairTarget{{
+		SourceKind: "quality_case",
+		SourceID:   testCase.ID,
+		Title:      "Repair failed quality case: " + testCase.Title,
+		Detail:     detail,
+	}})
 }
 
-func routeVerificationFailure(run *DeliveryRun, deliveryUnitID, owner string) error {
-	if owner == "framework" || owner == "unlocated" {
-		run.ActiveDeliveryUnitID = ""
-		run.Stage = StageBugs
-		return nil
-	}
+func routeVerificationFailure(run *DeliveryRun, deliveryUnitID, owner string, repairTargets []developmentRepairTarget) error {
 	unit := deliveryUnitByID(run, deliveryUnitID)
 	if unit == nil {
 		return Invalid("quality_delivery_unit_missing")
 	}
 	switch owner {
 	case "interaction", "model", "frontend", "backend":
-		routeDeliveryUnitGap(unit, owner)
+		routeDeliveryUnitGap(unit, owner, repairTargets)
 	}
 	run.ActiveDeliveryUnitID = unit.ID
-	run.Stage = StageDevelopment
 	return nil
 }
 
 func deriveStage(run *DeliveryRun) Stage {
+	if run.AcceptanceReview != nil {
+		if acceptanceReviewCurrent(run) {
+			return StageRelease
+		}
+		return StageAcceptance
+	}
 	if activeDeliveryUnit(run) != nil {
 		return StageDevelopment
 	}
@@ -112,24 +117,12 @@ func deriveStage(run *DeliveryRun) Stage {
 		return StageTesting
 	}
 	for _, testCase := range run.TestCases {
-		result, owner := latestQualityObservation(run, revision, testCase.ID)
-		if result == ResultFail && (owner == "framework" || owner == "unlocated") {
-			return StageBugs
-		}
+		result, _ := latestQualityObservation(run, revision, testCase.ID)
 		if result != ResultPass {
 			return StageTesting
 		}
 	}
-	for _, acceptanceCase := range run.AcceptanceCases {
-		result, owner := latestAcceptanceConfirmation(run, revision, acceptanceCase.ID)
-		if result == ResultFail && (owner == "framework" || owner == "unlocated") {
-			return StageBugs
-		}
-		if result != ResultPass {
-			return StageAcceptance
-		}
-	}
-	return StageRelease
+	return StageAcceptance
 }
 
 func verifiedJourneyRevision(run *DeliveryRun) (string, bool) {
@@ -181,7 +174,7 @@ func qualityReleaseGate(run *DeliveryRun) ReleaseGate {
 }
 
 func validQualityFailureOwner(owner string) bool {
-	return validDeliveryGapOwner(owner) || owner == "framework" || owner == "unlocated"
+	return validDeliveryGapOwner(owner)
 }
 
 func evidenceRefsMatchRevision(references []string, revision string) bool {

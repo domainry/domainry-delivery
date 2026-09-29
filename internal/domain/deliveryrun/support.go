@@ -84,15 +84,6 @@ func findTestCase(run *DeliveryRun, id string) *TestCase {
 	return nil
 }
 
-func findAcceptanceCase(run *DeliveryRun, id string) *AcceptanceCase {
-	for index := range run.AcceptanceCases {
-		if run.AcceptanceCases[index].ID == id {
-			return &run.AcceptanceCases[index]
-		}
-	}
-	return nil
-}
-
 func findReleaseCheck(run *DeliveryRun, id string) *ReleaseCheck {
 	for index := range run.ReleaseChecks {
 		if run.ReleaseChecks[index].ID == id {

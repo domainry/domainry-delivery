@@ -38,6 +38,7 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 		if err != nil {
 			return err
 		}
+		ensureAcceptanceReview(run, command.Actor, now)
 		run.Stage = DeriveStage(run)
 		run.UpdatedAt = now
 		return nil
@@ -49,6 +50,18 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 		err = recordExecutableRevision(run, command, now)
 	case commandQualityRecord:
 		err = recordQuality(run, command, now)
+	case commandAcceptanceEnvironmentReady:
+		err = recordAcceptanceEnvironment(run, command, now)
+	case commandAcceptanceBugReport:
+		err = reportAcceptanceBug(run, command, now)
+	case commandAcceptanceBugTriage:
+		err = triageAcceptanceBug(run, command, now)
+	case commandAcceptanceBugFixReady:
+		err = markAcceptanceBugReady(run, command, now)
+	case commandAcceptanceBugResolve:
+		err = resolveAcceptanceBug(run, command, now)
+	case commandAcceptanceBugReopen:
+		err = reopenAcceptanceBug(run, command, now)
 	case commandAcceptanceConfirm:
 		err = confirmAcceptance(run, command, now)
 	case commandReleaseChecksReplace:
@@ -69,6 +82,7 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	ensureAcceptanceReview(run, command.Actor, now)
 	run.Stage = DeriveStage(run)
 	run.UpdatedAt = now
 	return nil
@@ -125,11 +139,17 @@ func deliveryUnitsMatchModelHash(run *DeliveryRun, modelSHA256 string) bool {
 }
 
 func canRecordExecutableRevision(run *DeliveryRun) bool {
-	if run.ExecutableRevision != nil || len(run.Releases) > 0 {
+	if len(run.Releases) > 0 {
 		return false
 	}
-	_, ready := verifiedJourneyRevision(run)
-	return ready
+	revision, ready := verifiedJourneyRevision(run)
+	if !ready {
+		return false
+	}
+	if run.ExecutableRevision == nil {
+		return true
+	}
+	return run.AcceptanceReview != nil && run.AcceptanceReview.Status == AcceptanceReviewOpen && run.ExecutableRevision.CodeRevision != revision
 }
 
 func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) error {
@@ -367,7 +387,7 @@ func authorizeHumanCommand(run *DeliveryRun, command Command) error {
 	switch command.Type {
 	case commandReleasePrepare:
 		requiredRole = RoleProductOwner
-	case commandAcceptanceConfirm:
+	case commandAcceptanceBugReport, commandAcceptanceBugResolve, commandAcceptanceBugReopen, commandAcceptanceConfirm:
 		requiredRole = RoleBusinessAcceptor
 	case commandReleaseApprove, commandReleaseReconcile:
 		requiredRole = RoleReleaseApprover

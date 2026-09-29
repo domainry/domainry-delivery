@@ -75,15 +75,10 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 	}
 	deliveryUnits, activeDeliveryUnitID := newDeliveryUnits(featureSnapshot)
 	testCases := make([]TestCase, 0, len(featureRevisionValue.Specification.Acceptance))
-	acceptanceCases := make([]AcceptanceCase, 0, len(featureRevisionValue.Specification.Acceptance))
 	for index, criterion := range featureRevisionValue.Specification.Acceptance {
 		testCases = append(testCases, TestCase{
 			ID: fmt.Sprintf("T-%02d", index+1), FeatureID: feature.ID, Title: criterion.Title,
 			Expected: formatAcceptanceScenario(criterion), Revision: 1,
-		})
-		acceptanceCases = append(acceptanceCases, AcceptanceCase{
-			ID: fmt.Sprintf("UAT-%02d", index+1), FeatureID: feature.ID, Title: criterion.Title,
-			BusinessValue: featureRevisionValue.Specification.Intent.DesiredOutcome, Source: clone(source),
 		})
 	}
 	return DeliveryRun{
@@ -92,9 +87,8 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 		Feature: featureSnapshot, Name: spec.Name, Code: spec.Code, Goal: spec.Goal, TargetDate: spec.TargetDate,
 		Revision: 1, Stage: StageDevelopment, Members: clone(spec.Members),
 		DeliveryUnits: deliveryUnits, ActiveDeliveryUnitID: activeDeliveryUnitID,
-		TestCases: testCases, QualityRuns: []QualityRun{}, AcceptanceCases: acceptanceCases,
-		AcceptanceConfirmations: []AcceptanceConfirmation{},
-		ReleaseChecks:           []ReleaseCheck{}, Releases: []Release{},
+		TestCases: testCases, QualityRuns: []QualityRun{},
+		ReleaseChecks: []ReleaseCheck{}, Releases: []Release{},
 		Activity: []ActivityEvent{{
 			ID: newID("event"), Kind: "delivery_started", Title: feature.Code + " delivery started",
 			Detail: "The DeliveryRun froze the exact released Product baseline, confirmed FeatureRevision, and Agent source.", ActorID: actor.ID, OccurredAt: now,

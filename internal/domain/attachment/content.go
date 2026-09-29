@@ -13,8 +13,9 @@ import (
 )
 
 const (
-	MaxUploadBytes int64 = 5 << 20
-	MaxPerFeature        = 10
+	MaxUploadBytes         int64 = 5 << 20
+	MaxPerFeature                = 10
+	MaxPerAcceptanceReview       = 100
 )
 
 var (

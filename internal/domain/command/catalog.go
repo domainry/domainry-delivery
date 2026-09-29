@@ -19,8 +19,6 @@ const (
 	ProductDelete             = "product.delete"
 	ProductFrontendStart      = "product.engineering.frontend.start"
 	ProductFrontendComplete   = "product.engineering.frontend.complete"
-	ProductFrontendApprove    = "product.engineering.frontend.approve"
-	ProductFrontendRevise     = "product.engineering.frontend.revise"
 	ProductFoundationStarted  = "product.engineering.foundation.started"
 	ProductFoundationComplete = "product.engineering.foundation.completed"
 	ProductFoundationFailed   = "product.engineering.foundation.failed"
@@ -41,6 +39,12 @@ const (
 	DevelopmentTodoComplete         = "development_todo.complete"
 	ProductRevisionRecord           = "product_revision.record"
 	QualityRecord                   = "quality.record"
+	AcceptanceEnvironmentReady      = "acceptance.environment.ready"
+	AcceptanceBugReport             = "acceptance.bug.report"
+	AcceptanceBugTriage             = "acceptance.bug.triage"
+	AcceptanceBugFixReady           = "acceptance.bug.fix.ready"
+	AcceptanceBugResolve            = "acceptance.bug.resolve"
+	AcceptanceBugReopen             = "acceptance.bug.reopen"
 	AcceptanceConfirm               = "acceptance.confirm"
 	ReleaseChecksReplace            = "release_checks.replace"
 	ReleaseCheckRecord              = "release_check.record"
@@ -69,7 +73,7 @@ func buildCatalog() map[string]Definition {
 			result[key] = Definition{Key: key, Target: target, PayloadType: payloadType, ReceiptType: receiptType, Permission: permission, AllowedActors: actors, LegalStates: states}
 		}
 	}
-	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorAgent}, []string{"development", "testing", "bugs", "release"}, map[string]string{
+	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorAgent}, []string{"development", "testing", "acceptance", "release"}, map[string]string{
 		DeliveryUnitInteractionComplete: "DeliveryUnitPhaseResult",
 		DeliveryUnitModelComplete:       "DeliveryUnitPhaseResult",
 		DeliveryUnitBackendComplete:     "DeliveryUnitPhaseResult",
@@ -78,21 +82,27 @@ func buildCatalog() map[string]Definition {
 		DevelopmentTodoComplete:         "DevelopmentTodoEvidence",
 		ProductRevisionRecord:           "ProductRevisionRecord",
 		QualityRecord:                   "QualityResult",
+		AcceptanceBugTriage:             "AcceptanceBugTriage",
 		ReleaseChecksReplace:            "ReleaseCheckSet",
 		ReleaseCheckRecord:              "ReleaseCheckResult",
 	})
-	register(TargetDeliveryRun, "delivery_deployment.record", "DeliveryRunProjection", []domain.ActorKind{domain.ActorSystem}, []string{"development", "release"}, map[string]string{
+	register(TargetDeliveryRun, "delivery_deployment.record", "DeliveryRunProjection", []domain.ActorKind{domain.ActorSystem}, []string{"development", "acceptance", "release"}, map[string]string{
 		DeliveryUnitModelVerify:     "ModelVerification",
 		DeliveryUnitContractVerify:  "ContractVerification",
 		DeliveryUnitGapReport:       "VerificationGap",
 		DeliveryUnitJourneyComplete: "JourneyVerification",
+		AcceptanceEnvironmentReady:  "AcceptanceEnvironment",
+		AcceptanceBugFixReady:       "AcceptanceBugFix",
 		ReleaseDeployResult:         "DeploymentResult",
 	})
 	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorHuman}, []string{"acceptance", "release"}, map[string]string{
-		AcceptanceConfirm: "AcceptanceConfirmation",
-		ReleasePrepare:    "ReleasePreparation",
-		ReleaseApprove:    "EntityReference",
-		ReleaseReconcile:  "DeploymentReconciliation",
+		AcceptanceBugReport:  "AcceptanceBugReport",
+		AcceptanceBugResolve: "AcceptanceBugResolution",
+		AcceptanceBugReopen:  "AcceptanceBugReopen",
+		AcceptanceConfirm:    "AcceptanceReviewConfirmation",
+		ReleasePrepare:       "ReleasePreparation",
+		ReleaseApprove:       "EntityReference",
+		ReleaseReconcile:     "DeploymentReconciliation",
 	})
 	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorAgent, domain.ActorHuman}, []string{"new"}, map[string]string{
 		ProductCreate: "ProductCreate",
@@ -106,11 +116,9 @@ func buildCatalog() map[string]Definition {
 		FeatureDeliveryStart:    "DeliveryStart",
 	})
 	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorHuman}, []string{"active"}, map[string]string{
-		ProductDelete:          "ProductDelete",
-		ProductFrontendApprove: "FrontendApproval",
-		ProductFrontendRevise:  "FrontendReviewFeedback",
-		FeatureDiscoveryOpen:   "FeatureDiscoveryOpen",
-		FeatureConfirm:         "FeatureConfirmation",
+		ProductDelete:        "ProductDelete",
+		FeatureDiscoveryOpen: "FeatureDiscoveryOpen",
+		FeatureConfirm:       "FeatureConfirmation",
 	})
 	register(TargetProduct, "delivery_deployment.record", "ProductProjection", []domain.ActorKind{domain.ActorSystem}, []string{"active"}, map[string]string{
 		ProductFoundationStarted:  "FoundationStart",

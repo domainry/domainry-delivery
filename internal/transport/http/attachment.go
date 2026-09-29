@@ -65,3 +65,50 @@ func (handler *Handler) removeFeatureAttachment(writer http.ResponseWriter, requ
 	}
 	writeJSON(writer, http.StatusOK, value)
 }
+
+func (handler *Handler) uploadAcceptanceAttachment(writer http.ResponseWriter, request *http.Request) {
+	request.Body = http.MaxBytesReader(writer, request.Body, 8<<20)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var input application.UploadFeatureAttachment
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		return
+	}
+	metadata, err := handler.service.UploadAcceptanceAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("deliveryRunID"), input)
+	if err != nil {
+		handler.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, metadata)
+}
+
+func (handler *Handler) downloadAcceptanceAttachment(writer http.ResponseWriter, request *http.Request) {
+	value, err := handler.service.DownloadAcceptanceAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("deliveryRunID"), request.PathValue("attachmentID"))
+	if err != nil {
+		handler.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, value)
+}
+
+func (handler *Handler) removeAcceptanceAttachment(writer http.ResponseWriter, request *http.Request) {
+	request.Body = http.MaxBytesReader(writer, request.Body, 1024)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	var input struct {
+		ClientID         string `json:"client_id"`
+		DeviceID         string `json:"device_id"`
+		ExpectedRevision uint64 `json:"expected_revision"`
+	}
+	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		return
+	}
+	value, err := handler.service.RemoveAcceptanceAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("deliveryRunID"), request.PathValue("attachmentID"), input.ClientID, input.DeviceID, input.ExpectedRevision)
+	if err != nil {
+		handler.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, value)
+}

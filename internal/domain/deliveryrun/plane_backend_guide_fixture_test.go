@@ -61,29 +61,22 @@ func applyFixturePhase(t *testing.T, run *delivery.DeliveryRun, actor delivery.A
 	t.Helper()
 	if actor.Kind == delivery.ActorAgent {
 		for {
-			var todo *delivery.DevelopmentTodo
-			for index := range run.DeliveryUnits[0].DevelopmentTodos {
-				candidate := &run.DeliveryUnits[0].DevelopmentTodos[index]
-				if candidate.Phase == phase && candidate.Status == delivery.DevelopmentTodoInProgress {
-					todo = candidate
-					break
-				}
-			}
-			if todo == nil {
+			workItemID, sourceID, ok := activeWorkItem(&run.DeliveryUnits[0], phase)
+			if !ok {
 				break
 			}
 			payload, marshalErr := json.Marshal(map[string]any{
 				"delivery_unit_id": run.ActiveDeliveryUnitID,
-				"todo_id":          todo.ID,
+				"todo_id":          workItemID,
 				"git_revision":     revision,
 				"summary":          "The business todo passed the fixture check.",
-				"evidence_refs":    []string{"git:" + revision + "#evidence:" + todo.SourceID + ".json"},
+				"evidence_refs":    []string{"git:" + revision + "#evidence:" + sourceID + ".json"},
 			})
 			if marshalErr != nil {
 				t.Fatal(marshalErr)
 			}
 			if applyErr := delivery.Apply(run, delivery.Command{Actor: actor, Type: "development_todo.complete", Payload: payload}, time.Now().UTC()); applyErr != nil {
-				t.Fatalf("complete todo %s: %v", todo.ID, applyErr)
+				t.Fatalf("complete work item %s: %v", workItemID, applyErr)
 			}
 		}
 	}

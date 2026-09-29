@@ -63,7 +63,7 @@ func TestProductCreateReadAndAgentContext(t *testing.T) {
 	}
 }
 
-func TestProjectedFrontendApprovalCanBeDispatched(t *testing.T) {
+func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) {
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "delivery.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -119,14 +119,10 @@ func TestProjectedFrontendApprovalCanBeDispatched(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.ContainsFunc(projection.AvailableActions, func(action delivery.AvailableAction) bool {
-		return action.Command == "product.engineering.frontend.approve" && action.ActorKind == delivery.ActorHuman
+		return action.Command == "product.engineering.foundation.started" && action.ActorKind == delivery.ActorSystem
 	}) {
-		t.Fatalf("frontend approval was not projected: %#v", projection.AvailableActions)
+		t.Fatalf("foundation installation was not projected: %#v", projection.AvailableActions)
 	}
-
-	dispatch(humanContext, "frontend-approve", 3, "product.engineering.frontend.approve", map[string]any{
-		"code_revision": "git:frontend",
-	}, http.StatusOK)
 }
 
 func TestAcceptLanguageLocalizesErrorsWithoutChangingCodes(t *testing.T) {

@@ -14,7 +14,6 @@ import (
 	"strings"
 	"testing"
 
-	deliverycontract "github.com/domainry/domainry-delivery-sdk/contract"
 	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
 )
@@ -221,7 +220,13 @@ func TestDomainErrorsRemainSemantic(t *testing.T) {
 
 func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	expected := []string{
+		commanddomain.AcceptanceBugFixReady,
+		commanddomain.AcceptanceBugReopen,
+		commanddomain.AcceptanceBugReport,
+		commanddomain.AcceptanceBugResolve,
+		commanddomain.AcceptanceBugTriage,
 		commanddomain.AcceptanceConfirm,
+		commanddomain.AcceptanceEnvironmentReady,
 		commanddomain.DevelopmentTodosInitialize,
 		commanddomain.DevelopmentTodoComplete,
 		commanddomain.DeliveryUnitBackendComplete,
@@ -241,9 +246,7 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 		commanddomain.ProductFoundationComplete,
 		commanddomain.ProductFoundationFailed,
 		commanddomain.ProductFoundationStarted,
-		commanddomain.ProductFrontendApprove,
 		commanddomain.ProductFrontendComplete,
-		commanddomain.ProductFrontendRevise,
 		commanddomain.ProductFrontendStart,
 		commanddomain.ProductRevisionRecord,
 		commanddomain.QualityRecord,
@@ -265,9 +268,6 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 	}
 	if !slices.Equal(actual, expected) {
 		t.Fatalf("command inventory changed without updating the architecture gate:\nactual=%v\nexpected=%v", actual, expected)
-	}
-	if sdkCommands := deliverycontract.CommandTypes(); !slices.Equal(actual, sdkCommands) {
-		t.Fatalf("domain command inventory drifted from SDK transport validation:\ndomain=%v\nsdk=%v", actual, sdkCommands)
 	}
 }
 

@@ -71,7 +71,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	dispatchContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, actor, application.PermissionDeliveryRunWrite)
 	interactionTodo := delivery.Command{
 		ClientID: "todo-interaction", ExpectedRevision: 1, Actor: actor, Type: "development_todo.complete",
-		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:development_todo:001","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
+		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:capability:F-001-cancel-membership:phase:interaction_modeling","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
 	}
 	interactionProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, interactionTodo)
 	if err != nil || interactionProgress.Revision != 2 {
@@ -95,9 +95,9 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	if first.Revision != 3 || second.Revision != 3 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
 		t.Fatalf("idempotent retry changed state: first=%d second=%d", first.Revision, second.Revision)
 	}
-	domainTodo := first.DeliveryUnits[0].DevelopmentTodos[1]
+	domainWorkItem := first.DeliveryUnits[0].DevelopmentTodos[0].PhaseWorkItems[1]
 	domainTodoPayload, err := json.Marshal(map[string]any{
-		"delivery_unit_id": "F-001", "todo_id": domainTodo.ID, "git_revision": "0123456",
+		"delivery_unit_id": "F-001", "todo_id": domainWorkItem.ID, "git_revision": "0123456",
 		"summary": "domain todo completed", "evidence_refs": []string{"git:0123456#evidence:domain-todo.json"},
 	})
 	if err != nil {
@@ -281,12 +281,6 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 	if !ok || domainError.Code != "permission_denied" {
 		t.Fatalf("expected deployment permission denial, got %#v", err)
 	}
-	product, err = service.DispatchProduct(humanContext, "workspace-1", product.ID, delivery.Command{
-		ClientID: "frontend-approve", ExpectedRevision: product.Revision, Type: "product.engineering.frontend.approve", Payload: json.RawMessage(`{"code_revision":"git:frontend"}`),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	systemContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorAgent},
 		application.PermissionProductRead, application.PermissionDeploymentRecord,
@@ -387,20 +381,33 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	for _, phase := range phaseCommands {
 		if phase.actor.Kind == delivery.ActorAgent {
 			for {
-				var todo *deliveryrun.DevelopmentTodo
-				for index := range run.DeliveryUnits[0].DevelopmentTodos {
-					candidate := &run.DeliveryUnits[0].DevelopmentTodos[index]
-					if string(candidate.Phase) == phase.phase && candidate.Status == deliveryrun.DevelopmentTodoInProgress {
-						todo = candidate
+				workItemID, sourceID := "", ""
+				for repairIndex := range run.DeliveryUnits[0].DevelopmentRepairItems {
+					repair := &run.DeliveryUnits[0].DevelopmentRepairItems[repairIndex]
+					if string(repair.Phase) == phase.phase && repair.Status == deliveryrun.DevelopmentTodoInProgress {
+						workItemID, sourceID = repair.ID, repair.SourceID
 						break
 					}
 				}
-				if todo == nil {
+				for todoIndex := range run.DeliveryUnits[0].DevelopmentTodos {
+					todo := &run.DeliveryUnits[0].DevelopmentTodos[todoIndex]
+					for workItemIndex := range todo.PhaseWorkItems {
+						workItem := &todo.PhaseWorkItems[workItemIndex]
+						if string(workItem.Phase) == phase.phase && workItem.Status == deliveryrun.DevelopmentTodoInProgress {
+							workItemID, sourceID = workItem.ID, todo.SourceID
+							break
+						}
+					}
+					if workItemID != "" {
+						break
+					}
+				}
+				if workItemID == "" {
 					break
 				}
 				run = dispatchRunCommand(t, ctx, service, run, phase.client+"-todo", phase.actor, "development_todo.complete", map[string]any{
-					"delivery_unit_id": run.Feature.ID, "todo_id": todo.ID, "git_revision": verifiedGitRevision,
-					"summary": "The business todo completed.", "evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + todo.SourceID + ".json"},
+					"delivery_unit_id": run.Feature.ID, "todo_id": workItemID, "git_revision": verifiedGitRevision,
+					"summary": "The business todo completed.", "evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + sourceID + ".json"},
 				})
 			}
 		}
@@ -427,13 +434,13 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 			"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
 		})
 	}
-	for _, acceptanceCase := range run.AcceptanceCases {
-		run = dispatchRunCommand(t, ctx, service, run, "acceptance-"+acceptanceCase.ID, delivery.Actor{ID: "m-business", Kind: delivery.ActorHuman}, "acceptance.confirm", map[string]any{
-			"acceptance_case_id": acceptanceCase.ID, "git_revision": verifiedGitRevision,
-			"result": "pass", "note": "Business outcome is accepted.",
-			"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:evidence/acceptance/" + acceptanceCase.ID + ".md"},
-		})
-	}
+	run = dispatchRunCommand(t, ctx, service, run, "acceptance-environment", delivery.Actor{ID: "acceptance-runtime", Kind: delivery.ActorSystem}, "acceptance.environment.ready", map[string]any{
+		"git_revision": verifiedGitRevision, "environment_ref": "acceptance://" + run.ID + "/" + verifiedGitRevision,
+		"runtime_url": "http://127.0.0.1:4173",
+	})
+	run = dispatchRunCommand(t, ctx, service, run, "acceptance-confirm", delivery.Actor{ID: "m-business", Kind: delivery.ActorHuman}, "acceptance.confirm", map[string]any{
+		"git_revision": verifiedGitRevision, "note": "Business outcome is accepted.",
+	})
 	run = dispatchRunCommand(t, ctx, service, run, "release-checks", delivery.Actor{ID: "op-agent", Kind: delivery.ActorAgent}, "release_checks.replace", map[string]any{
 		"environment_ref": "env://production/greenfit",
 		"checks":          []map[string]any{{"id": "RC-01", "title": "Production configuration and rollback path verified", "required": true}},

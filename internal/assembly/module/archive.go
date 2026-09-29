@@ -36,3 +36,18 @@ func (binding *Binding) RemoveFeatureAttachment(ctx context.Context, workspaceID
 	value, err := binding.service.RemoveFeatureAttachment(ctx, workspaceID, productID, featureID, attachmentID, input.ClientID, input.DeviceID, input.ExpectedRevision)
 	return convert[deliverysdk.FeatureAttachment](ctx, value, err)
 }
+
+func (binding *Binding) UploadAcceptanceAttachment(ctx context.Context, workspaceID, deliveryRunID string, input deliverysdk.FeatureAttachmentUpload) (deliverysdk.FeatureAttachment, error) {
+	value, err := binding.service.UploadAcceptanceAttachment(ctx, workspaceID, deliveryRunID, application.UploadFeatureAttachment(input))
+	return convert[deliverysdk.FeatureAttachment](ctx, value, err)
+}
+
+func (binding *Binding) DownloadAcceptanceAttachment(ctx context.Context, workspaceID, deliveryRunID, attachmentID string) (deliverysdk.FeatureAttachmentDownload, error) {
+	value, err := binding.service.DownloadAcceptanceAttachment(ctx, workspaceID, deliveryRunID, attachmentID)
+	return convert[deliverysdk.FeatureAttachmentDownload](ctx, value, err)
+}
+
+func (binding *Binding) RemoveAcceptanceAttachment(ctx context.Context, workspaceID, deliveryRunID, attachmentID string, input deliverysdk.FeatureAttachmentRemove) (deliverysdk.FeatureAttachment, error) {
+	value, err := binding.service.RemoveAcceptanceAttachment(ctx, workspaceID, deliveryRunID, attachmentID, input.ClientID, input.DeviceID, input.ExpectedRevision)
+	return convert[deliverysdk.FeatureAttachment](ctx, value, err)
+}

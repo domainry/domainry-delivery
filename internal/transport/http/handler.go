@@ -42,6 +42,9 @@ func New(service *application.Service, logger *slog.Logger, runtimeID string) ht
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs", handler.listDeliveryRuns)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}", handler.getDeliveryRun)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/agent-context", handler.getAgentContext)
+	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/acceptance-attachments", handler.uploadAcceptanceAttachment)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/acceptance-attachments/{attachmentID}", handler.downloadAcceptanceAttachment)
+	mux.HandleFunc("DELETE /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/acceptance-attachments/{attachmentID}", handler.removeAcceptanceAttachment)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/commands", handler.dispatch)
 	return handler.securityHeaders(mux)
 }

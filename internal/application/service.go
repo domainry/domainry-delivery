@@ -2,6 +2,8 @@ package application
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
@@ -51,6 +53,11 @@ func (service *Service) Dispatch(ctx context.Context, workspaceID, deliveryRunID
 		Target: commanddomain.TargetDeliveryRun, WorkspaceID: workspaceID,
 		FingerprintIdentity: []string{workspaceID, "delivery_run", deliveryRunID},
 	}, command, nil, func(command domain.Command, mutation Mutation, now time.Time) (deliveryrun.DeliveryRun, error) {
+		if command.Type == commanddomain.AcceptanceBugReport {
+			if err := service.validateAcceptanceBugAttachment(ctx, workspaceID, deliveryRunID, command.Payload); err != nil {
+				return deliveryrun.DeliveryRun{}, err
+			}
+		}
 		return service.ports.Runs.Transact(
 			ctx, workspaceID, deliveryRunID, mutation, command.ExpectedRevision,
 			func(run *deliveryrun.DeliveryRun) error { return deliveryrun.Apply(run, command, now) },
@@ -62,6 +69,31 @@ func (service *Service) Dispatch(ctx context.Context, workspaceID, deliveryRunID
 			},
 		)
 	})
+}
+
+func (service *Service) validateAcceptanceBugAttachment(ctx context.Context, workspaceID, deliveryRunID string, payload json.RawMessage) error {
+	var input struct {
+		EvidenceRefs []string `json:"evidence_refs"`
+	}
+	if json.Unmarshal(payload, &input) != nil || len(input.EvidenceRefs) != 1 {
+		return domain.Invalid("acceptance_bug_attachment_invalid")
+	}
+	attachmentID, ok := strings.CutPrefix(strings.TrimSpace(input.EvidenceRefs[0]), "attachment://")
+	if !ok || attachmentID == "" {
+		return domain.Invalid("acceptance_bug_attachment_invalid")
+	}
+	run, err := service.ports.Runs.Get(ctx, workspaceID, deliveryRunID)
+	if err != nil {
+		return err
+	}
+	metadata, err := service.ports.AttachmentRecords.GetAttachment(ctx, workspaceID, run.Product.ID, acceptanceAttachmentScope(deliveryRunID), attachmentID)
+	if err != nil {
+		return err
+	}
+	if !metadata.Active || metadata.ContentType != "image/png" || metadata.Bytes <= 0 || metadata.Bytes > 5<<20 {
+		return domain.Invalid("acceptance_bug_attachment_invalid")
+	}
+	return nil
 }
 
 func (service *Service) GetProduct(ctx context.Context, workspaceID, productID string) (product.Product, error) {

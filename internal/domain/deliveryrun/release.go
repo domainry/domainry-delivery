@@ -63,7 +63,7 @@ func prepareRelease(run *DeliveryRun, command Command, now time.Time) error {
 		return Invalid("release_target_required")
 	}
 	revision, ok := verifiedJourneyRevision(run)
-	if !ok || !backendGuideEvidenceReady(run) || !executableRevisionReady(run) || !allQualityPass(run, revision) || !allAcceptancePass(run, revision) {
+	if !ok || !backendGuideEvidenceReady(run) || !executableRevisionReady(run) || !allQualityPass(run, revision) || !acceptanceReviewCurrent(run) {
 		return Invalid("release_gate_failed")
 	}
 	if !allRequiredReleaseChecksPass(run) {
@@ -91,7 +91,7 @@ func prepareRelease(run *DeliveryRun, command Command, now time.Time) error {
 
 func canPrepareRelease(run *DeliveryRun) bool {
 	revision, ok := verifiedJourneyRevision(run)
-	if !ok || !backendGuideEvidenceReady(run) || !executableRevisionReady(run) || !allQualityPass(run, revision) || !allAcceptancePass(run, revision) || !allRequiredReleaseChecksPass(run) {
+	if !ok || !backendGuideEvidenceReady(run) || !executableRevisionReady(run) || !allQualityPass(run, revision) || !acceptanceReviewCurrent(run) || !allRequiredReleaseChecksPass(run) {
 		return false
 	}
 	for _, release := range run.Releases {
@@ -113,7 +113,7 @@ func ensureReleaseStillValid(run *DeliveryRun, release *Release) error {
 	if !executableRevisionReady(run) || release.ProductRevision != run.ExecutableRevision.TargetRevision || release.ProductRevisionRef != run.ExecutableRevision.EvidenceRef || release.ModelSHA256 != run.ExecutableRevision.ModelSHA256 {
 		return Invalid("product_revision_release_mismatch")
 	}
-	if !allQualityPass(run, revision) || !allAcceptancePass(run, revision) {
+	if !allQualityPass(run, revision) || !acceptanceReviewCurrent(run) {
 		return Invalid("release_gate_failed")
 	}
 	if !allRequiredReleaseChecksPass(run) {
