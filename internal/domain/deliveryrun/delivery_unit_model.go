@@ -9,15 +9,15 @@ import (
 type DeliveryUnitPhase string
 
 const (
-	DeliveryUnitPlanned               DeliveryUnitPhase = "planned"
-	DeliveryUnitInteractionModeling   DeliveryUnitPhase = "interaction_modeling"
-	DeliveryUnitDomainModeling        DeliveryUnitPhase = "domain_modeling"
-	DeliveryUnitModelVerification     DeliveryUnitPhase = "model_verification"
-	DeliveryUnitBackendImplementation DeliveryUnitPhase = "backend_implementation"
-	DeliveryUnitFrontendConvergence   DeliveryUnitPhase = "frontend_convergence"
-	DeliveryUnitContractVerification  DeliveryUnitPhase = "contract_verification"
-	DeliveryUnitJourneyTesting        DeliveryUnitPhase = "journey_testing"
-	DeliveryUnitComplete              DeliveryUnitPhase = "complete"
+	DeliveryUnitPlanned                DeliveryUnitPhase = "planned"
+	DeliveryUnitInteractionModeling    DeliveryUnitPhase = "interaction_modeling"
+	DeliveryUnitDomainModeling         DeliveryUnitPhase = "domain_modeling"
+	DeliveryUnitModelVerification      DeliveryUnitPhase = "model_verification"
+	DeliveryUnitFrontendImplementation DeliveryUnitPhase = "frontend_implementation"
+	DeliveryUnitBackendImplementation  DeliveryUnitPhase = "backend_implementation"
+	DeliveryUnitContractVerification   DeliveryUnitPhase = "contract_verification"
+	DeliveryUnitJourneyTesting         DeliveryUnitPhase = "journey_testing"
+	DeliveryUnitComplete               DeliveryUnitPhase = "complete"
 )
 
 type DeliveryGateStatus string
@@ -37,16 +37,14 @@ const (
 )
 
 const (
-	commandInteractionComplete     = commanddomain.DeliveryUnitInteractionComplete
-	commandModelComplete           = commanddomain.DeliveryUnitModelComplete
-	commandModelVerify             = commanddomain.DeliveryUnitModelVerify
-	commandBackendComplete         = commanddomain.DeliveryUnitBackendComplete
-	commandFrontendComplete        = commanddomain.DeliveryUnitFrontendComplete
-	commandContractVerify          = commanddomain.DeliveryUnitContractVerify
-	commandGapReport               = commanddomain.DeliveryUnitGapReport
-	commandJourneyComplete         = commanddomain.DeliveryUnitJourneyComplete
-	commandDevelopmentTodosInit    = commanddomain.DevelopmentTodosInitialize
-	commandDevelopmentTodoComplete = commanddomain.DevelopmentTodoComplete
+	commandInteractionComplete = commanddomain.DeliveryUnitInteractionComplete
+	commandModelComplete       = commanddomain.DeliveryUnitModelComplete
+	commandModelVerify         = commanddomain.DeliveryUnitModelVerify
+	commandBackendComplete     = commanddomain.DeliveryUnitBackendComplete
+	commandFrontendComplete    = commanddomain.DeliveryUnitFrontendComplete
+	commandContractVerify      = commanddomain.DeliveryUnitContractVerify
+	commandGapReport           = commanddomain.DeliveryUnitGapReport
+	commandJourneyComplete     = commanddomain.DeliveryUnitJourneyComplete
 )
 
 type DeliveryUnit struct {
@@ -73,9 +71,8 @@ type DeliveryUnit struct {
 	DevelopmentRepairItems           []DevelopmentRepairWorkItem `json:"development_repair_items"`
 }
 
-// DevelopmentTodo is one user-visible business capability. Technical execution
-// is tracked by its phase work items instead of duplicating the capability once
-// per delivery phase.
+// DevelopmentTodo is one fixed development phase. The seven phases are created
+// by Delivery and are never generated or expanded by an Agent.
 type DevelopmentTodo struct {
 	ID             string                     `json:"id"`
 	Sequence       int                        `json:"sequence"`
@@ -203,29 +200,6 @@ type deliveryUnitGapPayload struct {
 	EvidenceRefs   []string          `json:"evidence_refs"`
 	Diagnostics    []GateDiagnostic  `json:"diagnostics"`
 	FailureOwner   string            `json:"failure_owner"`
-}
-
-type developmentTodoCompletePayload struct {
-	DeliveryUnitID string   `json:"delivery_unit_id"`
-	TodoID         string   `json:"todo_id"`
-	GitRevision    string   `json:"git_revision"`
-	Summary        string   `json:"summary"`
-	EvidenceRefs   []string `json:"evidence_refs"`
-}
-
-type developmentTodoInitializeItem struct {
-	CapabilityID string              `json:"capability_id"`
-	Category     string              `json:"category"`
-	SourceKind   string              `json:"source_kind"`
-	SourceID     string              `json:"source_id"`
-	Title        string              `json:"title"`
-	Detail       string              `json:"detail"`
-	PhasePlan    []DeliveryUnitPhase `json:"phase_plan"`
-}
-
-type developmentTodosInitializePayload struct {
-	DeliveryUnitID string                          `json:"delivery_unit_id"`
-	Todos          []developmentTodoInitializeItem `json:"todos"`
 }
 
 // deliveryUnitResult is the normalized domain input after one of the three

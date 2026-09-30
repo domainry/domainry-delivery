@@ -4,7 +4,6 @@
 package testfixture
 
 import (
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -237,28 +236,5 @@ func DemoDeliveryRun(now time.Time) deliveryrun.DeliveryRun {
 	if err != nil {
 		panic(err)
 	}
-	items := DemoDevelopmentTodoBatch()
-	payload, err := json.Marshal(map[string]any{"delivery_unit_id": run.ActiveDeliveryUnitID, "todos": items})
-	if err != nil {
-		panic(err)
-	}
-	if err := deliveryrun.Apply(&run, domain.Command{Actor: domain.Actor{ID: "planning-agent", Kind: domain.ActorAgent}, Type: "development_todos.initialize", Payload: payload}, now); err != nil {
-		panic(err)
-	}
 	return run
-}
-
-func DemoDevelopmentTodoBatch() []map[string]any {
-	return []map[string]any{
-		{
-			"capability_id": "F-001-cancel-membership", "category": "membership_management", "source_kind": "scenario", "source_id": "F-001-scenario",
-			"title": "Cancel a membership", "detail": "A member can cancel before the cutoff and release the reserved capacity.",
-			"phase_plan": []string{"interaction_modeling", "domain_modeling", "model_verification", "backend_implementation", "frontend_convergence", "contract_verification", "journey_testing"},
-		},
-		{
-			"capability_id": "F-001-reject-late-cancellation", "category": "membership_management", "source_kind": "acceptance", "source_id": "F-001-acceptance-2",
-			"title": "Reject a late cancellation", "detail": "A member receives a clear outcome when cancellation is no longer allowed.",
-			"phase_plan": []string{"journey_testing"},
-		},
-	}
 }

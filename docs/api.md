@@ -98,12 +98,10 @@ POST /api/v1/workspaces/{workspace_id}/delivery-runs/{delivery_run_id}/commands
 
 Agent commands:
 
-- `development_todo.complete`
-- `development_todos.initialize`
 - `delivery_unit.interaction.complete`
 - `delivery_unit.model.complete`
-- `delivery_unit.backend.complete`
 - `delivery_unit.frontend.complete`
+- `delivery_unit.backend.complete`
 - `product_revision.record`
 - `quality.record`
 - `acceptance.bug.triage`
@@ -129,28 +127,18 @@ The server projection is authoritative for `available_actions` and
 `release_gates`. Clients must reread it immediately before a mutation and must
 not reproduce the state machine.
 
-`development_todos.initialize` writes the complete ordered business-capability
-plan in one command and one aggregate transaction. Each item has a stable
-`capability_id` and a strictly ordered `phase_plan`. A capability is one
-user-visible Todo even when its implementation crosses several technical
-phases. Categories are delivery data rather than a fixed global enum. The
-capability array order is authoritative within each phase, and the combined
-phase plans must cover every technical phase before work begins.
+Delivery creates exactly seven fixed development items when a DeliveryUnit is
+created: interaction modeling, domain modeling, model verification, frontend
+implementation, backend implementation, contract verification, and the real
+Runtime journey. Accepting a phase command completes that fixed item and starts
+the next one; the agent does not initialize or subdivide this sequence.
 
-`development_todo.complete` records the current phase work item or targeted
-repair. Its payload contains `delivery_unit_id`, `todo_id`, the clean
-`git_revision`, a human-readable `summary`, and one or more Git-bound
-`evidence_refs`. Delivery derives the parent capability status from all of its
-phase work items. The phase gate becomes available only after every work item
-for that phase is complete.
-
-`delivery_unit.gap.report` preserves every completed development Todo and its
+`delivery_unit.gap.report` preserves unaffected completed phases and their
 evidence. Delivery derives stable repair identities from the routed diagnostic
 owner, code, category, and path, then creates or reopens only internal repair
-items in the owning phase. Repair items never add duplicate user-visible
-business Todos. A repeated failure for the same diagnostic reuses the existing
-repair item. Downstream gates are invalidated for revalidation, but their
-completed implementation work items are not reset or executed again.
+items in the owning phase. A repeated failure for the same diagnostic reuses
+the existing repair item. Only the owning phase and affected downstream gates
+are revalidated; the complete development sequence is not replayed.
 
 ## Command envelope and replay
 

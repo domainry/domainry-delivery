@@ -35,8 +35,8 @@ func TestPlaneBackendGuideFixtureCompletesTheAuthoritativeDeliveryUnit(t *testin
 	applyFixturePhase(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling", fixture.GitRevision, nil)
 	applyFixturePhase(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling", fixture.GitRevision, nil)
 	applyFixturePhase(t, &run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification", fixture.GitRevision, fixture.Checks["delivery_unit.model.verify"])
+	applyFixturePhase(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation", fixture.GitRevision, nil)
 	applyFixturePhase(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", fixture.GitRevision, nil)
-	applyFixturePhase(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_convergence", fixture.GitRevision, nil)
 	applyFixturePhase(t, &run, delivery.Actor{ID: "contract-verifier", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", fixture.GitRevision, fixture.Checks["delivery_unit.contract.verify"])
 	applyFixturePhase(t, &run, delivery.Actor{ID: "journey-verifier", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing", fixture.GitRevision, fixture.Checks["delivery_unit.journey.complete"])
 
@@ -59,27 +59,6 @@ func TestPlaneBackendGuideFixtureCompletesTheAuthoritativeDeliveryUnit(t *testin
 
 func applyFixturePhase(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, command string, phase delivery.DeliveryUnitPhase, revision string, evidence *delivery.BackendGuideEvidence) {
 	t.Helper()
-	if actor.Kind == delivery.ActorAgent {
-		for {
-			workItemID, sourceID, ok := activeWorkItem(&run.DeliveryUnits[0], phase)
-			if !ok {
-				break
-			}
-			payload, marshalErr := json.Marshal(map[string]any{
-				"delivery_unit_id": run.ActiveDeliveryUnitID,
-				"todo_id":          workItemID,
-				"git_revision":     revision,
-				"summary":          "The business todo passed the fixture check.",
-				"evidence_refs":    []string{"git:" + revision + "#evidence:" + sourceID + ".json"},
-			})
-			if marshalErr != nil {
-				t.Fatal(marshalErr)
-			}
-			if applyErr := delivery.Apply(run, delivery.Command{Actor: actor, Type: "development_todo.complete", Payload: payload}, time.Now().UTC()); applyErr != nil {
-				t.Fatalf("complete work item %s: %v", workItemID, applyErr)
-			}
-		}
-	}
 	payloadValue := map[string]any{
 		"delivery_unit_id": run.ActiveDeliveryUnitID,
 		"phase":            phase,

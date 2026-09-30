@@ -4,77 +4,44 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"strings"
-	"time"
 )
 
 var orderedDevelopmentPhases = []DeliveryUnitPhase{
 	DeliveryUnitInteractionModeling,
 	DeliveryUnitDomainModeling,
 	DeliveryUnitModelVerification,
+	DeliveryUnitFrontendImplementation,
 	DeliveryUnitBackendImplementation,
-	DeliveryUnitFrontendConvergence,
 	DeliveryUnitContractVerification,
 	DeliveryUnitJourneyTesting,
 }
 
-func initializeDevelopmentTodos(run *DeliveryRun, command Command, now time.Time) error {
-	unit := activeDeliveryUnit(run)
-	if unit == nil || unit.Phase != DeliveryUnitInteractionModeling || len(unit.DevelopmentTodos) != 0 || len(unit.DevelopmentRepairItems) != 0 {
-		return Invalid("development_todos_already_initialized")
-	}
-	var payload developmentTodosInitializePayload
-	if err := decode(command.Payload, &payload); err != nil {
-		return err
-	}
-	payload.DeliveryUnitID = strings.TrimSpace(payload.DeliveryUnitID)
-	if payload.DeliveryUnitID != unit.ID || len(payload.Todos) == 0 || len(payload.Todos) > 500 {
-		return Invalid("development_todo_batch_invalid")
-	}
-	phaseCounts := make(map[DeliveryUnitPhase]int, len(orderedDevelopmentPhases))
-	capabilityIDs := make(map[string]bool, len(payload.Todos))
-	todos := make([]DevelopmentTodo, 0, len(payload.Todos))
-	for index, candidate := range payload.Todos {
-		candidate.CapabilityID = strings.TrimSpace(candidate.CapabilityID)
-		candidate.Category = strings.TrimSpace(candidate.Category)
-		candidate.SourceKind = strings.TrimSpace(candidate.SourceKind)
-		candidate.SourceID = strings.TrimSpace(candidate.SourceID)
-		candidate.Title = strings.TrimSpace(candidate.Title)
-		candidate.Detail = strings.TrimSpace(candidate.Detail)
-		if candidate.CapabilityID == "" || len(candidate.CapabilityID) > 500 || capabilityIDs[candidate.CapabilityID] || candidate.Category == "" || len(candidate.Category) > 120 || candidate.SourceKind == "" || len(candidate.SourceKind) > 120 || candidate.SourceID == "" || len(candidate.SourceID) > 500 || candidate.Title == "" || len(candidate.Title) > 500 || candidate.Detail == "" || len(candidate.Detail) > 4000 || len(candidate.PhasePlan) == 0 || len(candidate.PhasePlan) > len(orderedDevelopmentPhases) {
-			return Invalid("development_todo_batch_invalid")
+func newDevelopmentTodos(unitID string) []DevelopmentTodo {
+	todos := make([]DevelopmentTodo, 0, len(orderedDevelopmentPhases))
+	for index, phase := range orderedDevelopmentPhases {
+		status := DevelopmentTodoNotStarted
+		if index == 0 {
+			status = DevelopmentTodoInProgress
 		}
-		capabilityIDs[candidate.CapabilityID] = true
-		phaseWorkItems := make([]DevelopmentPhaseWorkItem, 0, len(candidate.PhasePlan))
-		lastPhaseOrder := -1
-		for _, phase := range candidate.PhasePlan {
-			phaseOrder := developmentPhaseOrder(phase)
-			if phaseOrder == len(orderedDevelopmentPhases) || phaseOrder <= lastPhaseOrder {
-				return Invalid("development_todo_phase_plan_invalid")
-			}
-			lastPhaseOrder = phaseOrder
-			phaseCounts[phase]++
-			phaseWorkItems = append(phaseWorkItems, DevelopmentPhaseWorkItem{
-				ID:       fmt.Sprintf("%s:capability:%s:phase:%s", unit.ID, candidate.CapabilityID, phase),
-				Phase:    phase,
-				Status:   DevelopmentTodoNotStarted,
-				Evidence: []DevelopmentTodoEvidence{},
-			})
+		workItem := DevelopmentPhaseWorkItem{
+			ID:       fmt.Sprintf("%s:phase:%s", unitID, phase),
+			Phase:    phase,
+			Status:   status,
+			Evidence: []DevelopmentTodoEvidence{},
 		}
 		todos = append(todos, DevelopmentTodo{
-			ID: candidate.CapabilityID, Sequence: index + 1,
-			Category: candidate.Category, SourceKind: candidate.SourceKind, SourceID: candidate.SourceID,
-			Title: candidate.Title, Detail: candidate.Detail, Status: DevelopmentTodoNotStarted, PhaseWorkItems: phaseWorkItems,
+			ID:             workItem.ID,
+			Sequence:       index + 1,
+			Category:       "development_phase",
+			SourceKind:     "delivery_phase",
+			SourceID:       string(phase),
+			Title:          string(phase),
+			Detail:         string(phase),
+			Status:         status,
+			PhaseWorkItems: []DevelopmentPhaseWorkItem{workItem},
 		})
 	}
-	for _, phase := range orderedDevelopmentPhases {
-		if phaseCounts[phase] == 0 {
-			return Invalid("development_todo_phase_missing")
-		}
-	}
-	unit.DevelopmentTodos = todos
-	syncDevelopmentWorkItemStatuses(unit)
-	appendActivity(run, command.Actor, "development_todos_initialized", "Development capability plan initialized", fmt.Sprintf("%d ordered capabilities", len(todos)), now)
-	return nil
+	return todos
 }
 
 func developmentPhaseOrder(phase DeliveryUnitPhase) int {
@@ -86,85 +53,7 @@ func developmentPhaseOrder(phase DeliveryUnitPhase) int {
 	return len(orderedDevelopmentPhases)
 }
 
-func completeDevelopmentTodo(run *DeliveryRun, command Command, now time.Time) error {
-	unit := activeDeliveryUnit(run)
-	if unit == nil || unit.ActiveRole == "system" {
-		return Invalid("development_todo_inactive")
-	}
-	var payload developmentTodoCompletePayload
-	if err := decode(command.Payload, &payload); err != nil {
-		return err
-	}
-	payload.DeliveryUnitID = strings.TrimSpace(payload.DeliveryUnitID)
-	payload.TodoID = strings.TrimSpace(payload.TodoID)
-	payload.GitRevision = strings.TrimSpace(payload.GitRevision)
-	payload.Summary = strings.TrimSpace(payload.Summary)
-	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
-	if payload.DeliveryUnitID != unit.ID || !validGitRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 || len(payload.EvidenceRefs) == 0 || len(payload.EvidenceRefs) > 100 {
-		return Invalid("development_todo_evidence_invalid")
-	}
-	for _, evidenceRef := range payload.EvidenceRefs {
-		if len(evidenceRef) > 1024 {
-			return Invalid("development_todo_evidence_invalid")
-		}
-	}
-	workItem := activeDevelopmentWorkItem(unit)
-	if workItem == nil || workItem.ID != payload.TodoID || workItem.Phase != unit.Phase {
-		return Invalid("development_todo_conflict")
-	}
-	workItem.Evidence = append(workItem.Evidence, DevelopmentTodoEvidence{
-		Status: DeliveryGatePassed, GitRevision: payload.GitRevision, Summary: payload.Summary,
-		EvidenceRefs: clone(payload.EvidenceRefs), Diagnostics: []GateDiagnostic{}, RecordedBy: command.Actor.ID, RecordedAt: now,
-	})
-	workItem.Status = DevelopmentTodoCompleted
-	syncDevelopmentWorkItemStatuses(unit)
-	appendActivity(run, command.Actor, "development_work_item_completed", workItem.ID+" completed", payload.Summary, now)
-	return nil
-}
-
-func activeDevelopmentWorkItem(unit *DeliveryUnit) *DevelopmentPhaseWorkItem {
-	for index := range unit.DevelopmentRepairItems {
-		workItem := &unit.DevelopmentRepairItems[index].DevelopmentPhaseWorkItem
-		if workItem.Phase == unit.Phase && workItem.Status == DevelopmentTodoInProgress {
-			return workItem
-		}
-	}
-	for todoIndex := range unit.DevelopmentTodos {
-		for workItemIndex := range unit.DevelopmentTodos[todoIndex].PhaseWorkItems {
-			workItem := &unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex]
-			if workItem.Phase == unit.Phase && workItem.Status == DevelopmentTodoInProgress {
-				return workItem
-			}
-		}
-	}
-	return nil
-}
-
-func developmentPhaseWorkItemsCompleted(unit *DeliveryUnit, phase DeliveryUnitPhase) bool {
-	found := false
-	for _, repair := range unit.DevelopmentRepairItems {
-		if repair.Phase == phase {
-			found = true
-			if repair.Status != DevelopmentTodoCompleted {
-				return false
-			}
-		}
-	}
-	for _, todo := range unit.DevelopmentTodos {
-		for _, workItem := range todo.PhaseWorkItems {
-			if workItem.Phase != phase {
-				continue
-			}
-			found = true
-			if workItem.Status != DevelopmentTodoCompleted {
-				return false
-			}
-		}
-	}
-	return found
-}
-
-func completeSystemPhaseWorkItems(unit *DeliveryUnit, gate DeliveryGateResult) {
+func completeDevelopmentPhaseWorkItems(unit *DeliveryUnit, gate DeliveryGateResult) {
 	complete := func(workItem *DevelopmentPhaseWorkItem) {
 		if workItem.Phase != gate.Phase || workItem.Status == DevelopmentTodoCompleted {
 			return
@@ -271,6 +160,22 @@ func reopenDevelopmentRepairTodos(unit *DeliveryUnit, phase DeliveryUnitPhase, t
 	syncDevelopmentWorkItemStatuses(unit)
 }
 
+func resetDevelopmentPhaseProgress(unit *DeliveryUnit, phases ...DeliveryUnitPhase) {
+	reset := make(map[DeliveryUnitPhase]bool, len(phases))
+	for _, phase := range phases {
+		reset[phase] = true
+	}
+	for todoIndex := range unit.DevelopmentTodos {
+		for workItemIndex := range unit.DevelopmentTodos[todoIndex].PhaseWorkItems {
+			workItem := &unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex]
+			if reset[workItem.Phase] {
+				workItem.Status = DevelopmentTodoNotStarted
+			}
+		}
+	}
+	syncDevelopmentTodoStatuses(unit)
+}
+
 func syncDevelopmentWorkItemStatuses(unit *DeliveryUnit) {
 	if unit.Phase == DeliveryUnitComplete {
 		for index := range unit.DevelopmentRepairItems {
@@ -297,24 +202,25 @@ func syncDevelopmentWorkItemStatuses(unit *DeliveryUnit) {
 			}
 		}
 	}
-	active := false
-	activate := func(workItem *DevelopmentPhaseWorkItem) {
+	repairActive := false
+	for index := range unit.DevelopmentRepairItems {
+		workItem := &unit.DevelopmentRepairItems[index].DevelopmentPhaseWorkItem
 		if workItem.Phase != unit.Phase || workItem.Status == DevelopmentTodoCompleted {
-			return
+			continue
 		}
-		if !active {
+		if !repairActive {
 			workItem.Status = DevelopmentTodoInProgress
-			active = true
+			repairActive = true
 		} else {
 			workItem.Status = DevelopmentTodoNotStarted
 		}
 	}
-	for index := range unit.DevelopmentRepairItems {
-		activate(&unit.DevelopmentRepairItems[index].DevelopmentPhaseWorkItem)
-	}
 	for todoIndex := range unit.DevelopmentTodos {
 		for workItemIndex := range unit.DevelopmentTodos[todoIndex].PhaseWorkItems {
-			activate(&unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex])
+			workItem := &unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex]
+			if workItem.Phase == unit.Phase && workItem.Status != DevelopmentTodoCompleted {
+				workItem.Status = DevelopmentTodoInProgress
+			}
 		}
 	}
 	syncDevelopmentTodoStatuses(unit)

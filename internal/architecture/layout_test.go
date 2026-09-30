@@ -227,8 +227,6 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 		commanddomain.AcceptanceBugTriage,
 		commanddomain.AcceptanceConfirm,
 		commanddomain.AcceptanceEnvironmentReady,
-		commanddomain.DevelopmentTodosInitialize,
-		commanddomain.DevelopmentTodoComplete,
 		commanddomain.DeliveryUnitBackendComplete,
 		commanddomain.DeliveryUnitContractVerify,
 		commanddomain.DeliveryUnitFrontendComplete,

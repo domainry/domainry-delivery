@@ -19,7 +19,7 @@ func newDeliveryUnits(feature FeatureSnapshot) ([]DeliveryUnit, string) {
 		FrontendStatus:         DeliveryGatePending,
 		ContractStatus:         DeliveryGatePending,
 		JourneyStatus:          DeliveryGatePending,
-		DevelopmentTodos:       []DevelopmentTodo{},
+		DevelopmentTodos:       newDevelopmentTodos(feature.ID),
 		DevelopmentRepairItems: []DevelopmentRepairWorkItem{},
 	}
 	return []DeliveryUnit{unit}, unit.ID
@@ -38,16 +38,7 @@ func deliveryUnitActions(run *DeliveryRun) ([]AvailableAction, bool) {
 		return []AvailableAction{}, true
 	}
 	_ = actorKind // catalog is the single source of projected actor metadata.
-	actions := []AvailableAction{}
-	if len(unit.DevelopmentTodos) == 0 && unit.Phase == DeliveryUnitInteractionModeling {
-		return []AvailableAction{catalogAction(commandDevelopmentTodosInit, unit.ID)}, true
-	}
-	if workItem := activeDevelopmentWorkItem(unit); workItem != nil && unit.ActiveRole != "system" {
-		actions = append(actions, catalogAction(commandDevelopmentTodoComplete, workItem.ID))
-	}
-	if unit.ActiveRole == "system" || developmentPhaseWorkItemsCompleted(unit, unit.Phase) {
-		actions = append(actions, catalogAction(command, unit.ID))
-	}
+	actions := []AvailableAction{catalogAction(command, unit.ID)}
 	if phaseCanReportGap(unit.Phase) {
 		actions = append(actions, catalogAction(commandGapReport, unit.ID))
 	}
@@ -117,12 +108,6 @@ func lifecycleActions(run *DeliveryRun) []AvailableAction {
 }
 
 func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) (bool, error) {
-	if command.Type == commandDevelopmentTodosInit {
-		return true, initializeDevelopmentTodos(run, command, now)
-	}
-	if command.Type == commandDevelopmentTodoComplete {
-		return true, completeDevelopmentTodo(run, command, now)
-	}
 	if !isDeliveryUnitCommand(command.Type) {
 		return false, nil
 	}
@@ -137,9 +122,6 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	}
 	if command.Type != expectedCommand {
 		return true, Invalid("delivery_unit_command_invalid")
-	}
-	if command.Type != commandGapReport && unit.ActiveRole != "system" && !developmentPhaseWorkItemsCompleted(unit, unit.Phase) {
-		return true, Invalid("development_todos_incomplete")
 	}
 	if command.Actor.Kind != expectedActor {
 		return true, Invalid("delivery_unit_actor_invalid")
@@ -175,8 +157,8 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 		RecordedBy: command.Actor.ID, RecordedAt: now,
 	}
 	unit.LatestGate = &gate
-	if unit.ActiveRole == "system" && command.Type != commandGapReport {
-		completeSystemPhaseWorkItems(unit, gate)
+	if command.Type != commandGapReport {
+		completeDevelopmentPhaseWorkItems(unit, gate)
 	}
 	advanceDeliveryUnit(run, unit, command.Type, payload)
 	appendActivity(run, command.Actor, "delivery_unit_phase_recorded", unit.ID+" phase recorded", string(payload.Phase)+": "+strings.TrimSpace(payload.Summary), now)
@@ -343,13 +325,17 @@ func advanceDeliveryUnit(run *DeliveryRun, unit *DeliveryUnit, command string, p
 		unit.ModelStatus = DeliveryGatePassed
 		unit.ModelGitRevision = revision
 		unit.ModelEvidence = clone(payload.BackendGuide)
-		setDeliveryUnitPhase(unit, DeliveryUnitBackendImplementation)
+		setDeliveryUnitPhase(unit, DeliveryUnitFrontendImplementation)
+	case commandFrontendComplete:
+		unit.FrontendStatus = DeliveryGatePassed
+		if unit.BackendStatus == DeliveryGatePassed {
+			setDeliveryUnitPhase(unit, DeliveryUnitContractVerification)
+		} else {
+			setDeliveryUnitPhase(unit, DeliveryUnitBackendImplementation)
+		}
 	case commandBackendComplete:
 		unit.BackendStatus = DeliveryGatePassed
 		unit.BackendGitRevision = revision
-		setDeliveryUnitPhase(unit, DeliveryUnitFrontendConvergence)
-	case commandFrontendComplete:
-		unit.FrontendStatus = DeliveryGatePassed
 		setDeliveryUnitPhase(unit, DeliveryUnitContractVerification)
 	case commandContractVerify:
 		unit.ContractStatus = DeliveryGatePassed
@@ -385,6 +371,7 @@ func routeDeliveryUnitGap(unit *DeliveryUnit, owner string, repairTargets []deve
 		unit.JourneyEvidence = nil
 		unit.BackendGitRevision = ""
 		unit.IntegratedGitRevision = ""
+		resetDevelopmentPhaseProgress(unit, orderedDevelopmentPhases...)
 		setDeliveryUnitPhase(unit, DeliveryUnitInteractionModeling)
 	case "model":
 		unit.ModelStatus = DeliveryGateNeedsChange
@@ -397,23 +384,40 @@ func routeDeliveryUnitGap(unit *DeliveryUnit, owner string, repairTargets []deve
 		unit.JourneyEvidence = nil
 		unit.BackendGitRevision = ""
 		unit.IntegratedGitRevision = ""
-		unit.ContractEvidence = nil
-		unit.JourneyEvidence = nil
+		resetDevelopmentPhaseProgress(unit,
+			DeliveryUnitDomainModeling,
+			DeliveryUnitModelVerification,
+			DeliveryUnitFrontendImplementation,
+			DeliveryUnitBackendImplementation,
+			DeliveryUnitContractVerification,
+			DeliveryUnitJourneyTesting,
+		)
 		setDeliveryUnitPhase(unit, DeliveryUnitDomainModeling)
 	case "backend":
 		unit.BackendStatus = DeliveryGateNeedsChange
-		unit.FrontendStatus = DeliveryGatePending
 		unit.ContractStatus = DeliveryGatePending
 		unit.BackendGitRevision = ""
 		unit.IntegratedGitRevision = ""
 		unit.ContractEvidence = nil
 		unit.JourneyEvidence = nil
+		resetDevelopmentPhaseProgress(unit,
+			DeliveryUnitBackendImplementation,
+			DeliveryUnitContractVerification,
+			DeliveryUnitJourneyTesting,
+		)
 		setDeliveryUnitPhase(unit, DeliveryUnitBackendImplementation)
 	case "frontend":
 		unit.FrontendStatus = DeliveryGateNeedsChange
 		unit.ContractStatus = DeliveryGatePending
 		unit.IntegratedGitRevision = ""
-		setDeliveryUnitPhase(unit, DeliveryUnitFrontendConvergence)
+		unit.ContractEvidence = nil
+		unit.JourneyEvidence = nil
+		resetDevelopmentPhaseProgress(unit,
+			DeliveryUnitFrontendImplementation,
+			DeliveryUnitContractVerification,
+			DeliveryUnitJourneyTesting,
+		)
+		setDeliveryUnitPhase(unit, DeliveryUnitFrontendImplementation)
 	}
 	reopenDevelopmentRepairTodos(unit, unit.Phase, repairTargets)
 }

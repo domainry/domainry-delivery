@@ -69,17 +69,9 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	seedRun(t, store, seed)
 	actor := delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent}
 	dispatchContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, actor, application.PermissionDeliveryRunWrite)
-	interactionTodo := delivery.Command{
-		ClientID: "todo-interaction", ExpectedRevision: 1, Actor: actor, Type: "development_todo.complete",
-		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","todo_id":"F-001:capability:F-001-cancel-membership:phase:interaction_modeling","git_revision":"0123456","summary":"interaction todo completed","evidence_refs":["git:0123456#evidence:interaction-todo.json"]}`),
-	}
-	interactionProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, interactionTodo)
-	if err != nil || interactionProgress.Revision != 2 {
-		t.Fatalf("complete interaction todo: revision=%d error=%v", interactionProgress.Revision, err)
-	}
 	command := delivery.Command{
 		ClientID:         "client-once",
-		ExpectedRevision: 2,
+		ExpectedRevision: 1,
 		Actor:            actor,
 		Type:             "delivery_unit.interaction.complete",
 		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed","evidence_refs":["git:0123456#evidence:interaction.json"]}`),
@@ -92,34 +84,19 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Revision != 3 || second.Revision != 3 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
+	if first.Revision != 2 || second.Revision != 2 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
 		t.Fatalf("idempotent retry changed state: first=%d second=%d", first.Revision, second.Revision)
-	}
-	domainWorkItem := first.DeliveryUnits[0].DevelopmentTodos[0].PhaseWorkItems[1]
-	domainTodoPayload, err := json.Marshal(map[string]any{
-		"delivery_unit_id": "F-001", "todo_id": domainWorkItem.ID, "git_revision": "0123456",
-		"summary": "domain todo completed", "evidence_refs": []string{"git:0123456#evidence:domain-todo.json"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	domainProgress, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, delivery.Command{
-		ClientID: "todo-domain", ExpectedRevision: 3, Actor: actor, Type: "development_todo.complete",
-		Payload: domainTodoPayload,
-	})
-	if err != nil || domainProgress.Revision != 4 {
-		t.Fatalf("complete domain todo: revision=%d error=%v", domainProgress.Revision, err)
 	}
 	progress := command
 	progress.ClientID = "client-progress"
-	progress.ExpectedRevision = 4
+	progress.ExpectedRevision = 2
 	progress.Type = "delivery_unit.model.complete"
 	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["git:0123456#evidence:model.json"]}`)
 	current, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Revision != 5 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitModelVerification {
+	if current.Revision != 3 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitModelVerification {
 		t.Fatalf("progress command did not advance current state: %#v", current)
 	}
 	lateReplay, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
@@ -352,16 +329,12 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	if retriedProduct.Revision != 2 || retriedRun.Revision != 1 {
 		t.Fatalf("delivery start retry was not idempotent: product=%d run=%d", retriedProduct.Revision, retriedRun.Revision)
 	}
-	run = dispatchRunCommand(t, ctx, service, run, "todo-batch", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "development_todos.initialize", map[string]any{
-		"delivery_unit_id": run.Feature.ID,
-		"todos":            testfixture.DemoDevelopmentTodoBatch(),
-	})
 	stored, err := loadRunState(ctx, store.db, store.renderer, run.WorkspaceID, run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != len(testfixture.DemoDevelopmentTodoBatch()) {
-		t.Fatalf("Todo batch was not persisted atomically inside one DeliveryUnit row: %#v", stored.DeliveryUnits)
+	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != 7 {
+		t.Fatalf("fixed development phases were not persisted inside the DeliveryUnit row: %#v", stored.DeliveryUnits)
 	}
 
 	phaseCommands := []struct {
@@ -373,44 +346,12 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 		{"interaction", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "delivery_unit.interaction.complete", "interaction_modeling"},
 		{"model", delivery.Actor{ID: "backend-agent", Kind: delivery.ActorAgent}, "delivery_unit.model.complete", "domain_modeling"},
 		{"model-verify", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification"},
+		{"frontend", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "delivery_unit.frontend.complete", "frontend_implementation"},
 		{"backend", delivery.Actor{ID: "backend-agent", Kind: delivery.ActorAgent}, "delivery_unit.backend.complete", "backend_implementation"},
-		{"frontend", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "delivery_unit.frontend.complete", "frontend_convergence"},
 		{"contract-verify", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification"},
 		{"journey", delivery.Actor{ID: "journey-runner", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing"},
 	}
 	for _, phase := range phaseCommands {
-		if phase.actor.Kind == delivery.ActorAgent {
-			for {
-				workItemID, sourceID := "", ""
-				for repairIndex := range run.DeliveryUnits[0].DevelopmentRepairItems {
-					repair := &run.DeliveryUnits[0].DevelopmentRepairItems[repairIndex]
-					if string(repair.Phase) == phase.phase && repair.Status == deliveryrun.DevelopmentTodoInProgress {
-						workItemID, sourceID = repair.ID, repair.SourceID
-						break
-					}
-				}
-				for todoIndex := range run.DeliveryUnits[0].DevelopmentTodos {
-					todo := &run.DeliveryUnits[0].DevelopmentTodos[todoIndex]
-					for workItemIndex := range todo.PhaseWorkItems {
-						workItem := &todo.PhaseWorkItems[workItemIndex]
-						if string(workItem.Phase) == phase.phase && workItem.Status == deliveryrun.DevelopmentTodoInProgress {
-							workItemID, sourceID = workItem.ID, todo.SourceID
-							break
-						}
-					}
-					if workItemID != "" {
-						break
-					}
-				}
-				if workItemID == "" {
-					break
-				}
-				run = dispatchRunCommand(t, ctx, service, run, phase.client+"-todo", phase.actor, "development_todo.complete", map[string]any{
-					"delivery_unit_id": run.Feature.ID, "todo_id": workItemID, "git_revision": verifiedGitRevision,
-					"summary": "The business todo completed.", "evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + sourceID + ".json"},
-				})
-			}
-		}
 		payload := map[string]any{
 			"delivery_unit_id": run.Feature.ID, "phase": phase.phase,
 			"git_revision": verifiedGitRevision, "summary": "The trusted delivery phase completed.",
