@@ -23,7 +23,7 @@ const (
 var sha256ValuePattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func Apply(run *DeliveryRun, command Command, now time.Time) error {
-	if runIsLive(run) {
+	if runIsLive(run) && command.Type != commandReleaseDeployResult {
 		return Invalid("delivery_run_live")
 	}
 	if err := validateCommandActor(command, CommandTargetDeliveryRun); err != nil {
@@ -272,7 +272,7 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
-	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed {
+	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed && release.Status != ReleaseLive {
 		return Invalid("release_not_deployable")
 	}
 	if err := ensureReleaseStillValid(run, release); err != nil {

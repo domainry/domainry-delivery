@@ -78,4 +78,21 @@ func TestFailedPlatformDeploymentCanRetryTheSameRelease(t *testing.T) {
 	if run.Stage != delivery.StageLive || run.Releases[0].Status != delivery.ReleaseLive || len(run.Releases[0].DeploymentAttempts) != 2 {
 		t.Fatalf("same release retry did not retain both attempts and go live: %#v", run.Releases[0])
 	}
+	if !hasProjectedAction(delivery.ProjectionFor(run), "release.deploy_result", releaseID) {
+		t.Fatal("live release did not permit recording a subsequent deployment result")
+	}
+	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+		"release_id": releaseID, "outcome": "failure", "environment_ref": "production",
+		"receipt_ref": "verdent://deployments/deploy-1/versions/version-3", "failure_kind": "platform",
+	})
+	if run.Stage != delivery.StageRelease || run.Releases[0].Status != delivery.ReleaseFailed || len(run.Releases[0].DeploymentAttempts) != 3 || run.AcceptanceReview.Status != delivery.AcceptanceReviewAccepted || run.ActiveDeliveryUnitID != "" {
+		t.Fatalf("failure after a live deployment did not retain approval and permit retry: %#v", run)
+	}
+	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+		"release_id": releaseID, "outcome": "success", "environment_ref": "production",
+		"launch_url": "https://product.example", "receipt_ref": "verdent://deployments/deploy-1/versions/version-4",
+	})
+	if run.Stage != delivery.StageLive || run.Releases[0].Status != delivery.ReleaseLive || len(run.Releases[0].DeploymentAttempts) != 4 || len(run.Releases) != 1 || run.Releases[0].CodeRevision != revision {
+		t.Fatalf("live deployment retry did not retain the original release and every result: %#v", run.Releases)
+	}
 }

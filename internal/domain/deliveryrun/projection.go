@@ -9,6 +9,11 @@ import (
 func ProjectionFor(run DeliveryRun) Projection {
 	workflow := Workflow{AvailableActions: []AvailableAction{}, ReleaseGates: deliveryUnitReleaseGates(&run)}
 	if runIsLive(&run) {
+		for _, release := range run.Releases {
+			if release.Status == ReleaseLive {
+				workflow.AvailableActions = append(workflow.AvailableActions, catalogAction(commandReleaseDeployResult, release.ID))
+			}
+		}
 		return Projection{DeliveryRun: run, Workflow: workflow}
 	}
 	if activeDeliveryUnit(&run) != nil {
