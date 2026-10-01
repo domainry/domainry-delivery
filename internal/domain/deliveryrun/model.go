@@ -207,6 +207,7 @@ const (
 	ReleaseDraft               ReleaseStatus = "draft"
 	ReleaseApproved            ReleaseStatus = "approved"
 	ReleaseCancelled           ReleaseStatus = "cancelled"
+	ReleaseUnpublished         ReleaseStatus = "unpublished"
 	ReleaseLive                ReleaseStatus = "live"
 	ReleaseFailed              ReleaseStatus = "failed"
 	ReleaseNeedsReconciliation ReleaseStatus = "needs_reconciliation"
@@ -215,10 +216,11 @@ const (
 type DeploymentOutcome string
 
 const (
-	DeploymentSuccess   DeploymentOutcome = "success"
-	DeploymentFailure   DeploymentOutcome = "failure"
-	DeploymentCancelled DeploymentOutcome = "cancelled"
-	DeploymentUnknown   DeploymentOutcome = "unknown"
+	DeploymentSuccess     DeploymentOutcome = "success"
+	DeploymentFailure     DeploymentOutcome = "failure"
+	DeploymentCancelled   DeploymentOutcome = "cancelled"
+	DeploymentUnpublished DeploymentOutcome = "unpublished"
+	DeploymentUnknown     DeploymentOutcome = "unknown"
 )
 
 type DeploymentAttempt struct {

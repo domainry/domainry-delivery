@@ -62,6 +62,11 @@ func (service *Service) Dispatch(ctx context.Context, workspaceID, deliveryRunID
 			ctx, workspaceID, deliveryRunID, mutation, command.ExpectedRevision,
 			func(run *deliveryrun.DeliveryRun) error { return deliveryrun.Apply(run, command, now) },
 			func(productState *product.Product, run *deliveryrun.DeliveryRun) error {
+				if command.Type == commanddomain.ReleaseDeployResult {
+					if removed, err := lifecycle.RecordDeploymentRemoval(productState, run, command, now); err != nil || removed {
+						return err
+					}
+				}
 				if run.Stage != deliveryrun.StageLive {
 					return nil
 				}

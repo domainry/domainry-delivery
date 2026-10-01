@@ -430,6 +430,38 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	if afterRetry.Revision != installedProduct.Revision {
 		t.Fatalf("deployment retry installed the feature twice: before=%d after=%d", installedProduct.Revision, afterRetry.Revision)
 	}
+	run = dispatchRunCommand(t, ctx, service, run, "unpublish", delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+		"release_id": "REL-001", "outcome": "unpublished", "environment_ref": "env://production/greenfit", "receipt_ref": "deployment://greenfit/1.1.0",
+	})
+	unpublished, err := service.GetProduct(readContext, product.WorkspaceID, product.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedUnpublished := installedProduct
+	expectedUnpublished.CurrentDeployment = nil
+	expectedUnpublished.Revision = unpublished.Revision
+	expectedUnpublished.UpdatedAt = unpublished.UpdatedAt
+	expectedJSON, err := json.Marshal(expectedUnpublished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actualJSON, err := json.Marshal(unpublished)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actualJSON) != string(expectedJSON) || unpublished.Revision != installedProduct.Revision+1 {
+		t.Fatalf("unpublish changed installed history or failed to clear current deployment: %s", actualJSON)
+	}
+	run = dispatchRunCommand(t, ctx, service, run, "republish", delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+		"release_id": "REL-001", "outcome": "success", "environment_ref": "env://production/greenfit", "launch_url": "https://greenfit.example.test", "receipt_ref": "deployment://greenfit/republish",
+	})
+	republished, err := service.GetProduct(readContext, product.WorkspaceID, product.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if republished.CurrentDeployment == nil || republished.CurrentDeployment.ReceiptRef != "deployment://greenfit/republish" || len(republished.Revisions) != len(installedProduct.Revisions) || len(run.Releases) != 1 {
+		t.Fatalf("republish lost deployment or duplicated installation: %#v", republished)
+	}
 }
 
 func openTestStore(t *testing.T) *Store {

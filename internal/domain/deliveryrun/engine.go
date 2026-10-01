@@ -276,7 +276,7 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
-	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed && release.Status != ReleaseLive {
+	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed && release.Status != ReleaseLive && release.Status != ReleaseUnpublished {
 		return Invalid("release_not_deployable")
 	}
 	payload.EnvironmentRef = strings.TrimSpace(payload.EnvironmentRef)
@@ -292,7 +292,15 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	// A trusted platform failure must close a stale approved attempt so the
 	// candidate can be repaired. Success and source-changing repair routing
 	// still require the full exact-revision gates.
-	if payload.Outcome != DeploymentFailure || payload.FailureKind != deploymentFailurePlatform {
+	if payload.Outcome == DeploymentUnpublished {
+		if release.Status != ReleaseLive && release.Status != ReleaseUnpublished || len(release.DeploymentAttempts) == 0 {
+			return Invalid("deployment_unpublish_not_live")
+		}
+		previous := release.DeploymentAttempts[len(release.DeploymentAttempts)-1]
+		if (previous.Outcome != DeploymentSuccess && previous.Outcome != DeploymentUnpublished) || previous.ReceiptRef != strings.TrimSpace(payload.ReceiptRef) || previous.EnvironmentRef != payload.EnvironmentRef || strings.TrimSpace(payload.LaunchURL) != "" {
+			return Invalid("deployment_unpublish_receipt_mismatch")
+		}
+	} else if payload.Outcome != DeploymentFailure || payload.FailureKind != deploymentFailurePlatform {
 		if err := ensureReleaseStillValid(run, release); err != nil {
 			return err
 		}
@@ -322,6 +330,8 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 		}
 	case DeploymentCancelled:
 		release.Status = ReleaseCancelled
+	case DeploymentUnpublished:
+		release.Status = ReleaseUnpublished
 	case DeploymentUnknown:
 		release.Status = ReleaseNeedsReconciliation
 	}
@@ -465,7 +475,7 @@ func validResult(result CheckResult, blocked bool) bool {
 }
 
 func validOutcome(outcome DeploymentOutcome) bool {
-	return outcome == DeploymentSuccess || outcome == DeploymentFailure || outcome == DeploymentCancelled || outcome == DeploymentUnknown
+	return outcome == DeploymentSuccess || outcome == DeploymentFailure || outcome == DeploymentCancelled || outcome == DeploymentUnknown || outcome == DeploymentUnpublished
 }
 
 func contains(values []string, value string) bool {

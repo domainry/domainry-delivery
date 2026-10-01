@@ -3,9 +3,11 @@ package database
 import (
 	"context"
 	"database/sql"
+	"reflect"
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	"github.com/domainry/domainry-delivery/internal/domain"
+	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
 	ormquery "github.com/domainry/domainry-orm/query"
@@ -79,18 +81,21 @@ func (store *Store) Transact(
 		if err := mutate(&run); err != nil {
 			return deliveryrun.DeliveryRun{}, err
 		}
-		if run.Stage == deliveryrun.StageLive && install != nil {
+		if (run.Stage == deliveryrun.StageLive || mutation.CommandType == commanddomain.ReleaseDeployResult) && install != nil {
 			product, err := loadProductState(ctx, transaction, store.renderer, workspaceID, run.Product.ID)
 			if err != nil {
 				return deliveryrun.DeliveryRun{}, err
 			}
 			productRevision := product.Revision
+			previousProduct := domain.Clone(product)
 			if err := install(&product, &run); err != nil {
 				return deliveryrun.DeliveryRun{}, err
 			}
-			product.Revision = productRevision + 1
-			if err := store.updateProductState(ctx, transaction, product, productRevision); err != nil {
-				return deliveryrun.DeliveryRun{}, err
+			if !reflect.DeepEqual(previousProduct, product) {
+				product.Revision = productRevision + 1
+				if err := store.updateProductState(ctx, transaction, product, productRevision); err != nil {
+					return deliveryrun.DeliveryRun{}, err
+				}
 			}
 		}
 		run.Revision = actualRevision + 1
