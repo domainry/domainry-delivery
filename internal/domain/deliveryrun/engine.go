@@ -272,7 +272,7 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
-	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled {
+	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed {
 		return Invalid("release_not_deployable")
 	}
 	if err := ensureReleaseStillValid(run, release); err != nil {
