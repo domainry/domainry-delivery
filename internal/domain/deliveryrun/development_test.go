@@ -125,6 +125,29 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	}
 }
 
+func TestEnvironmentRepairReverifiesTheSameSourceWithoutReplayingDevelopment(t *testing.T) {
+	run := testfixture.DemoDeliveryRun(time.Now().UTC())
+	system := delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}
+	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
+	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
+	advanceUnit(t, &run, system, "delivery_unit.model.verify", "model_verification")
+	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation")
+	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation")
+	advanceUnit(t, &run, system, "delivery_unit.contract.verify", "contract_verification")
+	revision := run.DeliveryUnits[0].IntegratedGitRevision
+	reportGap(t, &run, "backend", "journey_testing", revision)
+	advanceUnitAtRevision(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", revision)
+	advanceUnitAtRevision(t, &run, system, "delivery_unit.contract.verify", "contract_verification", revision)
+	unit := run.DeliveryUnits[0]
+	if unit.Phase != delivery.DeliveryUnitJourneyTesting || unit.IntegratedGitRevision != revision || unit.InvalidatedIntegratedGitRevision != "" || unit.JourneyStatus != delivery.DeliveryGatePending || unit.JourneyEvidence != nil || run.Stage != delivery.StageDevelopment {
+		t.Fatalf("same-source revalidation bypassed Journey or replayed development: %#v", unit)
+	}
+	advanceUnitAtRevision(t, &run, system, "delivery_unit.journey.complete", "journey_testing", revision)
+	if run.Stage != delivery.StageTesting || run.DeliveryUnits[0].Phase != delivery.DeliveryUnitComplete {
+		t.Fatalf("reverified source did not complete after independent Journey: %#v", run.DeliveryUnits[0])
+	}
+}
+
 func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testing.T) {
 	run := completedRun(t)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision

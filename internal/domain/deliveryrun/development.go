@@ -145,7 +145,12 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	if unit.Phase == DeliveryUnitJourneyTesting && strings.TrimSpace(payload.GitRevision) != unit.IntegratedGitRevision {
 		return true, Invalid("delivery_unit_integrated_revision_conflict")
 	}
-	if command.Type == commandContractVerify && strings.TrimSpace(payload.GitRevision) == unit.InvalidatedIntegratedGitRevision {
+	// Environment repairs can reverify the same source. Require the completed
+	// implementation to still bind that revision; a newer Backend result must
+	// never be replaced by the invalidated source. Contract and Journey evidence
+	// are independently rerun before the unit can complete.
+	if command.Type == commandContractVerify && strings.TrimSpace(payload.GitRevision) == unit.InvalidatedIntegratedGitRevision &&
+		(unit.FrontendStatus != DeliveryGatePassed || unit.BackendStatus != DeliveryGatePassed || unit.BackendGitRevision != strings.TrimSpace(payload.GitRevision)) {
 		return true, Invalid("delivery_unit_revision_not_advanced")
 	}
 	status := DeliveryGatePassed
