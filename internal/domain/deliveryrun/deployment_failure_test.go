@@ -55,8 +55,8 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 	if bug.Status != delivery.AcceptanceBugFixing || bug.Owner != "backend" || bug.DeliveryUnitID != unit.ID {
 		t.Fatalf("deployment failure did not enter the acceptance repair loop: %#v", bug)
 	}
-	attempt := run.Releases[0].DeploymentAttempt
-	if run.Releases[0].Status != delivery.ReleaseFailed || attempt == nil || attempt.FailureKind != "source" || len(attempt.Diagnostics) != 1 {
+	attempt := run.Releases[0].DeploymentAttempts[0]
+	if run.Releases[0].Status != delivery.ReleaseFailed || attempt.FailureKind != "source" || len(attempt.Diagnostics) != 1 {
 		t.Fatalf("failed deployment receipt did not retain its repair evidence: %#v", run.Releases[0])
 	}
 	projection := delivery.ProjectionFor(run)

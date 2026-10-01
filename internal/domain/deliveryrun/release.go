@@ -18,7 +18,7 @@ func releaseActions(run *DeliveryRun) []AvailableAction {
 			return []AvailableAction{catalogAction(commandReleaseDeployResult, release.ID)}
 		case ReleaseNeedsReconciliation:
 			return []AvailableAction{catalogAction(commandReleaseReconcile, release.ID)}
-		case ReleaseLive, ReleaseFailed:
+		case ReleaseCancelled, ReleaseLive, ReleaseFailed:
 		}
 	}
 	actions := make([]AvailableAction, 0, len(run.ReleaseChecks)+1)

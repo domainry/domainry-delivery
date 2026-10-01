@@ -87,10 +87,14 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 			liveRelease = &run.Releases[index]
 		}
 	}
-	if liveRelease == nil || liveRelease.DeploymentAttempt == nil || strings.TrimSpace(liveRelease.DeploymentAttempt.ReceiptRef) == "" {
+	if liveRelease == nil || len(liveRelease.DeploymentAttempts) == 0 {
 		return Invalid("release_receipt_missing")
 	}
-	if strings.TrimSpace(liveRelease.DeploymentAttempt.LaunchURL) == "" || liveRelease.DeploymentAttempt.ResolvedAt == nil {
+	deploymentAttempt := &liveRelease.DeploymentAttempts[len(liveRelease.DeploymentAttempts)-1]
+	if strings.TrimSpace(deploymentAttempt.ReceiptRef) == "" {
+		return Invalid("release_receipt_missing")
+	}
+	if strings.TrimSpace(deploymentAttempt.LaunchURL) == "" || deploymentAttempt.ResolvedAt == nil {
 		return Invalid("release_launch_url_missing")
 	}
 	if liveRelease.ProductRevision != executable.TargetRevision || liveRelease.ProductRevisionRef != executable.EvidenceRef || liveRelease.CodeRevision != executable.CodeRevision || liveRelease.ModelSHA256 != executable.ModelSHA256 {
@@ -113,10 +117,10 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 	product.CurrentDeployment = &ProductDeployment{
 		ReleaseID:      liveRelease.ID,
 		Version:        liveRelease.Version,
-		EnvironmentRef: liveRelease.DeploymentAttempt.EnvironmentRef,
-		LaunchURL:      liveRelease.DeploymentAttempt.LaunchURL,
-		ReceiptRef:     liveRelease.DeploymentAttempt.ReceiptRef,
-		DeployedAt:     *liveRelease.DeploymentAttempt.ResolvedAt,
+		EnvironmentRef: deploymentAttempt.EnvironmentRef,
+		LaunchURL:      deploymentAttempt.LaunchURL,
+		ReceiptRef:     deploymentAttempt.ReceiptRef,
+		DeployedAt:     *deploymentAttempt.ResolvedAt,
 	}
 	product.UpdatedAt = now
 	return nil

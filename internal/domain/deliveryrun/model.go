@@ -206,6 +206,7 @@ type ReleaseStatus string
 const (
 	ReleaseDraft               ReleaseStatus = "draft"
 	ReleaseApproved            ReleaseStatus = "approved"
+	ReleaseCancelled           ReleaseStatus = "cancelled"
 	ReleaseLive                ReleaseStatus = "live"
 	ReleaseFailed              ReleaseStatus = "failed"
 	ReleaseNeedsReconciliation ReleaseStatus = "needs_reconciliation"
@@ -214,9 +215,10 @@ const (
 type DeploymentOutcome string
 
 const (
-	DeploymentSuccess DeploymentOutcome = "success"
-	DeploymentFailure DeploymentOutcome = "failure"
-	DeploymentUnknown DeploymentOutcome = "unknown"
+	DeploymentSuccess   DeploymentOutcome = "success"
+	DeploymentFailure   DeploymentOutcome = "failure"
+	DeploymentCancelled DeploymentOutcome = "cancelled"
+	DeploymentUnknown   DeploymentOutcome = "unknown"
 )
 
 type DeploymentAttempt struct {
@@ -234,18 +236,18 @@ type DeploymentAttempt struct {
 }
 
 type Release struct {
-	ID                 string             `json:"id"`
-	Version            string             `json:"version"`
-	CodeRevision       string             `json:"code_revision"`
-	ProductRevision    uint64             `json:"product_revision"`
-	ProductRevisionRef string             `json:"product_revision_ref"`
-	ModelSHA256        string             `json:"model_sha256"`
-	EnvironmentRef     string             `json:"environment_ref"`
-	Status             ReleaseStatus      `json:"status"`
-	ApprovedBy         string             `json:"approved_by,omitempty"`
-	ApprovedAt         *time.Time         `json:"approved_at,omitempty"`
-	DeploymentAttempt  *DeploymentAttempt `json:"deployment_attempt,omitempty"`
-	CreatedAt          time.Time          `json:"created_at"`
+	ID                 string              `json:"id"`
+	Version            string              `json:"version"`
+	CodeRevision       string              `json:"code_revision"`
+	ProductRevision    uint64              `json:"product_revision"`
+	ProductRevisionRef string              `json:"product_revision_ref"`
+	ModelSHA256        string              `json:"model_sha256"`
+	EnvironmentRef     string              `json:"environment_ref"`
+	Status             ReleaseStatus       `json:"status"`
+	ApprovedBy         string              `json:"approved_by,omitempty"`
+	ApprovedAt         *time.Time          `json:"approved_at,omitempty"`
+	DeploymentAttempts []DeploymentAttempt `json:"deployment_attempts"`
+	CreatedAt          time.Time           `json:"created_at"`
 }
 
 type ReleaseCheckStatus string

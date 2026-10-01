@@ -393,7 +393,7 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	run.Releases = []deliveryrun.Release{{
 		ID: "release-1", Version: "1.1.0", Status: deliveryrun.ReleaseLive, CodeRevision: gitRevision,
 		ProductRevision: 2, ProductRevisionRef: run.ExecutableRevision.EvidenceRef, ModelSHA256: run.ExecutableRevision.ModelSHA256,
-		DeploymentAttempt: &deliveryrun.DeploymentAttempt{ID: "deploy-1", Outcome: deliveryrun.DeploymentSuccess, EnvironmentRef: "env://production", LaunchURL: "https://greenfit.example.test", ReceiptRef: "receipt://release-1", ResolvedAt: &deployedAt},
+		DeploymentAttempts: []deliveryrun.DeploymentAttempt{{ID: "deploy-1", Outcome: deliveryrun.DeploymentSuccess, EnvironmentRef: "env://production", LaunchURL: "https://greenfit.example.test", ReceiptRef: "receipt://release-1", ResolvedAt: &deployedAt}},
 	}}
 	err = lifecycle.InstallDeliveryRun(&product, &run, agent("op-agent"), time.Now().UTC())
 	assertCode(t, err, "installation_actor_invalid")

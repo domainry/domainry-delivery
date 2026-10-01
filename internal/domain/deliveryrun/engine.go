@@ -272,7 +272,7 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
-	if release.Status != ReleaseApproved || release.DeploymentAttempt != nil {
+	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled {
 		return Invalid("release_not_deployable")
 	}
 	if err := ensureReleaseStillValid(run, release); err != nil {
@@ -292,15 +292,15 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if err != nil {
 		return err
 	}
-	attempt := &DeploymentAttempt{
+	release.DeploymentAttempts = append(release.DeploymentAttempts, DeploymentAttempt{
 		ID: newID("deploy"), Outcome: payload.Outcome, EnvironmentRef: payload.EnvironmentRef,
 		LaunchURL: launchURL, ReceiptRef: strings.TrimSpace(payload.ReceiptRef), FailureKind: payload.FailureKind,
 		FailureOwner: payload.FailureOwner, DeliveryUnitID: payload.DeliveryUnitID, Diagnostics: clone(payload.Diagnostics), StartedAt: now,
-	}
+	})
+	attempt := &release.DeploymentAttempts[len(release.DeploymentAttempts)-1]
 	if payload.Outcome != DeploymentUnknown {
 		attempt.ResolvedAt = &now
 	}
-	release.DeploymentAttempt = attempt
 	switch payload.Outcome {
 	case DeploymentSuccess:
 		release.Status = ReleaseLive
@@ -311,6 +311,8 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 				return err
 			}
 		}
+	case DeploymentCancelled:
+		release.Status = ReleaseCancelled
 	case DeploymentUnknown:
 		release.Status = ReleaseNeedsReconciliation
 	}
@@ -335,22 +337,23 @@ func reconcileDeployment(run *DeliveryRun, command Command, now time.Time) error
 	if release == nil {
 		return NotFound("Release", payload.ReleaseID)
 	}
-	if release.Status != ReleaseNeedsReconciliation || release.DeploymentAttempt == nil {
+	if release.Status != ReleaseNeedsReconciliation || len(release.DeploymentAttempts) == 0 {
 		return Invalid("release_not_reconcilable")
 	}
+	attempt := &release.DeploymentAttempts[len(release.DeploymentAttempts)-1]
 	launchURL := strings.TrimSpace(payload.LaunchURL)
 	if launchURL == "" {
-		launchURL = release.DeploymentAttempt.LaunchURL
+		launchURL = attempt.LaunchURL
 	}
 	normalizedLaunchURL, err := normalizeLaunchURL(launchURL, payload.Outcome == DeploymentSuccess)
 	if err != nil {
 		return err
 	}
-	release.DeploymentAttempt.Outcome = payload.Outcome
-	release.DeploymentAttempt.LaunchURL = normalizedLaunchURL
-	release.DeploymentAttempt.ResolvedAt = &now
+	attempt.Outcome = payload.Outcome
+	attempt.LaunchURL = normalizedLaunchURL
+	attempt.ResolvedAt = &now
 	if strings.TrimSpace(payload.ReceiptRef) != "" {
-		release.DeploymentAttempt.ReceiptRef = strings.TrimSpace(payload.ReceiptRef)
+		attempt.ReceiptRef = strings.TrimSpace(payload.ReceiptRef)
 	}
 	if payload.Outcome == DeploymentSuccess {
 		release.Status = ReleaseLive
@@ -453,7 +456,7 @@ func validResult(result CheckResult, blocked bool) bool {
 }
 
 func validOutcome(outcome DeploymentOutcome) bool {
-	return outcome == DeploymentSuccess || outcome == DeploymentFailure || outcome == DeploymentUnknown
+	return outcome == DeploymentSuccess || outcome == DeploymentFailure || outcome == DeploymentCancelled || outcome == DeploymentUnknown
 }
 
 func contains(values []string, value string) bool {

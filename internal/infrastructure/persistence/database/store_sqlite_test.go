@@ -406,7 +406,7 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Stage != deliveryrun.StageLive || run.Releases[0].CodeRevision != verifiedGitRevision || run.Releases[0].DeploymentAttempt.ReceiptRef != "deployment://greenfit/1.1.0" {
+	if run.Stage != deliveryrun.StageLive || run.Releases[0].CodeRevision != verifiedGitRevision || run.Releases[0].DeploymentAttempts[0].ReceiptRef != "deployment://greenfit/1.1.0" {
 		t.Fatalf("successful deployment lost release evidence: %#v", run.Releases[0])
 	}
 	readContext := application.WithTrustedPrincipal(ctx, product.WorkspaceID, delivery.Actor{ID: "reader", Kind: delivery.ActorHuman}, application.PermissionProductRead)
