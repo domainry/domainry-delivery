@@ -68,17 +68,33 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 	if feature == nil {
 		return NotFound("Feature", run.Feature.ID)
 	}
-	if feature.Status != FeatureDelivering || feature.DeliveryRunID != run.ID || feature.ConfirmedRevision != run.Feature.Source.FeatureRevision {
+	if (feature.Status != FeatureDelivering && feature.Status != FeatureInstalled) || feature.DeliveryRunID != run.ID || feature.ConfirmedRevision != run.Feature.Source.FeatureRevision {
 		return Invalid("feature_not_delivering")
 	}
-	if run.Product.ProductRevision != product.CurrentReleaseRevision {
+	installed := feature.Status == FeatureInstalled
+	if !installed && run.Product.ProductRevision != product.CurrentReleaseRevision {
 		return Invalid("feature_install_baseline_invalid")
 	}
 	if run.ExecutableRevision == nil {
 		return Invalid("product_revision_missing")
 	}
 	executable := run.ExecutableRevision
-	if executable.BaseRevision != product.CurrentDefinitionRevision || executable.TargetRevision != product.CurrentDefinitionRevision+1 {
+	republishing := installed && executable.TargetRevision == product.CurrentDefinitionRevision
+	if installed {
+		var current *ProductRevision
+		for index := range product.Revisions {
+			if product.Revisions[index].Number == product.CurrentDefinitionRevision {
+				current = &product.Revisions[index]
+			}
+		}
+		if current == nil || current.DeliveryRunID != run.ID || current.SourceFeatureID != feature.ID || current.FeatureRevision != feature.ConfirmedRevision {
+			return Invalid("feature_install_baseline_invalid")
+		}
+		if republishing && (current.CodeRevision != executable.CodeRevision || current.DefinitionRef != executable.EvidenceRef || current.ModelSHA256 != executable.ModelSHA256) {
+			return Invalid("product_revision_release_mismatch")
+		}
+	}
+	if !republishing && (executable.BaseRevision != product.CurrentDefinitionRevision || executable.TargetRevision != product.CurrentDefinitionRevision+1) {
 		return Invalid("product_revision_baseline_invalid")
 	}
 	var liveRelease *Release
@@ -100,14 +116,16 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 	if liveRelease.ProductRevision != executable.TargetRevision || liveRelease.ProductRevisionRef != executable.EvidenceRef || liveRelease.CodeRevision != executable.CodeRevision || liveRelease.ModelSHA256 != executable.ModelSHA256 {
 		return Invalid("product_revision_release_mismatch")
 	}
-	product.Revisions = append(product.Revisions, ProductRevision{
-		Number: executable.TargetRevision, Story: clone(executable.Content.Story),
-		Definition: clone(executable.Content.Definition), Decisions: clone(executable.Content.Decisions),
-		SourceFeatureID: feature.ID, FeatureRevision: run.Feature.Source.FeatureRevision,
-		DeliveryRunID: run.ID, ReleaseID: liveRelease.ID, CodeRevision: liveRelease.CodeRevision,
-		DefinitionRef: executable.EvidenceRef, ModelSHA256: executable.ModelSHA256,
-		CreatedBy: executable.RecordedBy, CreatedAt: now,
-	})
+	if !republishing {
+		product.Revisions = append(product.Revisions, ProductRevision{
+			Number: executable.TargetRevision, Story: clone(executable.Content.Story),
+			Definition: clone(executable.Content.Definition), Decisions: clone(executable.Content.Decisions),
+			SourceFeatureID: feature.ID, FeatureRevision: run.Feature.Source.FeatureRevision,
+			DeliveryRunID: run.ID, ReleaseID: liveRelease.ID, CodeRevision: liveRelease.CodeRevision,
+			DefinitionRef: executable.EvidenceRef, ModelSHA256: executable.ModelSHA256,
+			CreatedBy: executable.RecordedBy, CreatedAt: now,
+		})
+	}
 	product.CurrentDefinitionRevision = executable.TargetRevision
 	product.CurrentReleaseRevision = executable.TargetRevision
 	feature.Status = FeatureInstalled

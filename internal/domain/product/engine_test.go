@@ -410,6 +410,33 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	if product.CurrentDeployment == nil || *product.CurrentDeployment != expectedDeployment {
 		t.Fatalf("installed product lost its deployment destination: %#v", product.CurrentDeployment)
 	}
+	// A new live Release can publish the same installed revision and version.
+	run.Releases[0].Status = deliveryrun.ReleaseApproved
+	republished := run.Releases[0]
+	republished.ID = "release-2"
+	republished.Status = deliveryrun.ReleaseLive
+	republished.DeploymentAttempts[0].ReceiptRef = "receipt://release-2"
+	run.Releases = append(run.Releases, republished)
+	if err := lifecycle.InstallDeliveryRun(&product, &run, domain.Actor{ID: "release-adapter", Kind: domain.ActorSystem}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(product.Revisions) != 2 || product.CurrentDeployment.ReleaseID != "release-2" || product.CurrentDeployment.ReceiptRef != "receipt://release-2" {
+		t.Fatalf("republishing duplicated the revision or lost the new deployment: %#v", product)
+	}
+	// A verified repair from the same installed Feature may advance its revision.
+	run.ExecutableRevision.BaseRevision = 2
+	run.ExecutableRevision.TargetRevision = 3
+	run.ExecutableRevision.CodeRevision = strings.Repeat("e", 40)
+	run.ExecutableRevision.EvidenceRef = "git:repair#evidence:product-revision"
+	run.Releases[1].ProductRevision = 3
+	run.Releases[1].CodeRevision = run.ExecutableRevision.CodeRevision
+	run.Releases[1].ProductRevisionRef = run.ExecutableRevision.EvidenceRef
+	if err := lifecycle.InstallDeliveryRun(&product, &run, domain.Actor{ID: "release-adapter", Kind: domain.ActorSystem}, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(product.Revisions) != 3 || product.CurrentReleaseRevision != 3 {
+		t.Fatalf("verified installed Feature repair did not advance the revision: %#v", product)
+	}
 }
 
 func backendGuideEvidence(command string) *deliveryrun.BackendGuideEvidence {
