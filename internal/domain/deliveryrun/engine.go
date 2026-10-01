@@ -119,6 +119,7 @@ func recordExecutableRevision(run *DeliveryRun, command Command, now time.Time) 
 	if baseRevision == 0 || baseRevision != run.Product.ProductRevision || run.Feature.Source.ProductRevision != baseRevision {
 		return Invalid("product_revision_baseline_invalid")
 	}
+	baseRevision = executableRevisionBase(run, payload.CodeRevision)
 	run.ExecutableRevision = &ExecutableProductRevision{
 		BaseRevision: baseRevision, TargetRevision: baseRevision + 1,
 		Content: clone(payload.Content), EvidenceRef: payload.EvidenceRef,
@@ -147,6 +148,9 @@ func canRecordExecutableRevision(run *DeliveryRun) bool {
 		return false
 	}
 	if run.ExecutableRevision == nil {
+		return true
+	}
+	if run.ExecutableRevision.BaseRevision != executableRevisionBase(run, revision) {
 		return true
 	}
 	return run.AcceptanceReview != nil && run.AcceptanceReview.Status == AcceptanceReviewOpen && run.ExecutableRevision.CodeRevision != revision
@@ -275,9 +279,6 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if release.Status != ReleaseApproved && release.Status != ReleaseCancelled && release.Status != ReleaseFailed && release.Status != ReleaseLive {
 		return Invalid("release_not_deployable")
 	}
-	if err := ensureReleaseStillValid(run, release); err != nil {
-		return err
-	}
 	payload.EnvironmentRef = strings.TrimSpace(payload.EnvironmentRef)
 	if !validOutcome(payload.Outcome) || payload.EnvironmentRef == "" || payload.EnvironmentRef != release.EnvironmentRef || strings.TrimSpace(payload.ReceiptRef) == "" {
 		return Invalid("deployment_receipt_missing")
@@ -287,6 +288,14 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	payload.DeliveryUnitID = strings.TrimSpace(payload.DeliveryUnitID)
 	if err := validateDeploymentFailureRouting(run, payload.Outcome, payload.FailureKind, payload.FailureOwner, payload.DeliveryUnitID, payload.Diagnostics); err != nil {
 		return err
+	}
+	// A trusted platform failure must close a stale approved attempt so the
+	// candidate can be repaired. Success and source-changing repair routing
+	// still require the full exact-revision gates.
+	if payload.Outcome != DeploymentFailure || payload.FailureKind != deploymentFailurePlatform {
+		if err := ensureReleaseStillValid(run, release); err != nil {
+			return err
+		}
 	}
 	launchURL, err := normalizeLaunchURL(payload.LaunchURL, payload.Outcome == DeploymentSuccess)
 	if err != nil {

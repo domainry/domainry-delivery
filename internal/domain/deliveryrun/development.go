@@ -83,7 +83,8 @@ func backendGuideEvidenceReady(run *DeliveryRun) bool {
 
 func executableRevisionReady(run *DeliveryRun) bool {
 	revision, ready := verifiedJourneyRevision(run)
-	return ready && run.ExecutableRevision != nil && run.ExecutableRevision.CodeRevision == revision && run.ExecutableRevision.BaseRevision == run.Feature.BaselineProductRevision && run.ExecutableRevision.TargetRevision == run.Feature.BaselineProductRevision+1 && sha256ValuePattern.MatchString(run.ExecutableRevision.ModelSHA256)
+	base := executableRevisionBase(run, revision)
+	return ready && run.ExecutableRevision != nil && run.ExecutableRevision.CodeRevision == revision && run.ExecutableRevision.BaseRevision == base && run.ExecutableRevision.TargetRevision == base+1 && sha256ValuePattern.MatchString(run.ExecutableRevision.ModelSHA256)
 }
 
 func executableRevisionDetail(run *DeliveryRun) string {
