@@ -260,6 +260,10 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 		EnvironmentRef string            `json:"environment_ref"`
 		LaunchURL      string            `json:"launch_url"`
 		ReceiptRef     string            `json:"receipt_ref"`
+		FailureKind    string            `json:"failure_kind"`
+		FailureOwner   string            `json:"failure_owner"`
+		DeliveryUnitID string            `json:"delivery_unit_id"`
+		Diagnostics    []GateDiagnostic  `json:"diagnostics"`
 	}
 	if err := decode(command.Payload, &payload); err != nil {
 		return err
@@ -278,11 +282,21 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 	if !validOutcome(payload.Outcome) || payload.EnvironmentRef == "" || payload.EnvironmentRef != release.EnvironmentRef || strings.TrimSpace(payload.ReceiptRef) == "" {
 		return Invalid("deployment_receipt_missing")
 	}
+	payload.FailureKind = strings.TrimSpace(payload.FailureKind)
+	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
+	payload.DeliveryUnitID = strings.TrimSpace(payload.DeliveryUnitID)
+	if err := validateDeploymentFailureRouting(run, payload.Outcome, payload.FailureKind, payload.FailureOwner, payload.DeliveryUnitID, payload.Diagnostics); err != nil {
+		return err
+	}
 	launchURL, err := normalizeLaunchURL(payload.LaunchURL, payload.Outcome == DeploymentSuccess)
 	if err != nil {
 		return err
 	}
-	attempt := &DeploymentAttempt{ID: newID("deploy"), Outcome: payload.Outcome, EnvironmentRef: payload.EnvironmentRef, LaunchURL: launchURL, ReceiptRef: strings.TrimSpace(payload.ReceiptRef), StartedAt: now}
+	attempt := &DeploymentAttempt{
+		ID: newID("deploy"), Outcome: payload.Outcome, EnvironmentRef: payload.EnvironmentRef,
+		LaunchURL: launchURL, ReceiptRef: strings.TrimSpace(payload.ReceiptRef), FailureKind: payload.FailureKind,
+		FailureOwner: payload.FailureOwner, DeliveryUnitID: payload.DeliveryUnitID, Diagnostics: clone(payload.Diagnostics), StartedAt: now,
+	}
 	if payload.Outcome != DeploymentUnknown {
 		attempt.ResolvedAt = &now
 	}
@@ -292,6 +306,11 @@ func recordDeployment(run *DeliveryRun, command Command, now time.Time) error {
 		release.Status = ReleaseLive
 	case DeploymentFailure:
 		release.Status = ReleaseFailed
+		if payload.FailureKind == deploymentFailureSource {
+			if err := routeDeploymentFailure(run, command.Actor, release, attempt, now); err != nil {
+				return err
+			}
+		}
 	case DeploymentUnknown:
 		release.Status = ReleaseNeedsReconciliation
 	}

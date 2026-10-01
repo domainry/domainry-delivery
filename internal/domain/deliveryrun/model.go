@@ -225,6 +225,10 @@ type DeploymentAttempt struct {
 	EnvironmentRef string            `json:"environment_ref"`
 	LaunchURL      string            `json:"launch_url,omitempty"`
 	ReceiptRef     string            `json:"receipt_ref,omitempty"`
+	FailureKind    string            `json:"failure_kind,omitempty"`
+	FailureOwner   string            `json:"failure_owner,omitempty"`
+	DeliveryUnitID string            `json:"delivery_unit_id,omitempty"`
+	Diagnostics    []GateDiagnostic  `json:"diagnostics,omitempty"`
 	StartedAt      time.Time         `json:"started_at"`
 	ResolvedAt     *time.Time        `json:"resolved_at,omitempty"`
 }
