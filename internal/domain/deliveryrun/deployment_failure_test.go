@@ -1,6 +1,7 @@
 package deliveryrun_test
 
 import (
+	"strings"
 	"testing"
 
 	delivery "github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
@@ -70,6 +71,22 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			projection := delivery.ProjectionFor(run)
 			if !hasProjectedAction(projection, "delivery_unit.backend.complete", unit.ID) || hasProjectedAction(projection, "release.prepare", "") {
 				t.Fatalf("workflow did not hand the targeted repair to RD: %#v", projection.Workflow.AvailableActions)
+			}
+			repairedRevision := strings.Repeat("b", 40)
+			advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.backend.complete", "backend_implementation", repairedRevision)
+			verifier := delivery.Actor{ID: "verification-runner", Kind: delivery.ActorSystem}
+			advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", repairedRevision)
+			advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", repairedRevision)
+			if !hasProjectedAction(delivery.ProjectionFor(run), "product_revision.record", "") {
+				t.Fatal("verified deployment repair did not offer executable revision recording")
+			}
+			mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
+				"content":       run.ExecutableRevision.Content,
+				"evidence_ref":  "git:" + repairedRevision + "#evidence:evidence/product-revision.json",
+				"code_revision": repairedRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
+			})
+			if run.ExecutableRevision.CodeRevision != repairedRevision || len(run.Releases) != 1 || run.Releases[0].ID != releaseID || run.Releases[0].CodeRevision != revision {
+				t.Fatal("repair failed to bind the new revision while preserving the failed release history")
 			}
 		})
 	}

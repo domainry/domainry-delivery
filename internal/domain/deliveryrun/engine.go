@@ -139,7 +139,7 @@ func deliveryUnitsMatchModelHash(run *DeliveryRun, modelSHA256 string) bool {
 }
 
 func canRecordExecutableRevision(run *DeliveryRun) bool {
-	if len(run.Releases) > 0 {
+	if activeRelease(run) {
 		return false
 	}
 	revision, ready := verifiedJourneyRevision(run)
