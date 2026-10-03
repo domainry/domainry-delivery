@@ -8,6 +8,37 @@ import (
 	delivery "github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 )
 
+func TestQualityRepairRebindsRevisionBeforeAcceptanceOpens(t *testing.T) {
+	run := completedRun(t)
+	original := *run.ExecutableRevision
+	repairedCode := strings.Repeat("b", 40)
+	unit := &run.DeliveryUnits[0]
+	unit.IntegratedGitRevision = repairedCode
+	unit.BackendGitRevision = repairedCode
+	for _, evidence := range []*delivery.BackendGuideEvidence{unit.ContractEvidence, unit.JourneyEvidence} {
+		evidence.GitRevision = repairedCode
+		evidence.EvidenceRefs = []string{"git:" + repairedCode + "#evidence:backend-guide.json"}
+	}
+	if run.AcceptanceReview != nil {
+		t.Fatal("fixture already opened acceptance")
+	}
+	if !hasProjectedAction(delivery.ProjectionFor(run), "product_revision.record", "") {
+		t.Fatal("verified repair cannot refresh its executable revision before acceptance")
+	}
+	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
+		"content": original.Content, "code_revision": repairedCode,
+		"evidence_ref": "git:" + repairedCode + "#evidence:evidence/product-revision.json",
+		"model_sha256": original.ModelSHA256,
+	})
+	if run.ExecutableRevision.CodeRevision != repairedCode || run.ExecutableRevision.TargetRevision != original.TargetRevision {
+		t.Fatalf("unreleased repair did not rebind its existing product revision: %#v", run.ExecutableRevision)
+	}
+	passIndependentQuality(t, &run)
+	if run.Stage != delivery.StageAcceptance || run.AcceptanceReview == nil || run.AcceptanceReview.CandidateGitRevision != repairedCode {
+		t.Fatalf("verified repair did not open acceptance for its current code: %#v", run.AcceptanceReview)
+	}
+}
+
 func TestInstalledSourceRepairAllocatesANewRevisionWithoutChangingFeatureBaseline(t *testing.T) {
 	run := completedRun(t)
 	now := time.Now().UTC()

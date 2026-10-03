@@ -153,7 +153,7 @@ func canRecordExecutableRevision(run *DeliveryRun) bool {
 	if run.ExecutableRevision.BaseRevision != executableRevisionBase(run, revision) {
 		return true
 	}
-	return run.AcceptanceReview != nil && run.AcceptanceReview.Status == AcceptanceReviewOpen && run.ExecutableRevision.CodeRevision != revision
+	return run.ExecutableRevision.CodeRevision != revision
 }
 
 func replaceReleaseChecks(run *DeliveryRun, command Command, now time.Time) error {
