@@ -51,8 +51,8 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			if unit.FrontendStatus != delivery.DeliveryGatePassed || unit.BackendStatus != delivery.DeliveryGateNeedsChange || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending {
 				t.Fatalf("deployment repair reset unrelated work or failed to invalidate downstream gates: %#v", unit)
 			}
-			if len(unit.DevelopmentRepairItems) != 1 || unit.DevelopmentRepairItems[0].SourceKind != "cloud_deployment" {
-				t.Fatalf("deployment failure did not create one targeted repair item: %#v", unit.DevelopmentRepairItems)
+			if len(unit.DevelopmentRepairItems) != 3 || unit.DevelopmentRepairItems[0].SourceKind != "cloud_deployment" {
+				t.Fatalf("deployment failure did not create the targeted repair and independent final gate tasks: %#v", unit.DevelopmentRepairItems)
 			}
 			if len(run.ReleaseChecks) != 0 {
 				t.Fatalf("old release checks survived a source repair: %#v", run.ReleaseChecks)

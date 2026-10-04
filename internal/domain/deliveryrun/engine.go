@@ -445,6 +445,12 @@ func authorizeHumanCommand(run *DeliveryRun, command Command) error {
 
 func AgentContextFor(run DeliveryRun) AgentContext {
 	projection := ProjectionFor(run)
+	// Historical model comparisons belong to the read model. Keep the latest
+	// receipt in Agent context without copying an ever-growing history into it.
+	run.DeliveryUnits = append([]DeliveryUnit(nil), run.DeliveryUnits...)
+	for index := range run.DeliveryUnits {
+		run.DeliveryUnits[index].ModelRepairImpactHistory = nil
+	}
 	available := make([]AvailableAction, 0)
 	commands := make([]string, 0)
 	seen := map[string]bool{}

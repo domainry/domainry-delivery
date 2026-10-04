@@ -142,6 +142,24 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 	if err := validateDeliveryUnitPayload(run, unit, command, payload); err != nil {
 		return true, err
 	}
+	if command.Type == commandContractVerify &&
+		(unit.InteractionStatus != DeliveryGatePassed || unit.ModelStatus != DeliveryGatePassed || unit.FrontendStatus != DeliveryGatePassed || unit.BackendStatus != DeliveryGatePassed) {
+		return true, Invalid("delivery_unit_prerequisites_incomplete")
+	}
+	if command.Type == commandJourneyComplete && unit.ContractStatus != DeliveryGatePassed {
+		return true, Invalid("delivery_unit_prerequisites_incomplete")
+	}
+	if command.Type == commandContractVerify || command.Type == commandJourneyComplete {
+		for _, repair := range unit.DevelopmentRepairItems {
+			if repair.Status == DevelopmentTodoCompleted || repair.Phase == unit.Phase {
+				continue
+			}
+			if command.Type == commandContractVerify && repair.Phase == DeliveryUnitJourneyTesting {
+				continue
+			}
+			return true, Invalid("delivery_unit_repairs_incomplete")
+		}
+	}
 	if unit.Phase == DeliveryUnitJourneyTesting && strings.TrimSpace(payload.GitRevision) != unit.IntegratedGitRevision {
 		return true, Invalid("delivery_unit_integrated_revision_conflict")
 	}
@@ -189,7 +207,7 @@ func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, e
 		}
 		return deliveryUnitResult{
 			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, BackendGuide: payload.BackendGuide,
+			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, BackendGuide: payload.BackendGuide, ModelRepairImpact: payload.ModelRepairImpact,
 		}, nil
 	case commandGapReport:
 		var payload deliveryUnitGapPayload
@@ -245,6 +263,9 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 		}
 	} else if payload.FailureOwner != "" {
 		return Invalid("delivery_unit_gap_invalid")
+	}
+	if err := validateModelRepairImpact(unit, command.Type, payload); err != nil {
+		return err
 	}
 	if err := validateBackendGuideEvidence(command.Type, payload.BackendGuide); err != nil {
 		return err
@@ -323,26 +344,30 @@ func advanceDeliveryUnit(run *DeliveryRun, unit *DeliveryUnit, command string, p
 	switch command {
 	case commandInteractionComplete:
 		unit.InteractionStatus = DeliveryGatePassed
-		setDeliveryUnitPhase(unit, DeliveryUnitDomainModeling)
+		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
 	case commandModelComplete:
 		unit.ModelStatus = DeliveryGatePending
+		queueRepairValidation(unit, DeliveryUnitModelVerification, revision)
 		setDeliveryUnitPhase(unit, DeliveryUnitModelVerification)
 	case commandModelVerify:
+		if payload.ModelRepairImpact != nil && payload.ModelRepairImpact.SourceImpact == "implementation_contract" {
+			queueModelChangeRepairs(unit, payload.BackendGuide.ModelSHA256)
+		}
 		unit.ModelStatus = DeliveryGatePassed
 		unit.ModelGitRevision = revision
 		unit.ModelEvidence = clone(payload.BackendGuide)
-		setDeliveryUnitPhase(unit, DeliveryUnitFrontendImplementation)
+		unit.ModelRepairImpact = clone(payload.ModelRepairImpact)
+		if payload.ModelRepairImpact != nil {
+			unit.ModelRepairImpactHistory = append(unit.ModelRepairImpactHistory, *payload.ModelRepairImpact)
+		}
+		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
 	case commandFrontendComplete:
 		unit.FrontendStatus = DeliveryGatePassed
-		if unit.BackendStatus == DeliveryGatePassed {
-			setDeliveryUnitPhase(unit, DeliveryUnitContractVerification)
-		} else {
-			setDeliveryUnitPhase(unit, DeliveryUnitBackendImplementation)
-		}
+		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
 	case commandBackendComplete:
 		unit.BackendStatus = DeliveryGatePassed
 		unit.BackendGitRevision = revision
-		setDeliveryUnitPhase(unit, DeliveryUnitContractVerification)
+		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
 	case commandContractVerify:
 		unit.ContractStatus = DeliveryGatePassed
 		unit.IntegratedGitRevision = revision
@@ -363,69 +388,27 @@ func routeDeliveryUnitGap(unit *DeliveryUnit, owner string, repairTargets []deve
 	if unit.IntegratedGitRevision != "" {
 		unit.InvalidatedIntegratedGitRevision = unit.IntegratedGitRevision
 	}
+	// Gate validity and recorded results are independent. The failure owner
+	// selects the first repair, not a blanket invalidation of later work.
+	unit.ContractStatus = DeliveryGatePending
 	unit.JourneyStatus = DeliveryGatePending
-	switch owner {
-	case "interaction":
-		unit.InteractionStatus = DeliveryGateNeedsChange
-		unit.ModelStatus = DeliveryGatePending
-		unit.BackendStatus = DeliveryGatePending
-		unit.FrontendStatus = DeliveryGatePending
-		unit.ContractStatus = DeliveryGatePending
-		unit.ModelGitRevision = ""
-		unit.ModelEvidence = nil
-		unit.ContractEvidence = nil
-		unit.JourneyEvidence = nil
-		unit.BackendGitRevision = ""
-		unit.IntegratedGitRevision = ""
-		resetDevelopmentPhaseProgress(unit, orderedDevelopmentPhases...)
-		setDeliveryUnitPhase(unit, DeliveryUnitInteractionModeling)
-	case "model":
-		unit.ModelStatus = DeliveryGateNeedsChange
-		unit.BackendStatus = DeliveryGatePending
-		unit.FrontendStatus = DeliveryGatePending
-		unit.ContractStatus = DeliveryGatePending
-		unit.ModelGitRevision = ""
-		unit.ModelEvidence = nil
-		unit.ContractEvidence = nil
-		unit.JourneyEvidence = nil
-		unit.BackendGitRevision = ""
-		unit.IntegratedGitRevision = ""
-		resetDevelopmentPhaseProgress(unit,
-			DeliveryUnitDomainModeling,
-			DeliveryUnitModelVerification,
-			DeliveryUnitFrontendImplementation,
-			DeliveryUnitBackendImplementation,
-			DeliveryUnitContractVerification,
-			DeliveryUnitJourneyTesting,
-		)
-		setDeliveryUnitPhase(unit, DeliveryUnitDomainModeling)
-	case "backend":
-		unit.BackendStatus = DeliveryGateNeedsChange
-		unit.ContractStatus = DeliveryGatePending
-		unit.BackendGitRevision = ""
-		unit.IntegratedGitRevision = ""
-		unit.ContractEvidence = nil
-		unit.JourneyEvidence = nil
-		resetDevelopmentPhaseProgress(unit,
-			DeliveryUnitBackendImplementation,
-			DeliveryUnitContractVerification,
-			DeliveryUnitJourneyTesting,
-		)
-		setDeliveryUnitPhase(unit, DeliveryUnitBackendImplementation)
-	case "frontend":
-		unit.FrontendStatus = DeliveryGateNeedsChange
-		unit.ContractStatus = DeliveryGatePending
-		unit.IntegratedGitRevision = ""
-		unit.ContractEvidence = nil
-		unit.JourneyEvidence = nil
-		resetDevelopmentPhaseProgress(unit,
-			DeliveryUnitFrontendImplementation,
-			DeliveryUnitContractVerification,
-			DeliveryUnitJourneyTesting,
-		)
-		setDeliveryUnitPhase(unit, DeliveryUnitFrontendImplementation)
+	firstPhase := repairPhaseForOwner(owner)
+	invalidateRepairPhase(unit, firstPhase)
+	for _, target := range repairTargets {
+		phase := target.Phase
+		if phase == "" {
+			phase = firstPhase
+		}
+		invalidateRepairPhase(unit, phase)
+		reopenDevelopmentRepairTodos(unit, phase, []developmentRepairTarget{target})
 	}
-	reopenDevelopmentRepairTodos(unit, unit.Phase, repairTargets)
+	revision := unit.IntegratedGitRevision
+	if unit.LatestGate != nil {
+		revision = unit.LatestGate.GitRevision
+	}
+	queueRepairValidation(unit, DeliveryUnitContractVerification, revision)
+	queueRepairValidation(unit, DeliveryUnitJourneyTesting, revision)
+	setDeliveryUnitPhase(unit, firstPhase)
 }
 
 func validDeliveryGapOwner(owner string) bool {

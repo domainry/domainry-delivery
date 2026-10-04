@@ -77,10 +77,21 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 		t.Fatal("Backend implementation cannot route a deterministically verified model gap")
 	}
 	repairTodoCount := len(run.DeliveryUnits[0].DevelopmentRepairItems)
+	completedBeforeGap, beforeGapErr := json.Marshal(run.DeliveryUnits[0].DevelopmentTodos[:4])
+	if beforeGapErr != nil {
+		t.Fatal(beforeGapErr)
+	}
 	reportGap(t, &run, "model", "backend_implementation", strings.Repeat("a", 40))
+	completedAfterGap, afterGapErr := json.Marshal(run.DeliveryUnits[0].DevelopmentTodos[:4])
+	if afterGapErr != nil {
+		t.Fatal(afterGapErr)
+	}
+	if string(completedAfterGap) != string(completedBeforeGap) {
+		t.Fatalf("model repair rewrote completed development records: before=%s after=%s", completedBeforeGap, completedAfterGap)
+	}
 	unit = run.DeliveryUnits[0]
-	if unit.Phase != delivery.DeliveryUnitDomainModeling || unit.ModelStatus != delivery.DeliveryGateNeedsChange || unit.ModelGitRevision != "" || unit.ModelEvidence != nil {
-		t.Fatalf("Backend implementation model gap retained stale model evidence: %#v", unit)
+	if unit.Phase != delivery.DeliveryUnitDomainModeling || unit.ModelStatus != delivery.DeliveryGateNeedsChange || unit.ModelGitRevision != strings.Repeat("a", 40) || unit.ModelEvidence == nil {
+		t.Fatalf("Backend implementation model gap lost the original model result: %#v", unit)
 	}
 	if len(unit.DevelopmentRepairItems) != repairTodoCount {
 		t.Fatalf("Repeated verification gap duplicated its repair Todo: %#v", unit.DevelopmentRepairItems)
@@ -91,7 +102,7 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 	}
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
 	advanceUnit(t, &run, delivery.Actor{ID: "runtime-check", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
-	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation")
+	assertPhaseAction(t, run, "backend_implementation", "backend", "delivery_unit.backend.complete")
 	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation")
 	assertPhaseAction(t, run, "contract_verification", "system", "delivery_unit.contract.verify")
 	advanceUnit(t, &run, delivery.Actor{ID: "contract-check", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification")
@@ -99,8 +110,8 @@ func TestDeliveryUnitDrivesTheDevelopmentLifecycle(t *testing.T) {
 
 	reportGap(t, &run, "backend", "journey_testing", strings.Repeat("a", 40))
 	unit = run.DeliveryUnits[0]
-	if unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.BackendGitRevision != "" || unit.IntegratedGitRevision != "" || unit.InvalidatedIntegratedGitRevision != strings.Repeat("a", 40) {
-		t.Fatalf("Journey Backend failure retained stale integrated evidence: %#v", unit)
+	if unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.BackendGitRevision != strings.Repeat("a", 40) || unit.IntegratedGitRevision != strings.Repeat("a", 40) || unit.BackendStatus != delivery.DeliveryGateNeedsChange || unit.ContractStatus != delivery.DeliveryGatePending || unit.InvalidatedIntegratedGitRevision != strings.Repeat("a", 40) {
+		t.Fatalf("Journey Backend failure lost results or failed to invalidate their current status: %#v", unit)
 	}
 	newRevision := strings.Repeat("b", 40)
 	advanceUnitAtRevision(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", newRevision)
@@ -163,14 +174,14 @@ func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testin
 		"result": "fail", "failure_owner": "backend", "note": "Rollback left a partial record", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/qa.md"},
 	})
 	unit := run.DeliveryUnits[0]
-	if run.Stage != delivery.StageDevelopment || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.IntegratedGitRevision != "" {
+	if run.Stage != delivery.StageDevelopment || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.IntegratedGitRevision != revision || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending {
 		t.Fatalf("Backend QA failure did not reopen the Backend gate: run=%s unit=%#v", run.Stage, unit)
 	}
-	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 1 {
+	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 3 {
 		t.Fatalf("Backend QA failure changed business Todos instead of creating one targeted repair: todos=%#v repairs=%#v", unit.DevelopmentTodos, unit.DevelopmentRepairItems)
 	}
-	if unit.DevelopmentTodos[3].Status != delivery.DevelopmentTodoCompleted || unit.DevelopmentTodos[4].Status != delivery.DevelopmentTodoInProgress {
-		t.Fatalf("Backend QA failure did not preserve Frontend or target only Backend: %#v", unit.DevelopmentTodos)
+	if unit.DevelopmentTodos[3].Status != delivery.DevelopmentTodoCompleted || unit.DevelopmentTodos[4].Status != delivery.DevelopmentTodoCompleted {
+		t.Fatalf("Backend QA failure rewrote completed development Todos: %#v", unit.DevelopmentTodos)
 	}
 	repairTodo := unit.DevelopmentRepairItems[0]
 	if repairTodo.SourceKind != "quality_case" || repairTodo.SourceID != run.TestCases[0].ID || repairTodo.Status != delivery.DevelopmentTodoInProgress {
@@ -210,14 +221,14 @@ func TestAcceptanceBugTriageReopensFrontendWithoutLeavingAcceptance(t *testing.T
 		"note": "Reproduced after returning from the detail page.", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/acceptance/triage.md"},
 	})
 	unit := run.DeliveryUnits[0]
-	if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitFrontendImplementation || unit.IntegratedGitRevision != "" || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
+	if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitFrontendImplementation || unit.IntegratedGitRevision != revision || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
 		t.Fatalf("Acceptance bug did not enter the repair loop: run=%s unit=%#v review=%#v", run.Stage, unit, run.AcceptanceReview)
 	}
-	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 1 {
+	if len(unit.DevelopmentTodos) != originalTodoCount || len(unit.DevelopmentRepairItems) != 3 {
 		t.Fatalf("Acceptance bug changed business Todos instead of creating one targeted repair: todos=%#v repairs=%#v", unit.DevelopmentTodos, unit.DevelopmentRepairItems)
 	}
-	if unit.DevelopmentTodos[3].Status != delivery.DevelopmentTodoInProgress || unit.DevelopmentTodos[4].Status != delivery.DevelopmentTodoCompleted {
-		t.Fatalf("Acceptance bug did not reopen only Frontend while preserving Backend: %#v", unit.DevelopmentTodos)
+	if unit.DevelopmentTodos[3].Status != delivery.DevelopmentTodoCompleted || unit.DevelopmentTodos[4].Status != delivery.DevelopmentTodoCompleted {
+		t.Fatalf("Acceptance bug rewrote completed development Todos: %#v", unit.DevelopmentTodos)
 	}
 	repairTodo := unit.DevelopmentRepairItems[0]
 	if repairTodo.SourceKind != "acceptance_bug" || repairTodo.SourceID != bug.ID || repairTodo.Status != delivery.DevelopmentTodoInProgress {
@@ -406,6 +417,7 @@ func TestJourneyEvidenceMustMatchImplementationRevision(t *testing.T) {
 	unit.ModelGitRevision = strings.Repeat("a", 40)
 	unit.BackendGitRevision = strings.Repeat("b", 40)
 	unit.IntegratedGitRevision = strings.Repeat("b", 40)
+	unit.ContractStatus = delivery.DeliveryGatePassed
 	unit.ModelEvidence = backendGuideEvidence("delivery_unit.model.verify")
 	actor := delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}
 	now := time.Now().UTC()
@@ -561,6 +573,16 @@ func applyUnitAtRevision(run *delivery.DeliveryRun, actor delivery.Actor, comman
 		payloadValue["failure_owner"] = failureOwner
 	} else if evidence != nil {
 		payloadValue["backend_guide"] = evidence
+	}
+	if command == "delivery_unit.model.verify" {
+		for _, unit := range run.DeliveryUnits {
+			if unit.ID == run.ActiveDeliveryUnitID && unit.ModelEvidence != nil {
+				payloadValue["model_repair_impact"] = delivery.ModelRepairImpact{
+					BaselineGitRevision: unit.ModelGitRevision, BaselineModelSHA256: unit.ModelEvidence.ModelSHA256,
+					CurrentGitRevision: revision, CurrentModelSHA256: evidence.ModelSHA256, SourceImpact: "unchanged",
+				}
+			}
+		}
 	}
 	payload, err := json.Marshal(payloadValue)
 	if err != nil {

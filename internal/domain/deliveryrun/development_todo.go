@@ -76,6 +76,7 @@ func completeDevelopmentPhaseWorkItems(unit *DeliveryUnit, gate DeliveryGateResu
 }
 
 type developmentRepairTarget struct {
+	Phase      DeliveryUnitPhase
 	SourceKind string
 	SourceID   string
 	Title      string
@@ -87,41 +88,24 @@ func repairTargetsFromDiagnostics(diagnostics []GateDiagnostic, failureOwner str
 	seen := make(map[string]bool, len(diagnostics))
 	for _, diagnostic := range diagnostics {
 		owner := strings.TrimSpace(diagnostic.Owner)
-		if owner != failureOwner && !(failureOwner == "model" && owner == "project_model") {
-			continue
+		if owner == "project_model" {
+			owner = "model"
+		}
+		if !validDeliveryGapOwner(owner) {
+			owner = failureOwner
 		}
 		category := strings.TrimSpace(diagnostic.Category)
 		path := strings.TrimSpace(diagnostic.Path)
-		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", failureOwner, strings.TrimSpace(diagnostic.Code), category, path)
+		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", owner, strings.TrimSpace(diagnostic.Code), category, path)
 		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
 		if seen[digest] {
 			continue
 		}
 		seen[digest] = true
 		targets = append(targets, developmentRepairTarget{
-			SourceKind: "verification_gap",
-			SourceID:   digest,
-			Title:      "Repair " + category + " verification gap",
-			Detail:     strings.TrimSpace(diagnostic.Message) + "\nEvidence path: " + path,
-		})
-	}
-	if len(targets) > 0 {
-		return targets
-	}
-	for _, diagnostic := range diagnostics {
-		category := strings.TrimSpace(diagnostic.Category)
-		path := strings.TrimSpace(diagnostic.Path)
-		key := fmt.Sprintf("%s\x00%s\x00%s\x00%s", failureOwner, strings.TrimSpace(diagnostic.Code), category, path)
-		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
-		if seen[digest] {
-			continue
-		}
-		seen[digest] = true
-		targets = append(targets, developmentRepairTarget{
-			SourceKind: "verification_gap",
-			SourceID:   digest,
-			Title:      "Repair " + category + " verification gap",
-			Detail:     strings.TrimSpace(diagnostic.Message) + "\nEvidence path: " + path,
+			Phase: repairPhaseForOwner(owner), SourceKind: "verification_gap", SourceID: digest,
+			Title:  "Repair " + category + " verification gap",
+			Detail: strings.TrimSpace(diagnostic.Message) + "\nEvidence path: " + path,
 		})
 	}
 	return targets
@@ -146,7 +130,7 @@ func reopenDevelopmentRepairTodos(unit *DeliveryUnit, phase DeliveryUnitPhase, t
 		}
 		unit.DevelopmentRepairItems = append(unit.DevelopmentRepairItems, DevelopmentRepairWorkItem{
 			DevelopmentPhaseWorkItem: DevelopmentPhaseWorkItem{
-				ID:       fmt.Sprintf("%s:repair:%s", unit.ID, target.SourceID),
+				ID:       fmt.Sprintf("%s:repair:%s:%s:%s", unit.ID, phase, target.SourceKind, target.SourceID),
 				Phase:    phase,
 				Status:   DevelopmentTodoNotStarted,
 				Evidence: []DevelopmentTodoEvidence{},
@@ -160,7 +144,7 @@ func reopenDevelopmentRepairTodos(unit *DeliveryUnit, phase DeliveryUnitPhase, t
 	syncDevelopmentWorkItemStatuses(unit)
 }
 
-func resetDevelopmentPhaseProgress(unit *DeliveryUnit, phases ...DeliveryUnitPhase) {
+func resetUnfinishedDevelopmentPhaseProgress(unit *DeliveryUnit, phases ...DeliveryUnitPhase) {
 	reset := make(map[DeliveryUnitPhase]bool, len(phases))
 	for _, phase := range phases {
 		reset[phase] = true
@@ -168,7 +152,7 @@ func resetDevelopmentPhaseProgress(unit *DeliveryUnit, phases ...DeliveryUnitPha
 	for todoIndex := range unit.DevelopmentTodos {
 		for workItemIndex := range unit.DevelopmentTodos[todoIndex].PhaseWorkItems {
 			workItem := &unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex]
-			if reset[workItem.Phase] {
+			if reset[workItem.Phase] && workItem.Status != DevelopmentTodoCompleted {
 				workItem.Status = DevelopmentTodoNotStarted
 			}
 		}
@@ -178,9 +162,6 @@ func resetDevelopmentPhaseProgress(unit *DeliveryUnit, phases ...DeliveryUnitPha
 
 func syncDevelopmentWorkItemStatuses(unit *DeliveryUnit) {
 	if unit.Phase == DeliveryUnitComplete {
-		for index := range unit.DevelopmentRepairItems {
-			unit.DevelopmentRepairItems[index].Status = DevelopmentTodoCompleted
-		}
 		for todoIndex := range unit.DevelopmentTodos {
 			for workItemIndex := range unit.DevelopmentTodos[todoIndex].PhaseWorkItems {
 				unit.DevelopmentTodos[todoIndex].PhaseWorkItems[workItemIndex].Status = DevelopmentTodoCompleted

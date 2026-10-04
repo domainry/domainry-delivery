@@ -64,6 +64,8 @@ type DeliveryUnit struct {
 	ContractStatus                   DeliveryGateStatus          `json:"contract_status"`
 	JourneyStatus                    DeliveryGateStatus          `json:"journey_status"`
 	ModelEvidence                    *BackendGuideEvidence       `json:"model_evidence,omitempty"`
+	ModelRepairImpact                *ModelRepairImpact          `json:"model_repair_impact,omitempty"`
+	ModelRepairImpactHistory         []ModelRepairImpact         `json:"model_repair_impact_history,omitempty"`
 	ContractEvidence                 *BackendGuideEvidence       `json:"contract_evidence,omitempty"`
 	JourneyEvidence                  *BackendGuideEvidence       `json:"journey_evidence,omitempty"`
 	LatestGate                       *DeliveryGateResult         `json:"latest_gate,omitempty"`
@@ -184,12 +186,13 @@ type deliveryUnitImplementationPayload struct {
 }
 
 type deliveryUnitVerificationPayload struct {
-	DeliveryUnitID string                `json:"delivery_unit_id"`
-	Phase          DeliveryUnitPhase     `json:"phase"`
-	GitRevision    string                `json:"git_revision"`
-	Summary        string                `json:"summary"`
-	EvidenceRefs   []string              `json:"evidence_refs"`
-	BackendGuide   *BackendGuideEvidence `json:"backend_guide"`
+	DeliveryUnitID    string                `json:"delivery_unit_id"`
+	Phase             DeliveryUnitPhase     `json:"phase"`
+	GitRevision       string                `json:"git_revision"`
+	Summary           string                `json:"summary"`
+	EvidenceRefs      []string              `json:"evidence_refs"`
+	BackendGuide      *BackendGuideEvidence `json:"backend_guide"`
+	ModelRepairImpact *ModelRepairImpact    `json:"model_repair_impact"`
 }
 
 type deliveryUnitGapPayload struct {
@@ -205,12 +208,13 @@ type deliveryUnitGapPayload struct {
 // deliveryUnitResult is the normalized domain input after one of the three
 // strict wire payloads above has been decoded. It is not a transport DTO.
 type deliveryUnitResult struct {
-	DeliveryUnitID string
-	Phase          DeliveryUnitPhase
-	GitRevision    string
-	Summary        string
-	EvidenceRefs   []string
-	Diagnostics    []GateDiagnostic
-	FailureOwner   string
-	BackendGuide   *BackendGuideEvidence
+	DeliveryUnitID    string
+	Phase             DeliveryUnitPhase
+	GitRevision       string
+	Summary           string
+	EvidenceRefs      []string
+	Diagnostics       []GateDiagnostic
+	FailureOwner      string
+	ModelRepairImpact *ModelRepairImpact
+	BackendGuide      *BackendGuideEvidence
 }
