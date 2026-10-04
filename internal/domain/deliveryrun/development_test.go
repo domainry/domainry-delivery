@@ -440,35 +440,46 @@ func TestJourneyEvidenceMustMatchImplementationRevision(t *testing.T) {
 	assertCode(t, err, "delivery_unit_integrated_revision_conflict")
 }
 
-func TestContractEvidenceMustMatchTheVerifiedModelHash(t *testing.T) {
-	run := testfixture.DemoDeliveryRun(time.Now().UTC())
-	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
-	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
-	advanceUnit(t, &run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
-	advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation")
-	advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation")
-	evidence := backendGuideEvidence("delivery_unit.contract.verify")
-	evidence.ModelSHA256 = strings.Repeat("e", 64)
-	evidence.WorkspaceID = run.WorkspaceID
-	evidence.ProductID = run.Product.ID
-	evidence.FeatureRevision = run.Feature.Source.FeatureRevision
-	evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
-	evidence.GitRevision = strings.Repeat("a", 40)
-	evidence.GitStatus = "clean"
-	evidence.CheckSuite = "plane-backend-guide"
-	evidence.CheckVersion = "1"
-	evidence.EvidenceRefs = []string{"git:" + strings.Repeat("a", 40) + "#evidence:contract.json"}
-	payload, err := json.Marshal(map[string]any{
-		"delivery_unit_id": run.ActiveDeliveryUnitID, "phase": "contract_verification",
-		"git_revision": strings.Repeat("a", 40), "summary": "Contract passed against another model.",
-		"evidence_refs": evidence.EvidenceRefs,
-		"backend_guide": evidence,
-	})
-	if err != nil {
-		t.Fatal(err)
+func TestContractEvidenceRequirements(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		change func(*delivery.BackendGuideEvidence)
+		code   string
+	}{
+		{name: "verified model hash", change: func(e *delivery.BackendGuideEvidence) { e.ModelSHA256 = strings.Repeat("e", 64) }, code: "backend_evidence_model_mismatch"},
+		{name: "incremental model restart", change: func(e *delivery.BackendGuideEvidence) { e.IncrementalModelRestartPassed = false }, code: "backend_contract_evidence_invalid"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			run := testfixture.DemoDeliveryRun(time.Now().UTC())
+			advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling")
+			advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling")
+			advanceUnit(t, &run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification")
+			advanceUnit(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation")
+			advanceUnit(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation")
+			evidence := backendGuideEvidence("delivery_unit.contract.verify")
+			testCase.change(evidence)
+			evidence.WorkspaceID = run.WorkspaceID
+			evidence.ProductID = run.Product.ID
+			evidence.FeatureRevision = run.Feature.Source.FeatureRevision
+			evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
+			evidence.GitRevision = strings.Repeat("a", 40)
+			evidence.GitStatus = "clean"
+			evidence.CheckSuite = "plane-backend-guide"
+			evidence.CheckVersion = "1"
+			evidence.EvidenceRefs = []string{"git:" + strings.Repeat("a", 40) + "#evidence:contract.json"}
+			payload, err := json.Marshal(map[string]any{
+				"delivery_unit_id": run.ActiveDeliveryUnitID, "phase": "contract_verification",
+				"git_revision": strings.Repeat("a", 40), "summary": "Contract passed against another model.",
+				"evidence_refs": evidence.EvidenceRefs,
+				"backend_guide": evidence,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = delivery.Apply(&run, delivery.Command{Actor: delivery.Actor{ID: "contract-verifier", Kind: delivery.ActorSystem}, Type: "delivery_unit.contract.verify", Payload: payload}, time.Now().UTC())
+			assertCode(t, err, testCase.code)
+		})
 	}
-	err = delivery.Apply(&run, delivery.Command{Actor: delivery.Actor{ID: "contract-verifier", Kind: delivery.ActorSystem}, Type: "delivery_unit.contract.verify", Payload: payload}, time.Now().UTC())
-	assertCode(t, err, "backend_evidence_model_mismatch")
 }
 
 func TestDevelopmentPlanIsAlwaysTheSevenFixedPhases(t *testing.T) {
@@ -583,7 +594,7 @@ func backendGuideEvidence(command string) *delivery.BackendGuideEvidence {
 		evidence.DataAuditPersistence = true
 		evidence.EmptyDatabaseInitPassed = true
 		evidence.SameModelRestartPassed = true
-		evidence.ChangedModelRejected = true
+		evidence.IncrementalModelRestartPassed = true
 	case "delivery_unit.journey.complete":
 		evidence.MockJourneyPassed = true
 		evidence.RuntimeJourneyPassed = true

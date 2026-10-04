@@ -464,7 +464,7 @@ func backendGuideEvidence(command string) *deliveryrun.BackendGuideEvidence {
 		evidence.DataAuditPersistence = true
 		evidence.EmptyDatabaseInitPassed = true
 		evidence.SameModelRestartPassed = true
-		evidence.ChangedModelRejected = true
+		evidence.IncrementalModelRestartPassed = true
 	case "delivery_unit.journey.complete":
 		evidence.MockJourneyPassed = true
 		evidence.RuntimeJourneyPassed = true

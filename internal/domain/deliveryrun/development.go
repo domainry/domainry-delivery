@@ -286,7 +286,7 @@ func validateBackendGuideEvidence(command string, evidence *BackendGuideEvidence
 			return Invalid("backend_model_evidence_invalid")
 		}
 	case commandContractVerify:
-		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.ProjectHTTP || !evidence.HandlerUnitOfWork || !evidence.HandlerIdempotency || !evidence.DefinitionsRegistered || !evidence.RuntimeBootstrap || !evidence.NoProjectSchemaSQL || !evidence.BackendGoModOnly || !evidence.NoRootGoMod || !evidence.NoGoWork || !evidence.NoCompilerBuilder || !evidence.NoGeneratedRuntimeContract || !evidence.AuthWorkspacePermission || !evidence.DataAuditPersistence || !evidence.EmptyDatabaseInitPassed || !evidence.SameModelRestartPassed || !evidence.ChangedModelRejected {
+		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.ProjectHTTP || !evidence.HandlerUnitOfWork || !evidence.HandlerIdempotency || !evidence.DefinitionsRegistered || !evidence.RuntimeBootstrap || !evidence.NoProjectSchemaSQL || !evidence.BackendGoModOnly || !evidence.NoRootGoMod || !evidence.NoGoWork || !evidence.NoCompilerBuilder || !evidence.NoGeneratedRuntimeContract || !evidence.AuthWorkspacePermission || !evidence.DataAuditPersistence || !evidence.EmptyDatabaseInitPassed || !evidence.SameModelRestartPassed || !evidence.IncrementalModelRestartPassed {
 			return Invalid("backend_contract_evidence_invalid")
 		}
 	case commandJourneyComplete:

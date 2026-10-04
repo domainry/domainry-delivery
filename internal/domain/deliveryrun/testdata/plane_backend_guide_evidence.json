@@ -50,7 +50,7 @@
       "data_audit_persistence": true,
       "empty_database_init_passed": true,
       "same_model_restart_passed": true,
-      "changed_model_rejected": true
+      "incremental_model_restart_passed": true
     },
     "delivery_unit.journey.complete": {
       "workspace_id": "workspace-demo",

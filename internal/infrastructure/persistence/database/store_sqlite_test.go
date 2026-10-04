@@ -50,7 +50,7 @@ func storeBackendGuideEvidence(run deliveryrun.DeliveryRun, actor delivery.Actor
 		evidence["data_audit_persistence"] = true
 		evidence["empty_database_init_passed"] = true
 		evidence["same_model_restart_passed"] = true
-		evidence["changed_model_rejected"] = true
+		evidence["incremental_model_restart_passed"] = true
 	case "delivery_unit.journey.complete":
 		evidence["mock_journey_passed"] = true
 		evidence["runtime_journey_passed"] = true
