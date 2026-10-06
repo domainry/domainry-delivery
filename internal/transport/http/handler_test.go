@@ -181,4 +181,15 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 			}
 		})
 	}
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/workspace-1/products/missing/commands",
+		strings.NewReader(`{"client_id":"rebase-1","expected_revision":1,"type":"feature.rebase","payload":{"feature_id":"feature-1","feature_revision":1}}`),
+	).WithContext(requestContext)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("feature.rebase did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
+	}
 }
