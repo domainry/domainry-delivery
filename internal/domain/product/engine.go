@@ -18,6 +18,7 @@ const (
 	commandFeatureDiscoveryOpen    = commanddomain.FeatureDiscoveryOpen
 	commandFeatureDiscoveryReplace = commanddomain.FeatureDiscoveryReplace
 	commandFeatureConfirm          = commanddomain.FeatureConfirm
+	commandFeatureRebase           = commanddomain.FeatureRebase
 	commandFeatureDelivery         = commanddomain.FeatureDeliveryStart
 )
 
@@ -135,6 +136,11 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 			return Invalid("human_confirmation_required")
 		}
 		err = confirmFeature(product, command, now)
+	case commandFeatureRebase:
+		if command.Actor.Kind != ActorHuman {
+			return Invalid("human_confirmation_required")
+		}
+		err = rebaseFeature(product, command, now)
 	default:
 		err = Invalid("command_unknown")
 	}

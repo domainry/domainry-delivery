@@ -75,7 +75,7 @@ Product commands come from the typed command catalog:
 - `product.engineering.foundation.started`,
   `product.engineering.foundation.completed`,
   `product.engineering.foundation.failed`
-- `feature.discovery.open`, `feature.discovery.replace`, `feature.confirm`
+- `feature.discovery.open`, `feature.discovery.replace`, `feature.confirm`, `feature.rebase`
 - `feature.delivery.start` through the DeliveryRun creation endpoint
 
 Frontend completion is a technical initialization gate backed by the recorded

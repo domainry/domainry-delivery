@@ -25,6 +25,7 @@ const (
 	FeatureDiscoveryOpen      = "feature.discovery.open"
 	FeatureDiscoveryReplace   = "feature.discovery.replace"
 	FeatureConfirm            = "feature.confirm"
+	FeatureRebase             = "feature.rebase"
 	FeatureDeliveryStart      = "feature.delivery.start"
 
 	DeliveryUnitInteractionComplete = "delivery_unit.interaction.complete"
@@ -115,6 +116,7 @@ func buildCatalog() map[string]Definition {
 		ProductDelete:        "ProductDelete",
 		FeatureDiscoveryOpen: "FeatureDiscoveryOpen",
 		FeatureConfirm:       "FeatureConfirmation",
+		FeatureRebase:        "FeatureRebase",
 	})
 	register(TargetProduct, "delivery_deployment.record", "ProductProjection", []domain.ActorKind{domain.ActorSystem}, []string{"active"}, map[string]string{
 		ProductFoundationStarted:  "FoundationStart",

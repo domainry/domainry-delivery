@@ -213,6 +213,50 @@ func confirmFeature(product *Product, command Command, now time.Time) error {
 	return nil
 }
 
+func rebaseFeature(product *Product, command Command, now time.Time) error {
+	payload, err := decodeProductFeaturePayload(command)
+	if err != nil {
+		return err
+	}
+	feature, revision, err := productFeatureRevision(product, payload)
+	if err != nil {
+		return err
+	}
+	if feature.Status != FeatureConfirmed || feature.ConfirmedRevision != payload.FeatureRevision {
+		return Invalid("feature_not_confirmed")
+	}
+	if product.CurrentDefinitionRevision != product.CurrentReleaseRevision {
+		return Invalid("product_baseline_unreleased")
+	}
+	if revision.BaselineProductRevision == product.CurrentDefinitionRevision {
+		return Invalid("feature_baseline_current")
+	}
+	feature.Draft = &FeatureDraftState{
+		Version:                 1,
+		Title:                   revision.Title,
+		Summary:                 revision.Summary,
+		Priority:                revision.Priority,
+		BaselineProductRevision: product.CurrentDefinitionRevision,
+		Discovery:               clone(revision.Discovery),
+		Specification:           clone(revision.Specification),
+		Decisions:               clone(revision.Decisions),
+		Readiness: FeatureReadiness{
+			Status:           "shaping",
+			BlockingSections: []string{},
+			BlockingIssues:   []string{"product_baseline_changed"},
+		},
+		Sources:   clone(revision.Sources),
+		UpdatedBy: command.Actor.ID,
+		UpdatedAt: now,
+	}
+	feature.Status = FeatureDraft
+	feature.ConfirmedRevision = 0
+	feature.DeliverySequence = 0
+	feature.QueuedAt = nil
+	feature.UpdatedAt = now
+	return nil
+}
+
 type productFeaturePayload struct {
 	FeatureID       string `json:"feature_id"`
 	FeatureRevision uint64 `json:"feature_revision"`
@@ -236,6 +280,9 @@ func productFeatureRevision(product *Product, payload productFeaturePayload) (*F
 	}
 	if payload.FeatureRevision == 0 || payload.FeatureRevision != feature.CurrentRevision {
 		return nil, nil, Invalid("feature_revision_stale")
+	}
+	if len(feature.Revisions) == 0 || feature.Revisions[len(feature.Revisions)-1].Number != payload.FeatureRevision {
+		return nil, nil, Invalid("feature_revision_missing")
 	}
 	return feature, &feature.Revisions[len(feature.Revisions)-1], nil
 }
@@ -269,7 +316,15 @@ func ProductProjectionFor(product Product) ProductProjection {
 				}
 			case FeatureConfirmed:
 				if product.Engineering.Status == EngineeringReady && nextDelivery != nil && nextDelivery.ID == feature.ID {
-					add(commandFeatureDelivery, feature.ID)
+					if len(feature.Revisions) == 0 {
+						continue
+					}
+					baseline := feature.Revisions[len(feature.Revisions)-1].BaselineProductRevision
+					if baseline == product.CurrentDefinitionRevision && baseline == product.CurrentReleaseRevision {
+						add(commandFeatureDelivery, feature.ID)
+					} else if product.CurrentDefinitionRevision == product.CurrentReleaseRevision {
+						add(commandFeatureRebase, feature.ID)
+					}
 				}
 			case FeatureDelivering:
 			case FeatureInstalled:

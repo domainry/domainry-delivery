@@ -326,6 +326,88 @@ func TestConfirmedFeatureCannotReturnToDraft(t *testing.T) {
 	}
 }
 
+func TestStaleConfirmedFeatureRequiresHumanRebaseBeforeDelivery(t *testing.T) {
+	product := newProduct(t)
+	payload := featureDraftPayload("feature-cancel", "F-001")
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", payload)
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-cancel", "draft_version": 1})
+	original := product.Features[0].Revisions[0]
+	latestProductRevision := product.Revisions[0]
+	latestProductRevision.Number = 2
+	product.Revisions = append(product.Revisions, latestProductRevision)
+	product.CurrentDefinitionRevision = 2
+	product.CurrentReleaseRevision = 2
+
+	projection := delivery.ProductProjectionFor(product)
+	if !hasAction(projection.AvailableActions, "feature.rebase", "feature-cancel", delivery.ActorHuman) {
+		t.Fatalf("stale confirmed Feature did not expose human rebase: %#v", projection.AvailableActions)
+	}
+	if hasAction(projection.AvailableActions, "feature.delivery.start", "feature-cancel", delivery.ActorAgent) {
+		t.Fatalf("stale confirmed Feature still exposed delivery start: %#v", projection.AvailableActions)
+	}
+
+	err := applyProduct(&product, agent("pm-agent"), "feature.rebase", map[string]any{"feature_id": "feature-cancel", "feature_revision": 1})
+	assertCode(t, err, "human_confirmation_required")
+	mustApplyProduct(t, &product, human("product-owner"), "feature.rebase", map[string]any{"feature_id": "feature-cancel", "feature_revision": 1})
+	feature := product.Features[0]
+	if feature.Status != delivery.FeatureDraft || feature.Draft == nil || feature.ConfirmedRevision != 0 || feature.DeliverySequence != 0 || feature.QueuedAt != nil {
+		t.Fatalf("rebased Feature did not leave the stale delivery queue: %#v", feature)
+	}
+	if !reflect.DeepEqual(feature.Revisions, []delivery.FeatureRevision{original}) {
+		t.Fatalf("rebase changed immutable Feature revisions: %#v", feature.Revisions)
+	}
+	expectedDraft := delivery.FeatureDraftState{
+		Version:                 1,
+		Title:                   original.Title,
+		Summary:                 original.Summary,
+		Priority:                original.Priority,
+		BaselineProductRevision: 2,
+		Discovery:               original.Discovery,
+		Specification:           original.Specification,
+		Decisions:               original.Decisions,
+		Readiness: delivery.FeatureReadiness{
+			Status:           "shaping",
+			BlockingSections: []string{},
+			BlockingIssues:   []string{"product_baseline_changed"},
+		},
+		NextQuestion: "",
+		Sources:      original.Sources,
+		UpdatedBy:    "product-owner",
+		UpdatedAt:    feature.UpdatedAt,
+	}
+	if !reflect.DeepEqual(*feature.Draft, expectedDraft) {
+		t.Fatalf("rebase did not create the expected review draft:\n got: %#v\nwant: %#v", *feature.Draft, expectedDraft)
+	}
+
+	review := featureDraftPayload("feature-cancel", "F-001")
+	review["baseline_product_revision"] = uint64(2)
+	reviewSource := review["source"].(map[string]any)
+	reviewSource["run_id"] = "run-cancel-rebase"
+	reviewSource["source_ids"] = []string{"source-rebase-review"}
+	reviewSource["decision_ids"] = []string{}
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", review)
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-cancel", "draft_version": 2})
+	feature = product.Features[0]
+	if feature.Status != delivery.FeatureConfirmed || feature.CurrentRevision != 2 || feature.ConfirmedRevision != 2 || len(feature.Revisions) != 2 {
+		t.Fatalf("reviewed Feature did not produce a new confirmed revision: %#v", feature)
+	}
+	if !hasAction(delivery.ProductProjectionFor(product).AvailableActions, "feature.delivery.start", "feature-cancel", delivery.ActorAgent) {
+		t.Fatalf("reviewed Feature did not return to the delivery queue: %#v", delivery.ProductProjectionFor(product).AvailableActions)
+	}
+}
+
+func TestFeatureRebaseRejectsCurrentOrUnreleasedBaseline(t *testing.T) {
+	product := newProduct(t)
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", featureDraftPayload("feature-cancel", "F-001"))
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-cancel", "draft_version": 1})
+
+	err := applyProduct(&product, human("product-owner"), "feature.rebase", map[string]any{"feature_id": "feature-cancel", "feature_revision": 1})
+	assertCode(t, err, "feature_baseline_current")
+	product.CurrentDefinitionRevision = 2
+	err = applyProduct(&product, human("product-owner"), "feature.rebase", map[string]any{"feature_id": "feature-cancel", "feature_revision": 1})
+	assertCode(t, err, "product_baseline_unreleased")
+}
+
 func TestFeatureDraftRejectsIncompleteDecision(t *testing.T) {
 	product := newProduct(t)
 	payload := featureDraftPayload("feature-cancel", "F-001")
@@ -708,6 +790,15 @@ func setOpenQuestion(payload map[string]any, question string) {
 func contains(values []string, target string) bool {
 	for _, value := range values {
 		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAction(actions []delivery.AvailableAction, command, targetID string, actor delivery.ActorKind) bool {
+	for _, action := range actions {
+		if action.Command == command && action.TargetID == targetID && action.ActorKind == actor {
 			return true
 		}
 	}
