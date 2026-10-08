@@ -124,6 +124,36 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	}
 }
 
+func TestListDeliveryRunSummariesReadsTheBatchedWorkspaceProjection(t *testing.T) {
+	store := openTestStore(t)
+	defer store.Close()
+	run := testfixture.DemoDeliveryRun(time.Now().UTC())
+	seedRun(t, store, run)
+
+	summaries, err := store.ListDeliveryRunSummaries(t.Context(), run.WorkspaceID, run.Product.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected one DeliveryRun summary, got %#v", summaries)
+	}
+	summary := summaries[0]
+	if summary.ID != run.ID || summary.Revision != run.Revision || summary.Feature.ID != run.Feature.ID {
+		t.Fatalf("summary lost persisted DeliveryRun identity: %#v", summary)
+	}
+	if summary.Progress.DeliveryUnitsTotal != len(run.DeliveryUnits) {
+		t.Fatalf("summary did not read batched DeliveryUnits: %#v", summary.Progress)
+	}
+
+	missing, err := store.ListDeliveryRunSummaries(t.Context(), run.WorkspaceID, "another-product")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("product filter returned another Product's runs: %#v", missing)
+	}
+}
+
 func TestProductCommandsAreIdempotentAndRevisionFenced(t *testing.T) {
 	store := openTestStore(t)
 	defer store.Close()

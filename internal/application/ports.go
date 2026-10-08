@@ -22,6 +22,7 @@ type ProductRepository interface {
 type DeliveryRunRepository interface {
 	Get(context.Context, string, string) (deliveryrun.DeliveryRun, error)
 	ListDeliveryRuns(context.Context, string, string) ([]deliveryrun.DeliveryRun, error)
+	ListDeliveryRunSummaries(context.Context, string, string) ([]deliveryrun.Summary, error)
 	Transact(context.Context, string, string, Mutation, uint64, func(*deliveryrun.DeliveryRun) error, func(*product.Product, *deliveryrun.DeliveryRun) error) (deliveryrun.DeliveryRun, error)
 }
 

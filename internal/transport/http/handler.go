@@ -40,6 +40,7 @@ func New(service *application.Service, logger *slog.Logger, runtimeID string) ht
 	mux.HandleFunc("DELETE /api/v1/workspaces/{workspaceID}/products/{productID}/features/{featureID}/attachments/{attachmentID}", handler.removeFeatureAttachment)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/delivery-runs/{deliveryRunID}", handler.startDelivery)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs", handler.listDeliveryRuns)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-run-summaries", handler.listDeliveryRunSummaries)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}", handler.getDeliveryRun)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/agent-context", handler.getAgentContext)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/delivery-runs/{deliveryRunID}/acceptance-attachments", handler.uploadAcceptanceAttachment)
@@ -86,6 +87,15 @@ func (handler *Handler) listDeliveryRuns(writer http.ResponseWriter, request *ht
 		projections = append(projections, presentation.ProjectionForLocale(run, requestLocale(request)))
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"data": projections})
+}
+
+func (handler *Handler) listDeliveryRunSummaries(writer http.ResponseWriter, request *http.Request) {
+	summaries, err := handler.service.ListDeliveryRunSummaries(request.Context(), request.PathValue("workspaceID"), request.URL.Query().Get("product_id"))
+	if err != nil {
+		handler.writeError(writer, request, err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"data": summaries})
 }
 
 func (handler *Handler) getProduct(writer http.ResponseWriter, request *http.Request) {

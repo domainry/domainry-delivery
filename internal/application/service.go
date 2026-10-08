@@ -40,6 +40,13 @@ func (service *Service) ListDeliveryRuns(ctx context.Context, workspaceID, produ
 	return service.ports.Runs.ListDeliveryRuns(ctx, workspaceID, productID)
 }
 
+func (service *Service) ListDeliveryRunSummaries(ctx context.Context, workspaceID, productID string) ([]deliveryrun.Summary, error) {
+	if _, err := authenticatedActor(ctx, workspaceID, PermissionDeliveryRunRead, nil); err != nil {
+		return nil, err
+	}
+	return service.ports.Runs.ListDeliveryRunSummaries(ctx, workspaceID, productID)
+}
+
 func (service *Service) AgentContext(ctx context.Context, workspaceID, deliveryRunID string) (deliveryrun.AgentContext, error) {
 	run, err := service.Get(ctx, workspaceID, deliveryRunID)
 	if err != nil {

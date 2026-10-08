@@ -28,6 +28,10 @@ func (*acceptanceRunStore) ListDeliveryRuns(context.Context, string, string) ([]
 	panic("not used")
 }
 
+func (*acceptanceRunStore) ListDeliveryRunSummaries(context.Context, string, string) ([]deliveryrun.Summary, error) {
+	panic("not used")
+}
+
 func (*acceptanceRunStore) Transact(context.Context, string, string, Mutation, uint64, func(*deliveryrun.DeliveryRun) error, func(*product.Product, *deliveryrun.DeliveryRun) error) (deliveryrun.DeliveryRun, error) {
 	panic("not used")
 }
