@@ -36,7 +36,7 @@ func catalogAction(key, targetID string) AvailableAction {
 func decode(payload json.RawMessage, target any) error { return domain.Decode(payload, target) }
 func clone[T any](value T) T                           { return domain.Clone(value) }
 func cleanStrings(values []string) []string            { return domain.CleanStrings(values) }
-func validGitRevision(value string) bool               { return domain.ValidGitRevision(value) }
+func validCodeRevision(value string) bool              { return domain.ValidCodeRevision(value) }
 func Invalid(code string) error                        { return domain.Invalid(code) }
 func NotFound(entity, id string) error                 { return domain.NotFound(entity, id) }
 

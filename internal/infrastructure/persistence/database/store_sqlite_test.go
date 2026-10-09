@@ -22,9 +22,9 @@ const verifiedGitRevision = "0123456789abcdef0123456789abcdef01234567"
 func storeBackendGuideEvidence(run deliveryrun.DeliveryRun, actor delivery.Actor, command, revision string) map[string]any {
 	evidence := map[string]any{
 		"workspace_id": run.WorkspaceID, "product_id": run.Product.ID, "feature_revision": run.Feature.Source.FeatureRevision,
-		"repository_identity": "github.com/domainry/product-fixture", "git_revision": revision, "git_status": "clean",
+		"repository_identity": "github.com/domainry/product-fixture", "git_revision": revision,
 		"check_suite": "plane-backend-guide", "check_version": "1", "executed_by": actor.ID, "occurred_at": time.Now().UTC(),
-		"evidence_refs": []string{"git:" + revision + "#evidence:backend-guide.json"},
+		"evidence_refs": []string{"workspace:" + revision + "#evidence:backend-guide.json"},
 		"model_path":    "backend/model.json", "model_sha256": strings.Repeat("d", 64),
 	}
 	switch command {
@@ -74,7 +74,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 		ExpectedRevision: 1,
 		Actor:            actor,
 		Type:             "delivery_unit.interaction.complete",
-		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed","evidence_refs":["git:0123456#evidence:interaction.json"]}`),
+		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed","evidence_refs":["workspace:0123456#evidence:interaction.json"]}`),
 	}
 	first, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	progress.ClientID = "client-progress"
 	progress.ExpectedRevision = 2
 	progress.Type = "delivery_unit.model.complete"
-	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["git:0123456#evidence:model.json"]}`)
+	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["workspace:0123456#evidence:model.json"]}`)
 	current, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, progress)
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	stale := command
 	stale.ClientID = "client-stale"
 	stale.Type = "delivery_unit.model.complete"
-	stale.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["git:0123456#evidence:model.json"]}`)
+	stale.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["workspace:0123456#evidence:model.json"]}`)
 	_, err = service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, stale)
 	domainError, ok = err.(*delivery.Error)
 	if !ok || domainError.Code != "revision_conflict" {
@@ -269,7 +269,7 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 		t.Fatal(err)
 	}
 	frontendPayload, _ := json.Marshal(map[string]any{
-		"code_revision": "git:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
+		"code_revision": "workspace:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
 		"login_entry": "frontend/login.tsx", "shell_entry": "frontend/shell.tsx", "preview_entry": "frontend/dist/index.html",
 	})
 	product, err = service.DispatchProduct(agentContext, "workspace-1", product.ID, delivery.Command{
@@ -301,7 +301,7 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 	completePayload, _ := json.Marshal(map[string]any{
 		"application_delivery_sha256": strings.Repeat("a", 64), "foundation_release_sha256": strings.Repeat("c", 64),
 		"foundation_package_sha256": strings.Repeat("d", 64), "model_sha256": strings.Repeat("e", 64),
-		"idempotency_key": strings.Repeat("b", 64), "code_revision": strings.Repeat("1", 40), "git_status": "clean",
+		"idempotency_key": strings.Repeat("b", 64), "code_revision": "workspace-" + strings.Repeat("1", 64),
 		"verification_sha256": strings.Repeat("2", 64), "identity_baseline_result": "passed",
 	})
 	product, err = service.DispatchProduct(systemContext, "workspace-1", product.ID, delivery.Command{
@@ -385,7 +385,7 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 		payload := map[string]any{
 			"delivery_unit_id": run.Feature.ID, "phase": phase.phase,
 			"git_revision": verifiedGitRevision, "summary": "The trusted delivery phase completed.",
-			"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:" + phase.phase + ".json"},
+			"evidence_refs": []string{"workspace:" + verifiedGitRevision + "#evidence:" + phase.phase + ".json"},
 		}
 		if evidence := storeBackendGuideEvidence(run, phase.actor, phase.command, verifiedGitRevision); evidence != nil {
 			payload["backend_guide"] = evidence
@@ -395,14 +395,14 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	baseRevision := product.Revisions[0]
 	run = dispatchRunCommand(t, ctx, service, run, "product-revision", delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent}, "product_revision.record", map[string]any{
 		"content":       map[string]any{"story": baseRevision.Story, "definition": baseRevision.Definition, "decisions": baseRevision.Decisions},
-		"evidence_ref":  "git:" + verifiedGitRevision + "#evidence:evidence/product-revision.json",
+		"evidence_ref":  "workspace:" + verifiedGitRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": verifiedGitRevision, "model_sha256": strings.Repeat("d", 64),
 	})
 	for _, testCase := range run.TestCases {
 		run = dispatchRunCommand(t, ctx, service, run, "quality-"+testCase.ID, delivery.Actor{ID: "qa-agent", Kind: delivery.ActorAgent}, "quality.record", map[string]any{
 			"test_case_id": testCase.ID, "git_revision": verifiedGitRevision,
 			"result": "pass", "note": "Observed result matches the acceptance criterion.",
-			"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
+			"evidence_refs": []string{"workspace:" + verifiedGitRevision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
 		})
 	}
 	run = dispatchRunCommand(t, ctx, service, run, "acceptance-environment", delivery.Actor{ID: "acceptance-runtime", Kind: delivery.ActorSystem}, "acceptance.environment.ready", map[string]any{
@@ -418,7 +418,7 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	})
 	run = dispatchRunCommand(t, ctx, service, run, "release-check-result", delivery.Actor{ID: "op-agent", Kind: delivery.ActorAgent}, "release_check.record", map[string]any{
 		"check_id": "RC-01", "status": "passed", "note": "Configuration and rollback evidence verified.",
-		"evidence_refs": []string{"git:" + verifiedGitRevision + "#evidence:evidence/release/RC-01.md"},
+		"evidence_refs": []string{"workspace:" + verifiedGitRevision + "#evidence:evidence/release/RC-01.md"},
 	})
 	run = dispatchRunCommand(t, ctx, service, run, "release-prepare", delivery.Actor{ID: "m-product", Kind: delivery.ActorHuman}, "release.prepare", map[string]any{
 		"version": "1.1.0", "environment_ref": "env://production/greenfit",

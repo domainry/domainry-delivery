@@ -17,7 +17,7 @@ func TestQualityRepairRebindsRevisionBeforeAcceptanceOpens(t *testing.T) {
 	unit.BackendGitRevision = repairedCode
 	for _, evidence := range []*delivery.BackendGuideEvidence{unit.ContractEvidence, unit.JourneyEvidence} {
 		evidence.GitRevision = repairedCode
-		evidence.EvidenceRefs = []string{"git:" + repairedCode + "#evidence:backend-guide.json"}
+		evidence.EvidenceRefs = []string{"workspace:" + repairedCode + "#evidence:backend-guide.json"}
 	}
 	if run.AcceptanceReview != nil {
 		t.Fatal("fixture already opened acceptance")
@@ -27,7 +27,7 @@ func TestQualityRepairRebindsRevisionBeforeAcceptanceOpens(t *testing.T) {
 	}
 	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 		"content": original.Content, "code_revision": repairedCode,
-		"evidence_ref": "git:" + repairedCode + "#evidence:evidence/product-revision.json",
+		"evidence_ref": "workspace:" + repairedCode + "#evidence:evidence/product-revision.json",
 		"model_sha256": original.ModelSHA256,
 	})
 	if run.ExecutableRevision.CodeRevision != repairedCode || run.ExecutableRevision.TargetRevision != original.TargetRevision {

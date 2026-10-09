@@ -71,7 +71,6 @@ type ProductEngineering struct {
 	FoundationModelSHA256        string            `json:"foundation_model_sha256,omitempty"`
 	FoundationIdempotencyKey     string            `json:"foundation_idempotency_key,omitempty"`
 	FoundationCodeRevision       string            `json:"foundation_code_revision,omitempty"`
-	FoundationGitStatus          string            `json:"foundation_git_status,omitempty"`
 	FoundationVerificationSHA256 string            `json:"foundation_verification_sha256,omitempty"`
 	IdentityBaselineResult       string            `json:"identity_baseline_result,omitempty"`
 	FoundationStartedBy          string            `json:"foundation_started_by,omitempty"`

@@ -135,7 +135,7 @@ func verifiedJourneyRevision(run *DeliveryRun) (string, bool) {
 		}
 	}
 	revision := strings.TrimSpace(run.DeliveryUnits[len(run.DeliveryUnits)-1].IntegratedGitRevision)
-	return revision, validGitRevision(revision)
+	return revision, validCodeRevision(revision)
 }
 
 func latestQualityResult(run *DeliveryRun, revision, testCaseID string) CheckResult {
@@ -181,7 +181,7 @@ func evidenceRefsMatchRevision(references []string, revision string) bool {
 	if len(references) == 0 {
 		return false
 	}
-	prefix := "git:" + revision + "#evidence:"
+	prefix := "workspace:" + revision + "#evidence:"
 	for _, reference := range references {
 		if !strings.HasPrefix(reference, prefix) || strings.TrimPrefix(reference, prefix) == "" {
 			return false

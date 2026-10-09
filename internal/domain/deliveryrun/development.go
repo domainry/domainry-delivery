@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/domainry/domainry-delivery/internal/domain"
 )
 
 func newDeliveryUnits(feature FeatureSnapshot) ([]DeliveryUnit, string) {
@@ -231,7 +233,7 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 	payload.GitRevision = strings.TrimSpace(payload.GitRevision)
 	payload.Summary = strings.TrimSpace(payload.Summary)
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
-	if !validGitRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 {
+	if !validCodeRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 {
 		return Invalid("delivery_unit_gate_invalid")
 	}
 	if len(payload.EvidenceRefs) == 0 || len(payload.EvidenceRefs) > 100 {
@@ -294,7 +296,7 @@ func validateBackendGuideEvidenceForRun(run *DeliveryRun, command string, eviden
 	if strings.TrimSpace(evidence.WorkspaceID) != run.WorkspaceID || strings.TrimSpace(evidence.ProductID) != run.Product.ID || evidence.FeatureRevision != run.Feature.Source.FeatureRevision || strings.TrimSpace(evidence.GitRevision) != gitRevision {
 		return Invalid("backend_evidence_scope_invalid")
 	}
-	if strings.TrimSpace(evidence.RepositoryIdentity) == "" || strings.TrimSpace(evidence.GitStatus) != "clean" || strings.TrimSpace(evidence.CheckSuite) == "" || strings.TrimSpace(evidence.CheckVersion) == "" || strings.TrimSpace(evidence.ExecutedBy) == "" || evidence.OccurredAt.IsZero() || len(evidence.EvidenceRefs) == 0 || !evidenceRefsMatchRevision(evidence.EvidenceRefs, gitRevision) {
+	if strings.TrimSpace(evidence.RepositoryIdentity) == "" || strings.TrimSpace(evidence.CheckSuite) == "" || strings.TrimSpace(evidence.CheckVersion) == "" || strings.TrimSpace(evidence.ExecutedBy) == "" || evidence.OccurredAt.IsZero() || len(evidence.EvidenceRefs) == 0 || !evidenceRefsMatchRevision(evidence.EvidenceRefs, gitRevision) {
 		return Invalid("backend_evidence_provenance_invalid")
 	}
 	return nil
@@ -327,16 +329,8 @@ func validateBackendGuideEvidence(command string, evidence *BackendGuideEvidence
 	return nil
 }
 
-func validGitRevision(revision string) bool {
-	if len(revision) < 7 || len(revision) > 128 {
-		return false
-	}
-	for _, character := range revision {
-		if (character < '0' || character > '9') && (character < 'a' || character > 'f') && (character < 'A' || character > 'F') {
-			return false
-		}
-	}
-	return true
+func validCodeRevision(revision string) bool {
+	return domain.ValidCodeRevision(revision)
 }
 
 func advanceDeliveryUnit(run *DeliveryRun, unit *DeliveryUnit, command string, payload deliveryUnitResult) {

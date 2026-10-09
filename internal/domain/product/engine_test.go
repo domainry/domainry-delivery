@@ -454,13 +454,13 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	run.ExecutableRevision = &deliveryrun.ExecutableProductRevision{
 		BaseRevision: 1, TargetRevision: 2,
 		Content:     delivery.ProductRevisionContent{Story: base.Story, Definition: base.Definition, Decisions: base.Decisions},
-		EvidenceRef: "git:" + gitRevision + "#evidence:evidence/product-revision.json", CodeRevision: gitRevision,
+		EvidenceRef: "workspace:" + gitRevision + "#evidence:evidence/product-revision.json", CodeRevision: gitRevision,
 		ModelSHA256: strings.Repeat("d", 64), RecordedBy: "rd-agent", RecordedAt: deployedAt,
 	}
 	for _, testCase := range run.TestCases {
 		run.QualityRuns = append(run.QualityRuns, deliveryrun.QualityRun{
 			ID: "quality-" + testCase.ID, GitRevision: gitRevision, TestCaseID: testCase.ID,
-			Result: deliveryrun.ResultPass, Note: "Verified", EvidenceRefs: []string{"git:" + gitRevision + "#evidence:evidence/quality.md"},
+			Result: deliveryrun.ResultPass, Note: "Verified", EvidenceRefs: []string{"workspace:" + gitRevision + "#evidence:evidence/quality.md"},
 		})
 	}
 	run.AcceptanceReview = &deliveryrun.AcceptanceReview{
@@ -509,7 +509,7 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	run.ExecutableRevision.BaseRevision = 2
 	run.ExecutableRevision.TargetRevision = 3
 	run.ExecutableRevision.CodeRevision = strings.Repeat("e", 40)
-	run.ExecutableRevision.EvidenceRef = "git:repair#evidence:product-revision"
+	run.ExecutableRevision.EvidenceRef = "workspace:repair#evidence:product-revision"
 	run.Releases[1].ProductRevision = 3
 	run.Releases[1].CodeRevision = run.ExecutableRevision.CodeRevision
 	run.Releases[1].ProductRevisionRef = run.ExecutableRevision.EvidenceRef
@@ -613,7 +613,7 @@ func newProduct(t *testing.T) delivery.Product {
 
 func frontendEvidence() map[string]any {
 	return map[string]any{
-		"code_revision": "git:frontend-foundation", "artifact_ref": "deck-artifact://sha256/frontend-foundation",
+		"code_revision": "workspace:frontend-foundation", "artifact_ref": "deck-artifact://sha256/frontend-foundation",
 		"design_contract_ref": "deck-evidence://sha256/design", "login_entry": "frontend/src/pages/Login.tsx", "shell_entry": "frontend/src/AppShell.tsx", "preview_entry": "frontend/dist/index.html",
 	}
 }
@@ -633,7 +633,6 @@ func foundationCompleteEvidence() map[string]any {
 		"model_sha256":                strings.Repeat("e", 64),
 		"idempotency_key":             strings.Repeat("b", 64),
 		"code_revision":               strings.Repeat("1", 40),
-		"git_status":                  "clean",
 		"verification_sha256":         strings.Repeat("2", 64),
 		"identity_baseline_result":    "passed",
 	}

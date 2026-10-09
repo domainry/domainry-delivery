@@ -20,7 +20,7 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			})
 			mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
 				"check_id": "RC-01", "status": "passed", "note": "Configuration verified",
-				"evidence_refs": []string{"git:" + revision + "#evidence:evidence/release/RC-01.md"},
+				"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/release/RC-01.md"},
 			})
 			mustApply(t, &run, human("m-product"), "release.prepare", map[string]any{
 				"version": "1.0.0", "environment_ref": "production",
@@ -82,7 +82,7 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			}
 			mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 				"content":       run.ExecutableRevision.Content,
-				"evidence_ref":  "git:" + repairedRevision + "#evidence:evidence/product-revision.json",
+				"evidence_ref":  "workspace:" + repairedRevision + "#evidence:evidence/product-revision.json",
 				"code_revision": repairedRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
 			})
 			if run.ExecutableRevision.CodeRevision != repairedRevision || len(run.Releases) != 1 || run.Releases[0].ID != releaseID || run.Releases[0].CodeRevision != revision {
@@ -103,7 +103,7 @@ func TestPlatformDeploymentFailureDoesNotInventSourceRepair(t *testing.T) {
 	})
 	mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
 		"check_id": "RC-01", "status": "passed", "note": "Configuration verified",
-		"evidence_refs": []string{"git:" + revision + "#evidence:evidence/release/RC-01.md"},
+		"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/release/RC-01.md"},
 	})
 	mustApply(t, &run, human("m-product"), "release.prepare", map[string]any{
 		"version": "1.0.0", "environment_ref": "production",

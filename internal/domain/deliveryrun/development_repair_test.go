@@ -147,7 +147,7 @@ func TestSameQualityCaseCanCreateDistinctRoleRepairsWithoutLosingEvidence(t *tes
 		mustApply(t, &run, agent("qa"), "quality.record", map[string]any{
 			"test_case_id": run.TestCases[0].ID, "git_revision": revision, "result": "fail",
 			"failure_owner": owner, "note": "Observed a reproducible role-specific defect",
-			"evidence_refs": []string{"git:" + revision + "#evidence:evidence/qa.md"},
+			"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/qa.md"},
 		})
 	}
 	fail("backend")

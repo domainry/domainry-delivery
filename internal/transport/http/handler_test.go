@@ -102,7 +102,7 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 	}, http.StatusCreated)
 	dispatch(agentContext, "frontend-start", 1, "product.engineering.frontend.start", map[string]any{}, http.StatusOK)
 	dispatch(agentContext, "frontend-complete", 2, "product.engineering.frontend.complete", map[string]any{
-		"code_revision": "git:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
+		"code_revision": "workspace:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
 		"login_entry": "frontend/login.tsx", "shell_entry": "frontend/shell.tsx", "preview_entry": "frontend/dist/index.html",
 	}, http.StatusOK)
 

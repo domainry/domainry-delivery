@@ -64,7 +64,7 @@ func applyFixturePhase(t *testing.T, run *delivery.DeliveryRun, actor delivery.A
 		"phase":            phase,
 		"git_revision":     revision,
 		"summary":          "The Plane backend guide check passed.",
-		"evidence_refs":    []string{"git:" + revision + "#evidence:" + string(phase) + ".json"},
+		"evidence_refs":    []string{"workspace:" + revision + "#evidence:" + string(phase) + ".json"},
 	}
 	if evidence != nil {
 		payloadValue["backend_guide"] = evidence

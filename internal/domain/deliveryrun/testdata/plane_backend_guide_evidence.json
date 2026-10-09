@@ -7,11 +7,10 @@
       "feature_revision": 1,
       "repository_identity": "github.com/domainry/plane-backend-fixture",
       "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "git_status": "clean",
       "check_suite": "plane-backend-guide",
       "check_version": "1",
       "evidence_refs": [
-        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:model.json"
+        "workspace:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:model.json"
       ],
       "model_path": "backend/model.json",
       "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
@@ -27,11 +26,10 @@
       "feature_revision": 1,
       "repository_identity": "github.com/domainry/plane-backend-fixture",
       "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "git_status": "clean",
       "check_suite": "plane-backend-guide",
       "check_version": "1",
       "evidence_refs": [
-        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:contract.json"
+        "workspace:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:contract.json"
       ],
       "model_path": "backend/model.json",
       "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
@@ -58,11 +56,10 @@
       "feature_revision": 1,
       "repository_identity": "github.com/domainry/plane-backend-fixture",
       "git_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "git_status": "clean",
       "check_suite": "plane-backend-guide",
       "check_version": "1",
       "evidence_refs": [
-        "git:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:journey.json"
+        "workspace:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#evidence:journey.json"
       ],
       "model_path": "backend/model.json",
       "model_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",

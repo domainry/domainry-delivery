@@ -239,7 +239,6 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 		ModelSHA256               string `json:"model_sha256"`
 		IdempotencyKey            string `json:"idempotency_key"`
 		CodeRevision              string `json:"code_revision"`
-		GitStatus                 string `json:"git_status"`
 		VerificationSHA256        string `json:"verification_sha256"`
 		IdentityBaselineResult    string `json:"identity_baseline_result"`
 	}
@@ -252,7 +251,6 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 	payload.ModelSHA256 = strings.ToLower(strings.TrimSpace(payload.ModelSHA256))
 	payload.IdempotencyKey = strings.ToLower(strings.TrimSpace(payload.IdempotencyKey))
 	payload.CodeRevision = strings.TrimSpace(payload.CodeRevision)
-	payload.GitStatus = strings.TrimSpace(payload.GitStatus)
 	payload.VerificationSHA256 = strings.ToLower(strings.TrimSpace(payload.VerificationSHA256))
 	payload.IdentityBaselineResult = strings.TrimSpace(payload.IdentityBaselineResult)
 	if !sha256ValuePattern.MatchString(payload.ApplicationDeliverySHA256) ||
@@ -261,7 +259,7 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 		!sha256ValuePattern.MatchString(payload.ModelSHA256) ||
 		!sha256ValuePattern.MatchString(payload.IdempotencyKey) ||
 		!sha256ValuePattern.MatchString(payload.VerificationSHA256) ||
-		!validGitRevision(payload.CodeRevision) || payload.GitStatus != "clean" || payload.IdentityBaselineResult != "passed" {
+		!validCodeRevision(payload.CodeRevision) || payload.IdentityBaselineResult != "passed" {
 		return Invalid("product_foundation_evidence_invalid")
 	}
 	if product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey {
@@ -272,7 +270,6 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 	product.Engineering.FoundationPackageSHA256 = payload.FoundationPackageSHA256
 	product.Engineering.FoundationModelSHA256 = payload.ModelSHA256
 	product.Engineering.FoundationCodeRevision = payload.CodeRevision
-	product.Engineering.FoundationGitStatus = payload.GitStatus
 	product.Engineering.FoundationVerificationSHA256 = payload.VerificationSHA256
 	product.Engineering.IdentityBaselineResult = payload.IdentityBaselineResult
 	product.Engineering.FoundationCompletedBy = command.Actor.ID

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var gitRevisionPattern = regexp.MustCompile(`^(git:)?[A-Za-z0-9][A-Za-z0-9._/@:+-]{6,255}$`)
+var codeRevisionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/@:+-]{6,255}$`)
 var SHA256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 func Decode(payload json.RawMessage, target any) error {
@@ -43,9 +43,9 @@ func CleanStrings(values []string) []string {
 	return result
 }
 
-func ValidGitRevision(revision string) bool {
+func ValidCodeRevision(revision string) bool {
 	revision = strings.TrimSpace(revision)
-	return gitRevisionPattern.MatchString(revision) && !strings.Contains(revision, "..")
+	return codeRevisionPattern.MatchString(revision) && !strings.Contains(revision, "..")
 }
 
 func NewID(prefix string) string {

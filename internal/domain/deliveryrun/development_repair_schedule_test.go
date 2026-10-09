@@ -147,7 +147,7 @@ func TestSystemVerifiedModelHashDeterminesImplementationRepairs(t *testing.T) {
 				guide.ModelSHA256 = strings.Repeat("e", 64)
 			}
 			guide.GitRevision = newRevision
-			guide.EvidenceRefs = []string{"git:" + newRevision + "#evidence:model.json"}
+			guide.EvidenceRefs = []string{"workspace:" + newRevision + "#evidence:model.json"}
 			mustApply(t, &run, delivery.Actor{ID: "model-runner", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", map[string]any{
 				"delivery_unit_id": unit.ID, "phase": "model_verification", "git_revision": newRevision,
 				"summary": "Verified actual model contents", "evidence_refs": guide.EvidenceRefs, "backend_guide": guide,
@@ -177,7 +177,7 @@ func TestSystemVerifiedModelHashDeterminesImplementationRepairs(t *testing.T) {
 				evidence := *final.evidence
 				evidence.ModelSHA256 = guide.ModelSHA256
 				evidence.GitRevision = newRevision
-				evidence.EvidenceRefs = []string{"git:" + newRevision + "#evidence:" + final.phase}
+				evidence.EvidenceRefs = []string{"workspace:" + newRevision + "#evidence:" + final.phase}
 				mustApply(t, &run, delivery.Actor{ID: "system-runner", Kind: delivery.ActorSystem}, final.command, map[string]any{
 					"delivery_unit_id": unit.ID, "phase": final.phase, "git_revision": newRevision,
 					"summary": "Reverified integrated source", "evidence_refs": evidence.EvidenceRefs, "backend_guide": evidence,

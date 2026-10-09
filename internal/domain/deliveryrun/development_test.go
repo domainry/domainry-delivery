@@ -165,13 +165,13 @@ func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testin
 	originalTodoCount := len(run.DeliveryUnits[0].DevelopmentTodos)
 	err := apply(&run, agent("qa-agent"), "quality.record", map[string]any{
 		"test_case_id": run.TestCases[0].ID, "git_revision": strings.Repeat("b", 40),
-		"result": "pass", "note": "Observed the complete business flow", "evidence_refs": []string{"git:bad#evidence/qa.md"},
+		"result": "pass", "note": "Observed the complete business flow", "evidence_refs": []string{"workspace:bad#evidence/qa.md"},
 	})
 	assertCode(t, err, "quality_revision_conflict")
 
 	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
 		"test_case_id": run.TestCases[0].ID, "git_revision": revision,
-		"result": "fail", "failure_owner": "backend", "note": "Rollback left a partial record", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/qa.md"},
+		"result": "fail", "failure_owner": "backend", "note": "Rollback left a partial record", "evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/qa.md"},
 	})
 	unit := run.DeliveryUnits[0]
 	if run.Stage != delivery.StageDevelopment || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitBackendImplementation || unit.IntegratedGitRevision != revision || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending {
@@ -195,7 +195,7 @@ func TestIndependentQualityPassesEveryCaseBeforeAcceptance(t *testing.T) {
 	for _, testCase := range run.TestCases {
 		mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
 			"test_case_id": testCase.ID, "git_revision": revision,
-			"result": "pass", "note": "Independent observation matched the acceptance scenario", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/" + testCase.ID + ".md"},
+			"result": "pass", "note": "Independent observation matched the acceptance scenario", "evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/" + testCase.ID + ".md"},
 		})
 	}
 	projection := delivery.ProjectionFor(run)
@@ -218,7 +218,7 @@ func TestAcceptanceBugTriageReopensFrontendWithoutLeavingAcceptance(t *testing.T
 	originalTodoCount := len(run.DeliveryUnits[0].DevelopmentTodos)
 	mustApply(t, &run, agent("qa-agent"), "acceptance.bug.triage", map[string]any{
 		"bug_id": bug.ID, "outcome": "reproduced", "owner": "frontend", "delivery_unit_id": run.Feature.ID,
-		"note": "Reproduced after returning from the detail page.", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/acceptance/triage.md"},
+		"note": "Reproduced after returning from the detail page.", "evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/acceptance/triage.md"},
 	})
 	unit := run.DeliveryUnits[0]
 	if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitFrontendImplementation || unit.IntegratedGitRevision != revision || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
@@ -249,7 +249,7 @@ func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing
 	bugID := run.AcceptanceReview.Bugs[0].ID
 	mustApply(t, &run, agent("qa-agent"), "acceptance.bug.triage", map[string]any{
 		"bug_id": bugID, "outcome": "reproduced", "owner": "frontend", "delivery_unit_id": run.Feature.ID,
-		"note": "Reproduced against the acceptance Runtime.", "evidence_refs": []string{"git:" + originalRevision + "#evidence:evidence/acceptance/triage.md"},
+		"note": "Reproduced against the acceptance Runtime.", "evidence_refs": []string{"workspace:" + originalRevision + "#evidence:evidence/acceptance/triage.md"},
 	})
 	if run.Stage != delivery.StageAcceptance || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugFixing {
 		t.Fatalf("triage left the acceptance repair loop: stage=%s review=%#v", run.Stage, run.AcceptanceReview)
@@ -263,7 +263,7 @@ func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing
 	revision := product.Revisions[0]
 	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 		"content":       map[string]any{"story": revision.Story, "definition": revision.Definition, "decisions": revision.Decisions},
-		"evidence_ref":  "git:" + repairedRevision + "#evidence:evidence/product-revision.json",
+		"evidence_ref":  "workspace:" + repairedRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": repairedRevision, "model_sha256": strings.Repeat("d", 64),
 	})
 	passIndependentQuality(t, &run)
@@ -272,7 +272,7 @@ func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing
 	}
 	mustApply(t, &run, delivery.Actor{ID: "acceptance-runner", Kind: delivery.ActorSystem}, "acceptance.bug.fix.ready", map[string]any{
 		"bug_id": bugID, "git_revision": repairedRevision,
-		"evidence_refs": []string{"git:" + repairedRevision + "#evidence:evidence/acceptance/fix-ready.md"},
+		"evidence_refs": []string{"workspace:" + repairedRevision + "#evidence:evidence/acceptance/fix-ready.md"},
 	})
 	readyAcceptanceEnvironment(t, &run)
 	if run.AcceptanceReview.CandidateGitRevision != repairedRevision || run.AcceptanceReview.Bugs[0].Status != delivery.AcceptanceBugReadyForRetest {
@@ -308,7 +308,7 @@ func TestReleaseBindsTheAcceptedGitRevisionAndGoesLive(t *testing.T) {
 		"checks":          []map[string]any{{"id": "RC-01", "title": "Production configuration verified", "required": true}},
 	})
 	mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
-		"check_id": "RC-01", "status": "passed", "note": "Configuration and rollback entry point verified", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/release/RC-01.md"},
+		"check_id": "RC-01", "status": "passed", "note": "Configuration and rollback entry point verified", "evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/release/RC-01.md"},
 	})
 	if !hasProjectedAction(delivery.ProjectionFor(run), "release.prepare", "") {
 		t.Fatal("Passed release checks did not expose human release preparation")
@@ -360,12 +360,11 @@ func completedRun(t *testing.T) delivery.DeliveryRun {
 		evidence.FeatureRevision = run.Feature.Source.FeatureRevision
 		evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
 		evidence.GitRevision = strings.Repeat("a", 40)
-		evidence.GitStatus = "clean"
 		evidence.CheckSuite = "plane-backend-guide"
 		evidence.CheckVersion = "1"
 		evidence.ExecutedBy = "verification-runner"
 		evidence.OccurredAt = time.Now().UTC()
-		evidence.EvidenceRefs = []string{"git:" + strings.Repeat("a", 40) + "#evidence:backend-guide.json"}
+		evidence.EvidenceRefs = []string{"workspace:" + strings.Repeat("a", 40) + "#evidence:backend-guide.json"}
 	}
 	run.ActiveDeliveryUnitID = ""
 	run.Stage = delivery.StageTesting
@@ -373,7 +372,7 @@ func completedRun(t *testing.T) delivery.DeliveryRun {
 	revision := product.Revisions[0]
 	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 		"content":       map[string]any{"story": revision.Story, "definition": revision.Definition, "decisions": revision.Decisions},
-		"evidence_ref":  "git:" + unit.IntegratedGitRevision + "#evidence:evidence/product-revision.json",
+		"evidence_ref":  "workspace:" + unit.IntegratedGitRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": unit.IntegratedGitRevision, "model_sha256": strings.Repeat("d", 64),
 	})
 	return run
@@ -386,7 +385,7 @@ func passIndependentQuality(t *testing.T, run *delivery.DeliveryRun) {
 		mustApply(t, run, agent("qa-agent"), "quality.record", map[string]any{
 			"test_case_id": testCase.ID, "git_revision": revision,
 			"result": "pass", "note": "The real end-to-end journey matched the expected outcome.",
-			"evidence_refs": []string{"git:" + revision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
+			"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
 		})
 	}
 }
@@ -427,12 +426,11 @@ func TestJourneyEvidenceMustMatchImplementationRevision(t *testing.T) {
 	evidence.FeatureRevision = run.Feature.Source.FeatureRevision
 	evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
 	evidence.GitRevision = strings.Repeat("c", 40)
-	evidence.GitStatus = "clean"
 	evidence.CheckSuite = "plane-backend-guide"
 	evidence.CheckVersion = "1"
 	evidence.ExecutedBy = actor.ID
 	evidence.OccurredAt = now
-	evidence.EvidenceRefs = []string{"git:" + strings.Repeat("c", 40) + "#evidence:backend-guide.json"}
+	evidence.EvidenceRefs = []string{"workspace:" + strings.Repeat("c", 40) + "#evidence:backend-guide.json"}
 	payload, err := json.Marshal(map[string]any{
 		"delivery_unit_id": unit.ID,
 		"phase":            "journey_testing",
@@ -475,10 +473,9 @@ func TestContractEvidenceRequirements(t *testing.T) {
 			evidence.FeatureRevision = run.Feature.Source.FeatureRevision
 			evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
 			evidence.GitRevision = strings.Repeat("a", 40)
-			evidence.GitStatus = "clean"
 			evidence.CheckSuite = "plane-backend-guide"
 			evidence.CheckVersion = "1"
-			evidence.EvidenceRefs = []string{"git:" + strings.Repeat("a", 40) + "#evidence:contract.json"}
+			evidence.EvidenceRefs = []string{"workspace:" + strings.Repeat("a", 40) + "#evidence:contract.json"}
 			payload, err := json.Marshal(map[string]any{
 				"delivery_unit_id": run.ActiveDeliveryUnitID, "phase": "contract_verification",
 				"git_revision": strings.Repeat("a", 40), "summary": "Contract passed against another model.",
@@ -554,19 +551,18 @@ func applyUnitAtRevision(run *delivery.DeliveryRun, actor delivery.Actor, comman
 		evidence.FeatureRevision = run.Feature.Source.FeatureRevision
 		evidence.RepositoryIdentity = "github.com/domainry/product-fixture"
 		evidence.GitRevision = revision
-		evidence.GitStatus = "clean"
 		evidence.CheckSuite = "plane-backend-guide"
 		evidence.CheckVersion = "1"
 		evidence.ExecutedBy = actor.ID
 		evidence.OccurredAt = now
-		evidence.EvidenceRefs = []string{"git:" + revision + "#evidence:backend-guide.json"}
+		evidence.EvidenceRefs = []string{"workspace:" + revision + "#evidence:backend-guide.json"}
 	}
 	payloadValue := map[string]any{
 		"delivery_unit_id": run.ActiveDeliveryUnitID,
 		"phase":            phase,
 		"git_revision":     revision,
 		"summary":          "The deterministic phase gate passed.",
-		"evidence_refs":    []string{"git:" + revision + "#evidence:" + phase + ".json"},
+		"evidence_refs":    []string{"workspace:" + revision + "#evidence:" + phase + ".json"},
 	}
 	if command == "delivery_unit.gap.report" {
 		payloadValue["diagnostics"] = diagnostics

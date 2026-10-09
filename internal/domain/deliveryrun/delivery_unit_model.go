@@ -134,7 +134,6 @@ type BackendGuideEvidence struct {
 	FeatureRevision               uint64    `json:"feature_revision"`
 	RepositoryIdentity            string    `json:"repository_identity"`
 	GitRevision                   string    `json:"git_revision"`
-	GitStatus                     string    `json:"git_status"`
 	CheckSuite                    string    `json:"check_suite"`
 	CheckVersion                  string    `json:"check_version"`
 	ExecutedBy                    string    `json:"executed_by"`

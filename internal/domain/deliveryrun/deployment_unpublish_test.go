@@ -17,7 +17,7 @@ func TestUnpublishRetainsAcceptedRevisionAndAllowsSameVersionRepublish(t *testin
 		"environment_ref": "production", "checks": []map[string]any{{"id": "RC-01", "title": "Production configuration verified", "required": true}},
 	})
 	mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
-		"check_id": "RC-01", "status": "passed", "note": "Configuration verified", "evidence_refs": []string{"git:" + revision + "#evidence:evidence/release/RC-01.md"},
+		"check_id": "RC-01", "status": "passed", "note": "Configuration verified", "evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/release/RC-01.md"},
 	})
 	mustApply(t, &run, human("m-product"), "release.prepare", map[string]any{"version": "1.0.0", "environment_ref": "production"})
 	releaseID := run.Releases[0].ID
