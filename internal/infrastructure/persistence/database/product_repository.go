@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"sync"
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	"github.com/domainry/domainry-delivery/internal/domain"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
 	ormquery "github.com/domainry/domainry-orm/query"
 )
+
+const productListReadConcurrency = 4
 
 func (store *Store) GetProduct(ctx context.Context, workspaceID, productID string) (productdomain.Product, error) {
 	return loadProductState(ctx, store.db, store.renderer, workspaceID, productID)
@@ -42,13 +45,39 @@ func (store *Store) ListProducts(ctx context.Context, workspaceID string) ([]pro
 	if err := rows.Err(); err != nil {
 		return nil, storageError(err)
 	}
-	products := make([]productdomain.Product, 0, len(ids))
-	for _, id := range ids {
-		product, err := loadProductState(ctx, store.db, store.renderer, workspaceID, id)
-		if err != nil {
-			return nil, err
-		}
-		products = append(products, product)
+	products := make([]productdomain.Product, len(ids))
+	readContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	permits := make(chan struct{}, productListReadConcurrency)
+	var wait sync.WaitGroup
+	var failureLock sync.Mutex
+	var firstFailure error
+	for index, id := range ids {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			select {
+			case permits <- struct{}{}:
+				defer func() { <-permits }()
+			case <-readContext.Done():
+				return
+			}
+			product, loadErr := loadProductState(readContext, store.db, store.renderer, workspaceID, id)
+			if loadErr != nil {
+				failureLock.Lock()
+				if firstFailure == nil {
+					firstFailure = loadErr
+					cancel()
+				}
+				failureLock.Unlock()
+				return
+			}
+			products[index] = product
+		}()
+	}
+	wait.Wait()
+	if firstFailure != nil {
+		return nil, firstFailure
 	}
 	return products, nil
 }
