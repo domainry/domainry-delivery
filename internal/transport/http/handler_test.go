@@ -129,6 +129,10 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		context.Background(), "workspace-1", delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent},
 		application.PermissionProductWrite,
 	)
+	systemContext := application.WithTrustedPrincipal(
+		context.Background(), "workspace-1", delivery.Actor{ID: "deck", Kind: delivery.ActorSystem},
+		application.PermissionDeploymentRecord,
+	)
 	dispatch := func(requestContext context.Context, clientID string, expectedRevision uint64, commandType string, payload map[string]any, expectedStatus int) {
 		t.Helper()
 		body, marshalErr := json.Marshal(map[string]any{
@@ -173,6 +177,27 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		return action.Command == "product.engineering.foundation.started" && action.ActorKind == delivery.ActorSystem
 	}) {
 		t.Fatalf("foundation installation was not projected: %#v", projection.AvailableActions)
+	}
+
+	dispatch(systemContext, "foundation-start", 3, "product.engineering.foundation.started", map[string]any{
+		"application_delivery_sha256": strings.Repeat("a", 64), "idempotency_key": strings.Repeat("b", 64),
+	}, http.StatusOK)
+	dispatch(systemContext, "foundation-complete", 4, "product.engineering.foundation.completed", map[string]any{
+		"application_delivery_sha256": strings.Repeat("a", 64),
+		"foundation_release_sha256":   strings.Repeat("c", 64),
+		"foundation_package_sha256":   strings.Repeat("d", 64),
+		"model_sha256":                strings.Repeat("e", 64),
+		"idempotency_key":             strings.Repeat("b", 64),
+		"code_revision":               "workspace-0123456789abcdef",
+		"verification_sha256":         strings.Repeat("f", 64),
+		"identity_baseline_result":    "passed",
+	}, http.StatusOK)
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(humanContext)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"ready"`) {
+		t.Fatalf("Foundation completion did not cross the public SDK and domain boundaries: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
