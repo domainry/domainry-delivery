@@ -139,6 +139,23 @@ func (service *Service) ListProducts(ctx context.Context, workspaceID string) ([
 	return visible, nil
 }
 
+func (service *Service) ListArchivedProducts(ctx context.Context, workspaceID string) ([]product.Product, error) {
+	if _, err := authenticatedActor(ctx, workspaceID, PermissionProductRead, nil); err != nil {
+		return nil, err
+	}
+	products, err := service.ports.Products.ListProducts(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	archived := make([]product.Product, 0)
+	for _, candidate := range products {
+		if candidate.Status == product.ProductArchived {
+			archived = append(archived, candidate)
+		}
+	}
+	return archived, nil
+}
+
 func (service *Service) ProductAgentContext(ctx context.Context, workspaceID, productID string) (product.ProductAgentContext, error) {
 	productState, err := service.GetProduct(ctx, workspaceID, productID)
 	if err != nil {

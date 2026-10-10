@@ -29,6 +29,7 @@ func New(service *application.Service, logger *slog.Logger, runtimeID string) ht
 	mux.HandleFunc("GET /api/v1/delivery/descriptor", handler.descriptor)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/session", handler.session)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products", handler.listProducts)
+	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/archived-products", handler.listArchivedProducts)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}", handler.getProduct)
 	mux.HandleFunc("GET /api/v1/workspaces/{workspaceID}/products/{productID}/agent-context", handler.getProductAgentContext)
 	mux.HandleFunc("POST /api/v1/workspaces/{workspaceID}/products/{productID}/commands", handler.dispatchProduct)
@@ -65,6 +66,19 @@ func (handler *Handler) descriptor(writer http.ResponseWriter, _ *http.Request) 
 
 func (handler *Handler) listProducts(writer http.ResponseWriter, request *http.Request) {
 	products, err := handler.service.ListProducts(request.Context(), request.PathValue("workspaceID"))
+	if err != nil {
+		handler.writeError(writer, request, err)
+		return
+	}
+	projections := make([]product.ProductProjection, 0, len(products))
+	for _, productState := range products {
+		projections = append(projections, product.ProductProjectionFor(productState))
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"data": projections})
+}
+
+func (handler *Handler) listArchivedProducts(writer http.ResponseWriter, request *http.Request) {
+	products, err := handler.service.ListArchivedProducts(request.Context(), request.PathValue("workspaceID"))
 	if err != nil {
 		handler.writeError(writer, request, err)
 		return

@@ -236,6 +236,22 @@ func TestProductCommandsAreIdempotentAndRevisionFenced(t *testing.T) {
 	if retained.Status != productdomain.ProductArchived || retained.ID != "product-1" {
 		t.Fatalf("logical deletion did not retain the Product: %#v", retained)
 	}
+	restored, err := service.DispatchProduct(ctx, "workspace-1", "product-1", delivery.Command{
+		ClientID: "restore-product", ExpectedRevision: retained.Revision, Type: "product.restore", Payload: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != productdomain.ProductShaping {
+		t.Fatalf("restored Product has unexpected status: %#v", restored)
+	}
+	products, err = service.ListProducts(ctx, "workspace-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(products) != 1 || products[0].ID != "product-1" {
+		t.Fatalf("restored Product is not visible: %#v", products)
+	}
 }
 
 func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t *testing.T) {

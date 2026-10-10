@@ -774,7 +774,7 @@ func TestFeatureAuthorizationUnknownScenarioIdentifiesGrantAndScenario(t *testin
 	}
 }
 
-func TestProductDeleteRequiresHumanAndRemovesAvailableActions(t *testing.T) {
+func TestProductDeleteRequiresHumanAndExposesRecoverableRestore(t *testing.T) {
 	product := newProduct(t)
 	err := applyProduct(&product, agent("rd-agent"), "product.delete", map[string]any{})
 	domainError, ok := err.(*delivery.Error)
@@ -786,8 +786,35 @@ func TestProductDeleteRequiresHumanAndRemovesAvailableActions(t *testing.T) {
 	if product.Status != delivery.ProductArchived {
 		t.Fatalf("expected archived Product, got %q", product.Status)
 	}
-	if actions := delivery.ProductProjectionFor(product).AvailableActions; len(actions) != 0 {
-		t.Fatalf("archived Product still exposes actions: %#v", actions)
+	actions := delivery.ProductProjectionFor(product).AvailableActions
+	if len(actions) != 1 || actions[0].Command != "product.restore" || actions[0].ActorKind != delivery.ActorHuman {
+		t.Fatalf("archived Product did not expose only human restore: %#v", actions)
+	}
+
+	err = applyProduct(&product, agent("rd-agent"), "product.restore", map[string]any{})
+	domainError, ok = err.(*delivery.Error)
+	if !ok || domainError.Code != "human_confirmation_required" {
+		t.Fatalf("expected human restore requirement, got %#v", err)
+	}
+	mustApplyProduct(t, &product, human("product-owner"), "product.restore", map[string]any{})
+	if product.Status != delivery.ProductShaping {
+		t.Fatalf("expected restored shaping Product, got %q", product.Status)
+	}
+	if !hasAction(delivery.ProductProjectionFor(product).AvailableActions, "product.delete", product.ID, delivery.ActorHuman) {
+		t.Fatalf("restored Product did not regain active actions: %#v", delivery.ProductProjectionFor(product).AvailableActions)
+	}
+}
+
+func TestRestoreReturnsInstalledProductToActiveStatus(t *testing.T) {
+	product := newProduct(t)
+	product.CurrentDefinitionRevision = 2
+	product.CurrentReleaseRevision = 2
+	product.Status = delivery.ProductArchived
+
+	mustApplyProduct(t, &product, human("product-owner"), "product.restore", map[string]any{})
+
+	if product.Status != delivery.ProductActive {
+		t.Fatalf("expected restored active Product, got %q", product.Status)
 	}
 }
 

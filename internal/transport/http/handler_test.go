@@ -63,6 +63,57 @@ func TestProductCreateReadAndAgentContext(t *testing.T) {
 	}
 }
 
+func TestArchivedProductsCanBeListedAndRestored(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "delivery.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	requestContext := application.WithTrustedPrincipal(
+		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
+		application.PermissionProductRead, application.PermissionProductWrite,
+	)
+	dispatch := func(clientID string, expectedRevision uint64, commandType string, payload map[string]any, expectedStatus int) []byte {
+		t.Helper()
+		body, marshalErr := json.Marshal(map[string]any{
+			"client_id": clientID, "expected_revision": expectedRevision, "type": commandType, "payload": payload,
+		})
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/workspace-1/products/product-1/commands", strings.NewReader(string(body))).WithContext(requestContext)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != expectedStatus {
+			t.Fatalf("%s status=%d body=%s", commandType, response.Code, response.Body.String())
+		}
+		return response.Body.Bytes()
+	}
+	dispatch("create-product", 0, "product.create", map[string]any{
+		"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
+		"story":      map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session."},
+		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":  []any{},
+	}, http.StatusCreated)
+	dispatch("delete-product", 1, "product.delete", map[string]any{}, http.StatusOK)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/archived-products", nil).WithContext(requestContext)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"product.restore"`) {
+		t.Fatalf("archived list status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	dispatch("restore-product", 2, "product.restore", map[string]any{}, http.StatusOK)
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products", nil).WithContext(requestContext)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"product-1"`) {
+		t.Fatalf("restored list status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) {
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "delivery.db"))
 	if err != nil {

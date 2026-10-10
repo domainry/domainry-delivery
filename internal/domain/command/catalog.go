@@ -17,6 +17,7 @@ const (
 const (
 	ProductCreate             = "product.create"
 	ProductDelete             = "product.delete"
+	ProductRestore            = "product.restore"
 	ProductFrontendStart      = "product.engineering.frontend.start"
 	ProductFrontendComplete   = "product.engineering.frontend.complete"
 	ProductFoundationStarted  = "product.engineering.foundation.started"
@@ -117,6 +118,9 @@ func buildCatalog() map[string]Definition {
 		FeatureDiscoveryOpen: "FeatureDiscoveryOpen",
 		FeatureConfirm:       "FeatureConfirmation",
 		FeatureRebase:        "FeatureRebase",
+	})
+	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorHuman}, []string{"archived"}, map[string]string{
+		ProductRestore: "ProductRestore",
 	})
 	register(TargetProduct, "delivery_deployment.record", "ProductProjection", []domain.ActorKind{domain.ActorSystem}, []string{"active"}, map[string]string{
 		ProductFoundationStarted:  "FoundationStart",

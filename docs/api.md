@@ -69,7 +69,7 @@ DeliveryRun JSON, acceptance event stream, or SQL BLOB columns.
 
 Product commands come from the typed command catalog:
 
-- `product.create`, `product.delete`
+- `product.create`, `product.delete`, `product.restore`
 - `product.engineering.frontend.start`,
   `product.engineering.frontend.complete`
 - `product.engineering.foundation.started`,

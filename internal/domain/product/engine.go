@@ -10,6 +10,7 @@ import (
 const (
 	commandProductCreate           = commanddomain.ProductCreate
 	commandProductDelete           = commanddomain.ProductDelete
+	commandProductRestore          = commanddomain.ProductRestore
 	commandProductFrontendStart    = commanddomain.ProductFrontendStart
 	commandProductFrontendFinish   = commanddomain.ProductFrontendComplete
 	commandProductFoundationStart  = commanddomain.ProductFoundationStarted
@@ -83,11 +84,14 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 }
 
 func ApplyProduct(product *Product, command Command, now time.Time) error {
-	if product.Status == ProductArchived {
-		return Invalid("product_archived")
-	}
 	if err := validateCommandActor(command, CommandTargetProduct); err != nil {
 		return err
+	}
+	if product.Status == ProductArchived && command.Type != commandProductRestore {
+		return Invalid("product_archived")
+	}
+	if product.Status != ProductArchived && command.Type == commandProductRestore {
+		return Invalid("product_not_archived")
 	}
 	var err error
 	switch command.Type {
@@ -96,6 +100,15 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 			return Invalid("human_deletion_required")
 		}
 		product.Status = ProductArchived
+	case commandProductRestore:
+		if command.Actor.Kind != ActorHuman {
+			return Invalid("human_restore_required")
+		}
+		if product.CurrentDefinitionRevision > 1 {
+			product.Status = ProductActive
+		} else {
+			product.Status = ProductShaping
+		}
 	case commandProductFrontendStart:
 		if command.Actor.Kind != ActorAgent {
 			return Invalid("agent_execution_required")

@@ -331,6 +331,8 @@ func ProductProjectionFor(product Product) ProductProjection {
 			}
 		}
 		add(commandProductDelete, product.ID)
+	} else {
+		add(commandProductRestore, product.ID)
 	}
 	return ProductProjection{Product: product, AvailableActions: actions}
 }
