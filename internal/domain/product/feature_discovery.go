@@ -4,7 +4,7 @@ import "strings"
 
 var featureEvidenceKinds = map[string]bool{
 	"fact": true, "actor": true, "problem": true, "goal": true, "rule": true, "constraint": true,
-	"idea": true, "decision": true, "correction": true,
+	"idea": true, "decision": true, "correction": true, "domain_definition": true,
 }
 
 var featureEvidenceStatuses = map[string]bool{

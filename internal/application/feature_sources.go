@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
@@ -35,6 +36,9 @@ func (service *Service) verifyFeatureSources(ctx context.Context, workspaceID, p
 	}
 	baselineSource := fmt.Sprintf("product://%s/revision/%d", productID, baseline.CurrentDefinitionRevision)
 	for _, sourceID := range payload.Source.SourceIDs {
+		if validExternalFeatureSource(sourceID) {
+			continue
+		}
 		if messageID, ok := strings.CutPrefix(sourceID, "conversation://"+conversationID+"/message/"); ok {
 			if !conversation.ValidID(messageID) {
 				return domain.Invalid("feature_source_reference_unverified")
@@ -60,4 +64,9 @@ func (service *Service) verifyFeatureSources(ctx context.Context, workspaceID, p
 		}
 	}
 	return nil
+}
+
+func validExternalFeatureSource(sourceID string) bool {
+	parsed, err := url.ParseRequestURI(sourceID)
+	return err == nil && parsed.Scheme == "https" && parsed.Hostname() != "" && parsed.User == nil
 }

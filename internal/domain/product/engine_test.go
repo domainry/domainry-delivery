@@ -583,6 +583,21 @@ func TestFeatureReferencesOnlyVerifiedConversationSources(t *testing.T) {
 	assertCode(t, err, "feature_source_reference_unverified")
 }
 
+func TestFeatureDiscoveryAcceptsSourcedDomainDefinition(t *testing.T) {
+	product := newProduct(t)
+	payload := featureDraftPayload("feature-cancel", "F-001")
+	officialURL := "https://www.gov.br/receitafederal/pt-br/assuntos/aduana-e-comercio-exterior/classificacao-fiscal-de-mercadorias/ncm"
+	payload["discovery"].(map[string]any)["evidence"].([]map[string]any)[0]["kind"] = "domain_definition"
+	payload["discovery"].(map[string]any)["evidence"].([]map[string]any)[0]["source_ids"] = []string{officialURL}
+	source := payload["source"].(map[string]any)
+	source["source_ids"] = append(source["source_ids"].([]string), officialURL)
+
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", payload)
+	if got := product.Features[0].Draft.Discovery.Evidence[0].Kind; got != "domain_definition" {
+		t.Fatalf("domain definition evidence kind was not retained: %q", got)
+	}
+}
+
 func TestFeatureRevisionNormalizesCoreCollections(t *testing.T) {
 	product := newProduct(t)
 	payload := featureDraftPayload("feature-cancel", "F-001")
