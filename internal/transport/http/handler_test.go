@@ -268,4 +268,19 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
 		t.Fatalf("feature.rebase did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
 	}
+
+	systemContext := application.WithTrustedPrincipal(
+		context.Background(), "workspace-1", delivery.Actor{ID: "deck", Kind: delivery.ActorSystem},
+		application.PermissionDeploymentRecord,
+	)
+	request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/workspace-1/delivery-runs/missing/commands",
+		strings.NewReader(`{"client_id":"release-reissue-1","expected_revision":72,"type":"release.reissue","payload":{"release_id":"REL-001"}}`),
+	).WithContext(systemContext)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("release.reissue did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
+	}
 }
