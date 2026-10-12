@@ -442,6 +442,27 @@ func passIndependentQuality(t *testing.T, run *delivery.DeliveryRun) {
 	}
 }
 
+func TestMissingRequiredQualityCasesConservativelyExposeEveryCase(t *testing.T) {
+	run := completedRun(t)
+	run.ExecutableRevision.RequiredTestCaseIDs = nil
+
+	projection := delivery.ProjectionFor(run)
+	qualityActions := 0
+	for _, action := range projection.Workflow.AvailableActions {
+		if action.Command == "quality.record" {
+			qualityActions++
+		}
+	}
+	if qualityActions != len(run.TestCases) {
+		t.Fatalf("missing required quality cases deadlocked the run: actions=%#v test_cases=%#v", projection.Workflow.AvailableActions, run.TestCases)
+	}
+
+	passIndependentQuality(t, &run)
+	if run.Stage != delivery.StageAcceptance {
+		t.Fatalf("conservative quality recovery did not advance to acceptance: stage=%s", run.Stage)
+	}
+}
+
 func passBusinessAcceptance(t *testing.T, run *delivery.DeliveryRun) {
 	t.Helper()
 	readyAcceptanceEnvironment(t, run)

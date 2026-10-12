@@ -163,7 +163,7 @@ func latestQualityObservation(run *DeliveryRun, revision, testCaseID string) (Ch
 }
 
 func allQualityPass(run *DeliveryRun, revision string) bool {
-	if run.ExecutableRevision == nil || run.ExecutableRevision.RequiredTestCaseIDs == nil {
+	if run.ExecutableRevision == nil {
 		return false
 	}
 	if len(run.TestCases) == 0 {
@@ -183,6 +183,9 @@ func allQualityPass(run *DeliveryRun, revision string) bool {
 func qualityCaseRequired(run *DeliveryRun, testCaseID string) bool {
 	if run.ExecutableRevision == nil {
 		return false
+	}
+	if run.ExecutableRevision.RequiredTestCaseIDs == nil {
+		return true
 	}
 	for _, requiredID := range run.ExecutableRevision.RequiredTestCaseIDs {
 		if requiredID == testCaseID {
