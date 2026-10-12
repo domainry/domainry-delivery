@@ -33,7 +33,7 @@ func ensureAcceptanceReview(run *DeliveryRun, actor Actor, now time.Time) {
 	}
 	if run.AcceptanceReview != nil {
 		review := run.AcceptanceReview
-		if review.Status != AcceptanceReviewAccepted || acceptanceReviewCurrent(run) {
+		if !acceptanceReviewRequiresRenewal(run) {
 			return
 		}
 		review.Status = AcceptanceReviewOpen
@@ -58,7 +58,16 @@ func ensureAcceptanceReview(run *DeliveryRun, actor Actor, now time.Time) {
 
 func acceptanceActions(run *DeliveryRun) []AvailableAction {
 	review := run.AcceptanceReview
-	if run.Stage != StageAcceptance || review == nil || review.Status != AcceptanceReviewOpen {
+	if run.Stage != StageAcceptance || review == nil {
+		return []AvailableAction{}
+	}
+	if review.Status == AcceptanceReviewAccepted {
+		if acceptanceReviewRequiresRenewal(run) {
+			return []AvailableAction{catalogAction(commandAcceptanceEnvironmentReady, review.ID)}
+		}
+		return []AvailableAction{}
+	}
+	if review.Status != AcceptanceReviewOpen {
 		return []AvailableAction{}
 	}
 	if activeDeliveryUnit(run) != nil {
@@ -102,6 +111,7 @@ func acceptanceActions(run *DeliveryRun) []AvailableAction {
 }
 
 func recordAcceptanceEnvironment(run *DeliveryRun, command Command, now time.Time) error {
+	ensureAcceptanceReview(run, command.Actor, now)
 	review, err := openAcceptanceReview(run)
 	if err != nil {
 		return err

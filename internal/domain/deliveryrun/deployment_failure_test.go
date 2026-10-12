@@ -167,6 +167,7 @@ func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
 	acceptedRevision := run.DeliveryUnits[0].IntegratedGitRevision
 	passIndependentQuality(t, &run)
 	passBusinessAcceptance(t, &run)
+	acceptedAt := run.AcceptanceReview.AcceptedAt
 	mustApply(t, &run, agent("op-agent"), "release_checks.replace", map[string]any{
 		"environment_ref": "production",
 		"checks":          []map[string]any{{"id": "RC-01", "title": "Production configuration verified", "required": true}},
@@ -223,6 +224,25 @@ func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
 	}
 	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.environment.ready", review.ID) {
 		t.Fatalf("reopened acceptance did not request the current environment: %#v", delivery.ProjectionFor(run).Workflow.AvailableActions)
+	}
+
+	// A run already persisted in the stale accepted state before this fix must
+	// recover through the same trusted environment-ready action after rollout.
+	review.Status = delivery.AcceptanceReviewAccepted
+	review.CandidateGitRevision = acceptedRevision
+	review.EnvironmentRevision = acceptedRevision
+	review.EnvironmentRef = "acceptance://stale"
+	review.RuntimeURL = "http://127.0.0.1:4173"
+	review.AcceptedBy = "m-business"
+	review.AcceptedAt = acceptedAt
+	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.environment.ready", review.ID) {
+		t.Fatalf("persisted stale acceptance did not expose its recovery action: %#v", delivery.ProjectionFor(run).Workflow.AvailableActions)
+	}
+	mustApply(t, &run, delivery.Actor{ID: "acceptance-runtime", Kind: delivery.ActorSystem}, "acceptance.environment.ready", map[string]any{
+		"git_revision": productRevision, "environment_ref": "acceptance://current", "runtime_url": "http://127.0.0.1:4174",
+	})
+	if review.Status != delivery.AcceptanceReviewOpen || review.CandidateGitRevision != productRevision || review.EnvironmentRevision != productRevision || review.EnvironmentRef != "acceptance://current" || review.AcceptedBy != "" || review.AcceptedAt != nil {
+		t.Fatalf("persisted stale acceptance did not recover onto the current environment: %#v", review)
 	}
 }
 
