@@ -57,12 +57,8 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			if len(run.ReleaseChecks) != 0 {
 				t.Fatalf("old release checks survived a source repair: %#v", run.ReleaseChecks)
 			}
-			if run.AcceptanceReview == nil || run.AcceptanceReview.Status != delivery.AcceptanceReviewOpen || run.AcceptanceReview.AcceptedBy != "" || run.AcceptanceReview.AcceptedAt != nil {
-				t.Fatalf("accepted review was not reopened for repaired-revision retest: %#v", run.AcceptanceReview)
-			}
-			bug := run.AcceptanceReview.Bugs[len(run.AcceptanceReview.Bugs)-1]
-			if bug.Status != delivery.AcceptanceBugFixing || bug.Owner != "backend" || bug.DeliveryUnitID != unit.ID {
-				t.Fatalf("deployment failure did not enter the acceptance repair loop: %#v", bug)
+			if run.AcceptanceReview == nil || run.AcceptanceReview.Status != delivery.AcceptanceReviewAccepted || run.AcceptanceReview.AcceptedBy == "" || run.AcceptanceReview.AcceptedAt == nil || len(run.AcceptanceReview.Bugs) != 0 {
+				t.Fatalf("deployment failure corrupted the completed business acceptance: %#v", run.AcceptanceReview)
 			}
 			attempt := run.Releases[0].DeploymentAttempts[len(run.Releases[0].DeploymentAttempts)-1]
 			if run.Releases[0].Status != delivery.ReleaseFailed || attempt.FailureKind != "source" || len(attempt.Diagnostics) != 1 {
@@ -88,7 +84,67 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			if run.ExecutableRevision.CodeRevision != repairedRevision || len(run.Releases) != 1 || run.Releases[0].ID != releaseID || run.Releases[0].CodeRevision != revision {
 				t.Fatal("repair failed to bind the new revision while preserving the failed release history")
 			}
+			if run.Stage != delivery.StageTesting || len(run.ExecutableRevision.RequiredTestCaseIDs) == 0 {
+				t.Fatalf("deployment repair did not enter targeted testing: stage=%s required=%#v", run.Stage, run.ExecutableRevision.RequiredTestCaseIDs)
+			}
+			passIndependentQuality(t, &run)
+			if run.Stage != delivery.StageRelease || run.AcceptanceReview.Status != delivery.AcceptanceReviewAccepted || len(run.AcceptanceReview.Bugs) != 0 {
+				t.Fatalf("targeted testing did not return the deployment repair to release: stage=%s acceptance=%#v", run.Stage, run.AcceptanceReview)
+			}
+			mustApply(t, &run, agent("op-agent"), "release_checks.replace", map[string]any{
+				"environment_ref": "production",
+				"checks":          []map[string]any{{"id": "RC-02", "title": "Repaired production source verified", "required": true}},
+			})
+			mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
+				"check_id": "RC-02", "status": "passed", "note": "Repaired source is ready for the approved target",
+				"evidence_refs": []string{"workspace:" + repairedRevision + "#evidence:evidence/release/RC-02.md"},
+			})
+			projection = delivery.ProjectionFor(run)
+			if !hasProjectedAction(projection, "release.reissue", releaseID) || hasProjectedAction(projection, "release.prepare", "") {
+				t.Fatalf("verified deployment repair did not request an automatic replacement Release: %#v", projection.Workflow.AvailableActions)
+			}
+			mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.reissue", map[string]any{"release_id": releaseID})
+			if len(run.Releases) != 2 || run.Releases[1].Status != delivery.ReleaseApproved || run.Releases[1].CodeRevision != repairedRevision || run.Releases[1].EnvironmentRef != run.Releases[0].EnvironmentRef || run.Releases[1].Version != run.Releases[0].Version {
+				t.Fatalf("replacement Release did not retain the approved target on the repaired revision: %#v", run.Releases)
+			}
 		})
+	}
+}
+
+func TestStaleApprovedReleaseIsReissuedForTheCurrentVerifiedRevision(t *testing.T) {
+	run := completedRun(t)
+	currentRevision := run.DeliveryUnits[0].IntegratedGitRevision
+	passIndependentQuality(t, &run)
+	passBusinessAcceptance(t, &run)
+	mustApply(t, &run, agent("op-agent"), "release_checks.replace", map[string]any{
+		"environment_ref": "production",
+		"checks":          []map[string]any{{"id": "RC-01", "title": "Production configuration verified", "required": true}},
+	})
+	mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
+		"check_id": "RC-01", "status": "passed", "note": "Configuration verified",
+		"evidence_refs": []string{"workspace:" + currentRevision + "#evidence:evidence/release/RC-01.md"},
+	})
+	mustApply(t, &run, human("m-product"), "release.prepare", map[string]any{
+		"version": "1.0.0", "environment_ref": "production",
+	})
+	staleReleaseID := run.Releases[0].ID
+	mustApply(t, &run, human("m-release"), "release.approve", map[string]any{"release_id": staleReleaseID})
+	run.Releases[0].CodeRevision = strings.Repeat("f", 40)
+	run.Releases[0].ProductRevision = 0
+	run.Releases[0].ProductRevisionRef = "workspace:stale#evidence:product-revision.json"
+	run.Releases[0].ModelSHA256 = strings.Repeat("e", 64)
+
+	projection := delivery.ProjectionFor(run)
+	if len(projection.Workflow.AvailableActions) != 1 || !hasProjectedAction(projection, "release.reissue", staleReleaseID) || hasProjectedAction(projection, "release.deploy_result", staleReleaseID) {
+		t.Fatalf("stale approved Release was not replaced before deployment: %#v", projection.Workflow.AvailableActions)
+	}
+	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.reissue", map[string]any{"release_id": staleReleaseID})
+	if len(run.Releases) != 2 || run.Releases[0].Status != delivery.ReleaseCancelled {
+		t.Fatalf("stale approved Release was not superseded: %#v", run.Releases)
+	}
+	replacement := run.Releases[1]
+	if replacement.Status != delivery.ReleaseApproved || replacement.CodeRevision != currentRevision || replacement.ProductRevision != run.ExecutableRevision.TargetRevision || replacement.ProductRevisionRef != run.ExecutableRevision.EvidenceRef || replacement.ModelSHA256 != run.ExecutableRevision.ModelSHA256 || replacement.EnvironmentRef != run.Releases[0].EnvironmentRef || replacement.Version != run.Releases[0].Version || replacement.ApprovedBy != run.Releases[0].ApprovedBy {
+		t.Fatalf("replacement Release did not bind the current verified source and approved target: %#v", replacement)
 	}
 }
 

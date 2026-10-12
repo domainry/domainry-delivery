@@ -10,6 +10,11 @@ func releaseActions(run *DeliveryRun) []AvailableAction {
 	if run.Stage != StageRelease {
 		return []AvailableAction{}
 	}
+	if canPrepareRelease(run) {
+		if release := releaseForReissue(run); release != nil {
+			return []AvailableAction{catalogAction(commandReleaseReissue, release.ID)}
+		}
+	}
 	for _, release := range run.Releases {
 		switch release.Status {
 		case ReleaseDraft:
@@ -86,6 +91,64 @@ func prepareRelease(run *DeliveryRun, command Command, now time.Time) error {
 		EnvironmentRef: payload.EnvironmentRef, Status: ReleaseDraft, CreatedAt: now,
 	})
 	appendActivity(run, command.Actor, "release_prepared", releaseID+" prepared", "The accepted Git revision awaits release approval.", now)
+	return nil
+}
+
+func reissueRelease(run *DeliveryRun, command Command, now time.Time) error {
+	if run.Stage != StageRelease || activeDeliveryUnit(run) != nil || !canPrepareRelease(run) {
+		return Invalid("release_reissue_not_ready")
+	}
+	var payload struct {
+		ReleaseID string `json:"release_id"`
+	}
+	if err := decode(command.Payload, &payload); err != nil {
+		return err
+	}
+	source := releaseForReissue(run)
+	if source == nil || source.ID != strings.TrimSpace(payload.ReleaseID) {
+		return Invalid("release_reissue_source_invalid")
+	}
+	for _, check := range run.ReleaseChecks {
+		if check.EnvironmentRef != source.EnvironmentRef {
+			return Invalid("release_check_environment_mismatch")
+		}
+	}
+	revision, _ := verifiedJourneyRevision(run)
+	releaseID := fmt.Sprintf("REL-%03d", len(run.Releases)+1)
+	approvedAt := now
+	if source.Status == ReleaseApproved {
+		source.Status = ReleaseCancelled
+	}
+	run.Releases = append(run.Releases, Release{
+		ID: releaseID, Version: source.Version, CodeRevision: revision,
+		ProductRevision: run.ExecutableRevision.TargetRevision, ProductRevisionRef: run.ExecutableRevision.EvidenceRef, ModelSHA256: run.ExecutableRevision.ModelSHA256,
+		EnvironmentRef: source.EnvironmentRef, Status: ReleaseApproved, ApprovedBy: source.ApprovedBy, ApprovedAt: &approvedAt, CreatedAt: now,
+	})
+	appendActivity(run, command.Actor, "release_reissued", releaseID+" reissued", "The latest verified source retained the approved release target and is ready to publish.", now)
+	return nil
+}
+
+func releaseForReissue(run *DeliveryRun) *Release {
+	revision, ready := verifiedJourneyRevision(run)
+	if !ready {
+		return nil
+	}
+	for index := len(run.Releases) - 1; index >= 0; index-- {
+		release := &run.Releases[index]
+		if release.ApprovedBy == "" {
+			continue
+		}
+		if release.Status == ReleaseApproved && release.CodeRevision != revision {
+			return release
+		}
+		if release.Status != ReleaseFailed || len(release.DeploymentAttempts) == 0 {
+			continue
+		}
+		attempt := release.DeploymentAttempts[len(release.DeploymentAttempts)-1]
+		if attempt.Outcome == DeploymentFailure && attempt.FailureKind == deploymentFailureSource {
+			return release
+		}
+	}
 	return nil
 }
 

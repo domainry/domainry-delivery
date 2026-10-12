@@ -19,6 +19,9 @@ func qualityActions(run *DeliveryRun) []AvailableAction {
 	}
 	actions := make([]AvailableAction, 0, len(run.TestCases))
 	for _, testCase := range run.TestCases {
+		if !qualityCaseRequired(run, testCase.ID) {
+			continue
+		}
 		if latestQualityResult(run, revision, testCase.ID) == ResultPass {
 			continue
 		}
@@ -100,13 +103,10 @@ func routeVerificationFailure(run *DeliveryRun, deliveryUnitID, owner string, re
 }
 
 func deriveStage(run *DeliveryRun) Stage {
-	if run.AcceptanceReview != nil {
-		if acceptanceReviewCurrent(run) {
-			return StageRelease
-		}
-		return StageAcceptance
-	}
 	if activeDeliveryUnit(run) != nil {
+		if run.AcceptanceReview != nil {
+			return StageAcceptance
+		}
 		return StageDevelopment
 	}
 	revision, ok := verifiedJourneyRevision(run)
@@ -117,10 +117,19 @@ func deriveStage(run *DeliveryRun) Stage {
 		return StageTesting
 	}
 	for _, testCase := range run.TestCases {
+		if !qualityCaseRequired(run, testCase.ID) {
+			continue
+		}
 		result, _ := latestQualityObservation(run, revision, testCase.ID)
 		if result != ResultPass {
 			return StageTesting
 		}
+	}
+	if run.AcceptanceReview != nil {
+		if acceptanceReviewCurrent(run) {
+			return StageRelease
+		}
+		return StageAcceptance
 	}
 	return StageAcceptance
 }
@@ -154,15 +163,104 @@ func latestQualityObservation(run *DeliveryRun, revision, testCaseID string) (Ch
 }
 
 func allQualityPass(run *DeliveryRun, revision string) bool {
+	if run.ExecutableRevision == nil || run.ExecutableRevision.RequiredTestCaseIDs == nil {
+		return false
+	}
 	if len(run.TestCases) == 0 {
 		return false
 	}
 	for _, testCase := range run.TestCases {
+		if !qualityCaseRequired(run, testCase.ID) {
+			continue
+		}
 		if latestQualityResult(run, revision, testCase.ID) != ResultPass {
 			return false
 		}
 	}
 	return true
+}
+
+func qualityCaseRequired(run *DeliveryRun, testCaseID string) bool {
+	if run.ExecutableRevision == nil {
+		return false
+	}
+	for _, requiredID := range run.ExecutableRevision.RequiredTestCaseIDs {
+		if requiredID == testCaseID {
+			return true
+		}
+	}
+	return false
+}
+
+func requiredQualityCaseIDs(run *DeliveryRun, revision string) []string {
+	if run.ExecutableRevision == nil {
+		return allTestCaseIDs(run)
+	}
+	previousRevision := run.ExecutableRevision.CodeRevision
+	required := make(map[string]bool)
+	foundTargetedRepair := false
+	for unitIndex := range run.DeliveryUnits {
+		unit := &run.DeliveryUnits[unitIndex]
+		for _, repair := range unit.DevelopmentRepairItems {
+			if repair.Status != DevelopmentTodoCompleted || !repairHasRevision(repair, revision) {
+				continue
+			}
+			switch repair.SourceKind {
+			case "quality_case":
+				foundTargetedRepair = true
+				required[repair.SourceID] = true
+			case "acceptance_bug":
+				foundTargetedRepair = true
+				if run.AcceptanceReview != nil {
+					if bug := findAcceptanceBug(run.AcceptanceReview, repair.SourceID); bug != nil && bug.RetestCaseID != "" {
+						required[bug.RetestCaseID] = true
+					}
+				}
+			case "cloud_deployment":
+				foundTargetedRepair = true
+				for _, testCase := range run.TestCases {
+					if testCase.FeatureID == unit.ID {
+						required[testCase.ID] = true
+					}
+				}
+			case "verification_gap", "model_change":
+				return allTestCaseIDs(run)
+			case "repair_validation":
+			}
+		}
+	}
+	if !foundTargetedRepair {
+		return allTestCaseIDs(run)
+	}
+	for _, testCase := range run.TestCases {
+		if latestQualityResult(run, previousRevision, testCase.ID) != ResultPass {
+			required[testCase.ID] = true
+		}
+	}
+	ids := make([]string, 0, len(required))
+	for _, testCase := range run.TestCases {
+		if required[testCase.ID] {
+			ids = append(ids, testCase.ID)
+		}
+	}
+	return ids
+}
+
+func repairHasRevision(repair DevelopmentRepairWorkItem, revision string) bool {
+	for _, evidence := range repair.Evidence {
+		if evidence.GitRevision == revision {
+			return true
+		}
+	}
+	return false
+}
+
+func allTestCaseIDs(run *DeliveryRun) []string {
+	ids := make([]string, 0, len(run.TestCases))
+	for _, testCase := range run.TestCases {
+		ids = append(ids, testCase.ID)
+	}
+	return ids
 }
 
 func qualityReleaseGate(run *DeliveryRun) ReleaseGate {

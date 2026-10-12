@@ -49,6 +49,7 @@ const (
 	ReleaseChecksReplace            = "release_checks.replace"
 	ReleaseCheckRecord              = "release_check.record"
 	ReleasePrepare                  = "release.prepare"
+	ReleaseReissue                  = "release.reissue"
 	ReleaseApprove                  = "release.approve"
 	ReleaseDeployResult             = "release.deploy_result"
 	ReleaseReconcile                = "release.reconcile"
@@ -91,6 +92,7 @@ func buildCatalog() map[string]Definition {
 		DeliveryUnitJourneyComplete: "JourneyVerification",
 		AcceptanceEnvironmentReady:  "AcceptanceEnvironment",
 		AcceptanceBugFixReady:       "AcceptanceBugFix",
+		ReleaseReissue:              "EntityReference",
 		ReleaseDeployResult:         "DeploymentResult",
 	})
 	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorHuman}, []string{"acceptance", "release"}, map[string]string{

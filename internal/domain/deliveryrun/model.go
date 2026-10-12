@@ -65,14 +65,15 @@ type DeliveryRun struct {
 // for this DeliveryRun. It is installed into Product only when the exact bound
 // build receives a successful trusted deployment receipt.
 type ExecutableProductRevision struct {
-	BaseRevision   uint64                 `json:"base_revision"`
-	TargetRevision uint64                 `json:"target_revision"`
-	Content        ProductRevisionContent `json:"content"`
-	EvidenceRef    string                 `json:"evidence_ref"`
-	CodeRevision   string                 `json:"code_revision"`
-	ModelSHA256    string                 `json:"model_sha256"`
-	RecordedBy     string                 `json:"recorded_by"`
-	RecordedAt     time.Time              `json:"recorded_at"`
+	BaseRevision        uint64                 `json:"base_revision"`
+	TargetRevision      uint64                 `json:"target_revision"`
+	Content             ProductRevisionContent `json:"content"`
+	EvidenceRef         string                 `json:"evidence_ref"`
+	CodeRevision        string                 `json:"code_revision"`
+	ModelSHA256         string                 `json:"model_sha256"`
+	RequiredTestCaseIDs []string               `json:"required_test_case_ids"`
+	RecordedBy          string                 `json:"recorded_by"`
+	RecordedAt          time.Time              `json:"recorded_at"`
 }
 
 type FeatureSnapshot struct {
@@ -182,6 +183,7 @@ type AcceptanceBug struct {
 	Status                  AcceptanceBugStatus `json:"status"`
 	Owner                   string              `json:"owner,omitempty"`
 	DeliveryUnitID          string              `json:"delivery_unit_id,omitempty"`
+	RetestCaseID            string              `json:"retest_case_id,omitempty"`
 	ReportedAgainstRevision string              `json:"reported_against_revision"`
 	ReadyForRetestRevision  string              `json:"ready_for_retest_revision,omitempty"`
 	EvidenceRefs            []string            `json:"evidence_refs"`

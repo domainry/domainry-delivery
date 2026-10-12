@@ -115,7 +115,7 @@ Trusted system commands:
 - `delivery_unit.journey.complete`
 - `acceptance.environment.ready`
 - `acceptance.bug.fix.ready`
-- `release.deploy_result`
+- `release.deploy_result`, `release.reissue`
 
 Human commands:
 

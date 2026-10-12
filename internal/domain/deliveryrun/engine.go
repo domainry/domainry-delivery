@@ -15,6 +15,7 @@ const (
 	commandReleaseChecksReplace  = commanddomain.ReleaseChecksReplace
 	commandReleaseCheckRecord    = commanddomain.ReleaseCheckRecord
 	commandReleasePrepare        = commanddomain.ReleasePrepare
+	commandReleaseReissue        = commanddomain.ReleaseReissue
 	commandReleaseApprove        = commanddomain.ReleaseApprove
 	commandReleaseDeployResult   = commanddomain.ReleaseDeployResult
 	commandReleaseReconcile      = commanddomain.ReleaseReconcile
@@ -70,6 +71,8 @@ func Apply(run *DeliveryRun, command Command, now time.Time) error {
 		err = recordReleaseCheck(run, command, now)
 	case commandReleasePrepare:
 		err = prepareRelease(run, command, now)
+	case commandReleaseReissue:
+		err = reissueRelease(run, command, now)
 	case commandReleaseApprove:
 		err = approveRelease(run, command, now)
 	case commandReleaseDeployResult:
@@ -120,11 +123,13 @@ func recordExecutableRevision(run *DeliveryRun, command Command, now time.Time) 
 		return Invalid("product_revision_baseline_invalid")
 	}
 	baseRevision = executableRevisionBase(run, payload.CodeRevision)
+	requiredTestCaseIDs := requiredQualityCaseIDs(run, payload.CodeRevision)
 	run.ExecutableRevision = &ExecutableProductRevision{
 		BaseRevision: baseRevision, TargetRevision: baseRevision + 1,
 		Content: clone(payload.Content), EvidenceRef: payload.EvidenceRef,
 		CodeRevision: payload.CodeRevision, ModelSHA256: payload.ModelSHA256,
-		RecordedBy: command.Actor.ID, RecordedAt: now,
+		RequiredTestCaseIDs: requiredTestCaseIDs,
+		RecordedBy:          command.Actor.ID, RecordedAt: now,
 	}
 	appendActivity(run, command.Actor, "product_revision_recorded", fmt.Sprintf("ProductRevision R%d recorded", baseRevision+1), payload.EvidenceRef, now)
 	return nil

@@ -45,26 +45,10 @@ func validateDeploymentFailureRouting(run *DeliveryRun, outcome DeploymentOutcom
 
 func routeDeploymentFailure(run *DeliveryRun, actor Actor, release *Release, attempt *DeploymentAttempt, now time.Time) error {
 	review := run.AcceptanceReview
-	if review == nil || review.Status != AcceptanceReviewAccepted || review.CandidateGitRevision != release.CodeRevision || len(review.Bugs) >= maxAcceptanceBugs {
+	if review == nil || review.Status != AcceptanceReviewAccepted || review.CandidateGitRevision != release.CodeRevision {
 		return Invalid("deployment_failure_acceptance_invalid")
 	}
 	diagnostic := attempt.Diagnostics[0]
-	bug := AcceptanceBug{
-		ID: newID("bug"), Title: "Cloud deployment build failed",
-		Description: diagnostic.Message,
-		Expected:    "The accepted Product revision builds and starts in the release environment.",
-		Actual:      diagnostic.Message, Severity: "blocker", Status: AcceptanceBugFixing,
-		Owner: attempt.FailureOwner, DeliveryUnitID: attempt.DeliveryUnitID,
-		ReportedAgainstRevision: release.CodeRevision, EvidenceRefs: []string{attempt.ReceiptRef},
-		ReportedBy: actor.ID, ReportedAt: now, UpdatedAt: now,
-	}
-	review.Status = AcceptanceReviewOpen
-	review.EnvironmentRevision = ""
-	review.EnvironmentRef = ""
-	review.RuntimeURL = ""
-	review.AcceptedBy = ""
-	review.AcceptedAt = nil
-	review.Bugs = append(review.Bugs, bug)
 	targets := repairTargetsFromDiagnostics(attempt.Diagnostics, attempt.FailureOwner)
 	for index := range targets {
 		targets[index].SourceKind = "cloud_deployment"
@@ -74,7 +58,6 @@ func routeDeploymentFailure(run *DeliveryRun, actor Actor, release *Release, att
 		return err
 	}
 	run.ReleaseChecks = []ReleaseCheck{}
-	appendAcceptanceEvent(review, actor, bug.ID, "deployment_repair_started", diagnostic.Message, release.CodeRevision, bug.EvidenceRefs, now)
 	appendActivity(run, actor, "release_repair_routed", fmt.Sprintf("%s routed to %s repair", release.ID, attempt.FailureOwner), diagnostic.Message, now)
 	return nil
 }

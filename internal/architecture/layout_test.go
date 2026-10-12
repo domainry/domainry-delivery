@@ -256,6 +256,7 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 		commanddomain.ReleaseDeployResult,
 		commanddomain.ReleasePrepare,
 		commanddomain.ReleaseReconcile,
+		commanddomain.ReleaseReissue,
 	}
 	slices.Sort(expected)
 	definitions := commanddomain.Definitions()

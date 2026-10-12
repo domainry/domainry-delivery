@@ -198,6 +198,12 @@ func triageAcceptanceBug(run *DeliveryRun, command Command, now time.Time) error
 		if unit == nil {
 			return Invalid("acceptance_delivery_unit_missing")
 		}
+		bug.RetestCaseID = "T-" + bug.ID
+		run.TestCases = append(run.TestCases, TestCase{
+			ID: bug.RetestCaseID, FeatureID: unit.ID, Title: "Retest repaired bug: " + bug.Title,
+			Expected: "Reported behavior: " + bug.Description + " | Expected: " + bug.Expected + " | Previous actual: " + bug.Actual,
+			Revision: 1,
+		})
 		routeDeliveryUnitGap(unit, payload.Owner, []developmentRepairTarget{{
 			SourceKind: "acceptance_bug",
 			SourceID:   bug.ID,
@@ -403,7 +409,29 @@ func acceptanceReviewCurrent(run *DeliveryRun) bool {
 		return false
 	}
 	revision, ready := verifiedJourneyRevision(run)
-	return ready && revision == review.CandidateGitRevision && run.ExecutableRevision != nil && run.ExecutableRevision.CodeRevision == revision && allQualityPass(run, revision)
+	if !ready || run.ExecutableRevision == nil || run.ExecutableRevision.CodeRevision != revision || !allQualityPass(run, revision) {
+		return false
+	}
+	return revision == review.CandidateGitRevision || deploymentRepairRevision(run, revision)
+}
+
+func deploymentRepairRevision(run *DeliveryRun, revision string) bool {
+	foundDeploymentRepair := false
+	for unitIndex := range run.DeliveryUnits {
+		for _, repair := range run.DeliveryUnits[unitIndex].DevelopmentRepairItems {
+			if !repairHasRevision(repair, revision) {
+				continue
+			}
+			switch repair.SourceKind {
+			case "cloud_deployment":
+				foundDeploymentRepair = true
+			case "repair_validation":
+			default:
+				return false
+			}
+		}
+	}
+	return foundDeploymentRepair
 }
 
 func validAcceptanceSeverity(value string) bool {

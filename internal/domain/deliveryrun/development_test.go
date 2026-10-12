@@ -189,6 +189,38 @@ func TestIndependentQualityIsBoundToJourneyRevisionAndCanReopenBackend(t *testin
 	}
 }
 
+func TestQualityRepairRetestsOnlyTheFailedCase(t *testing.T) {
+	run := completedRun(t)
+	revision := run.DeliveryUnits[0].IntegratedGitRevision
+	failedCase := run.TestCases[len(run.TestCases)-1]
+	for _, testCase := range run.TestCases[:len(run.TestCases)-1] {
+		mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
+			"test_case_id": testCase.ID, "git_revision": revision,
+			"result": "pass", "note": "Independent observation matched the acceptance scenario",
+			"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/" + testCase.ID + ".md"},
+		})
+	}
+	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
+		"test_case_id": failedCase.ID, "git_revision": revision,
+		"result": "fail", "failure_owner": "backend", "note": "The final case exposed a backend defect",
+		"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/" + failedCase.ID + ".md"},
+	})
+	repairedRevision := strings.Repeat("c", 40)
+	advanceUnitAtRevision(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", repairedRevision)
+	verifier := delivery.Actor{ID: "verification-runner", Kind: delivery.ActorSystem}
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", repairedRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", repairedRevision)
+	mustApply(t, &run, agent("backend-agent"), "product_revision.record", map[string]any{
+		"content": run.ExecutableRevision.Content, "evidence_ref": "workspace:" + repairedRevision + "#evidence:evidence/product-revision.json",
+		"code_revision": repairedRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
+	})
+
+	projection := delivery.ProjectionFor(run)
+	if run.Stage != delivery.StageTesting || len(projection.Workflow.AvailableActions) != 1 || projection.Workflow.AvailableActions[0].Command != "quality.record" || projection.Workflow.AvailableActions[0].TargetID != failedCase.ID {
+		t.Fatalf("quality repair did not return only its failed case to QA: stage=%s actions=%#v", run.Stage, projection.Workflow.AvailableActions)
+	}
+}
+
 func TestIndependentQualityPassesEveryCaseBeforeAcceptance(t *testing.T) {
 	run := completedRun(t)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision
@@ -239,6 +271,7 @@ func TestAcceptanceBugTriageReopensFrontendWithoutLeavingAcceptance(t *testing.T
 func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing.T) {
 	run := completedRun(t)
 	passIndependentQuality(t, &run)
+	originalQualityRuns := len(run.QualityRuns)
 	readyAcceptanceEnvironment(t, &run)
 	originalRevision := run.AcceptanceReview.CandidateGitRevision
 	mustApply(t, &run, human("m-business"), "acceptance.bug.report", map[string]any{
@@ -266,7 +299,15 @@ func TestAcceptanceBugRepairRetestAndFinalConfirmationStayInOneReview(t *testing
 		"evidence_ref":  "workspace:" + repairedRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": repairedRevision, "model_sha256": strings.Repeat("d", 64),
 	})
+	bug := run.AcceptanceReview.Bugs[0]
+	projection := delivery.ProjectionFor(run)
+	if run.Stage != delivery.StageTesting || bug.RetestCaseID == "" || len(projection.Workflow.AvailableActions) != 1 || projection.Workflow.AvailableActions[0].Command != "quality.record" || projection.Workflow.AvailableActions[0].TargetID != bug.RetestCaseID {
+		t.Fatalf("repaired acceptance bug did not return only its affected case to QA: stage=%s bug=%#v actions=%#v", run.Stage, bug, projection.Workflow.AvailableActions)
+	}
 	passIndependentQuality(t, &run)
+	if len(run.QualityRuns) != originalQualityRuns+1 || run.QualityRuns[len(run.QualityRuns)-1].TestCaseID != bug.RetestCaseID {
+		t.Fatalf("acceptance repair reran unrelated quality cases: %#v", run.QualityRuns[originalQualityRuns:])
+	}
 	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.bug.fix.ready", bugID) {
 		t.Fatal("verified repair did not expose the trusted retest handoff")
 	}
@@ -381,11 +422,22 @@ func completedRun(t *testing.T) delivery.DeliveryRun {
 func passIndependentQuality(t *testing.T, run *delivery.DeliveryRun) {
 	t.Helper()
 	revision := run.DeliveryUnits[len(run.DeliveryUnits)-1].IntegratedGitRevision
-	for _, testCase := range run.TestCases {
+	for {
+		projection := delivery.ProjectionFor(*run)
+		var testCaseID string
+		for _, action := range projection.Workflow.AvailableActions {
+			if action.Command == "quality.record" {
+				testCaseID = action.TargetID
+				break
+			}
+		}
+		if testCaseID == "" {
+			return
+		}
 		mustApply(t, run, agent("qa-agent"), "quality.record", map[string]any{
-			"test_case_id": testCase.ID, "git_revision": revision,
+			"test_case_id": testCaseID, "git_revision": revision,
 			"result": "pass", "note": "The real end-to-end journey matched the expected outcome.",
-			"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/quality/" + testCase.ID + ".md"},
+			"evidence_refs": []string{"workspace:" + revision + "#evidence:evidence/quality/" + testCaseID + ".md"},
 		})
 	}
 }
