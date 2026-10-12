@@ -44,8 +44,8 @@ func validateDeploymentFailureRouting(run *DeliveryRun, outcome DeploymentOutcom
 }
 
 func routeDeploymentFailure(run *DeliveryRun, actor Actor, release *Release, attempt *DeploymentAttempt, now time.Time) error {
-	review := run.AcceptanceReview
-	if review == nil || review.Status != AcceptanceReviewAccepted || review.CandidateGitRevision != release.CodeRevision {
+	revision, ready := verifiedJourneyRevision(run)
+	if !ready || release.CodeRevision != revision || !acceptanceReviewCurrent(run) {
 		return Invalid("deployment_failure_acceptance_invalid")
 	}
 	diagnostic := attempt.Diagnostics[0]

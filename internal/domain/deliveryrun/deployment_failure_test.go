@@ -107,6 +107,20 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			if len(run.Releases) != 2 || run.Releases[1].Status != delivery.ReleaseApproved || run.Releases[1].CodeRevision != repairedRevision || run.Releases[1].EnvironmentRef != run.Releases[0].EnvironmentRef || run.Releases[1].Version != run.Releases[0].Version {
 				t.Fatalf("replacement Release did not retain the approved target on the repaired revision: %#v", run.Releases)
 			}
+			replacementID := run.Releases[1].ID
+			mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+				"release_id": replacementID, "outcome": "failure", "environment_ref": "production",
+				"launch_url": "", "receipt_ref": "verdent://deployments/deploy-1/versions/version-2",
+				"failure_kind": "source", "failure_owner": "backend", "delivery_unit_id": run.DeliveryUnits[0].ID,
+				"diagnostics": []map[string]any{{
+					"code": "cloud_deployment_build_failed", "severity": "error", "path": "backend",
+					"message": "the repaired source still fails the cloud build", "owner": "backend", "category": "cloud_build",
+					"remediation": "Continue the targeted backend repair without rerunning unrelated phases.",
+				}},
+			})
+			if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != run.DeliveryUnits[0].ID || run.DeliveryUnits[0].Phase != delivery.DeliveryUnitBackendImplementation || run.Releases[1].Status != delivery.ReleaseFailed {
+				t.Fatalf("replacement Release failure was not routed back to the owning repair phase: stage=%s active=%q unit=%#v release=%#v", run.Stage, run.ActiveDeliveryUnitID, run.DeliveryUnits[0], run.Releases[1])
+			}
 		})
 	}
 }
