@@ -24,11 +24,27 @@ const (
 )
 
 func ensureAcceptanceReview(run *DeliveryRun, actor Actor, now time.Time) {
-	if run.AcceptanceReview != nil || activeDeliveryUnit(run) != nil || run.ExecutableRevision == nil {
+	if activeDeliveryUnit(run) != nil || run.ExecutableRevision == nil {
 		return
 	}
 	revision, ready := verifiedJourneyRevision(run)
 	if !ready || run.ExecutableRevision.CodeRevision != revision || !allQualityPass(run, revision) {
+		return
+	}
+	if run.AcceptanceReview != nil {
+		review := run.AcceptanceReview
+		if review.Status != AcceptanceReviewAccepted || acceptanceReviewCurrent(run) {
+			return
+		}
+		review.Status = AcceptanceReviewOpen
+		review.CandidateGitRevision = revision
+		review.EnvironmentRevision = ""
+		review.EnvironmentRef = ""
+		review.RuntimeURL = ""
+		review.AcceptedBy = ""
+		review.AcceptedAt = nil
+		appendAcceptanceEvent(review, actor, "", "acceptance_reopened", "Verified product changes require renewed business acceptance.", revision, nil, now)
+		appendActivity(run, actor, "acceptance_reopened", "User acceptance reopened", revision, now)
 		return
 	}
 	review := &AcceptanceReview{

@@ -162,6 +162,70 @@ func TestStaleApprovedReleaseIsReissuedForTheCurrentVerifiedRevision(t *testing.
 	}
 }
 
+func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
+	run := completedRun(t)
+	acceptedRevision := run.DeliveryUnits[0].IntegratedGitRevision
+	passIndependentQuality(t, &run)
+	passBusinessAcceptance(t, &run)
+	mustApply(t, &run, agent("op-agent"), "release_checks.replace", map[string]any{
+		"environment_ref": "production",
+		"checks":          []map[string]any{{"id": "RC-01", "title": "Production configuration verified", "required": true}},
+	})
+	mustApply(t, &run, agent("op-agent"), "release_check.record", map[string]any{
+		"check_id": "RC-01", "status": "passed", "note": "Configuration verified",
+		"evidence_refs": []string{"workspace:" + acceptedRevision + "#evidence:evidence/release/RC-01.md"},
+	})
+	mustApply(t, &run, human("m-product"), "release.prepare", map[string]any{
+		"version": "1.0.0", "environment_ref": "production",
+	})
+	releaseID := run.Releases[0].ID
+	mustApply(t, &run, human("m-release"), "release.approve", map[string]any{"release_id": releaseID})
+	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
+		"release_id": releaseID, "outcome": "failure", "environment_ref": "production",
+		"receipt_ref":  "verdent://deployments/deploy-1/versions/version-1",
+		"failure_kind": "source", "failure_owner": "backend", "delivery_unit_id": run.DeliveryUnits[0].ID,
+		"diagnostics": []map[string]any{{
+			"code": "cloud_deployment_build_failed", "severity": "error", "path": "backend",
+			"message": "go build failed in the cloud image build", "owner": "backend", "category": "cloud_build",
+			"remediation": "Repair the backend build without rerunning unrelated phases.",
+		}},
+	})
+
+	deploymentRevision := strings.Repeat("b", 40)
+	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.backend.complete", "backend_implementation", deploymentRevision)
+	verifier := delivery.Actor{ID: "verification-runner", Kind: delivery.ActorSystem}
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", deploymentRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", deploymentRevision)
+	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
+		"content": run.ExecutableRevision.Content, "evidence_ref": "workspace:" + deploymentRevision + "#evidence:evidence/product-revision.json",
+		"code_revision": deploymentRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
+	})
+	qualityAction := delivery.ProjectionFor(run).Workflow.AvailableActions[0]
+	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
+		"test_case_id": qualityAction.TargetID, "git_revision": deploymentRevision, "result": "fail",
+		"note": "The deployment retest exposed a frontend product defect.", "failure_owner": "frontend",
+		"evidence_refs": []string{"workspace:" + deploymentRevision + "#evidence:evidence/quality/failure.md"},
+	})
+
+	productRevision := strings.Repeat("c", 40)
+	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.frontend.complete", "frontend_implementation", productRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", productRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", productRevision)
+	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
+		"content": run.ExecutableRevision.Content, "evidence_ref": "workspace:" + productRevision + "#evidence:evidence/product-revision.json",
+		"code_revision": productRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
+	})
+	passIndependentQuality(t, &run)
+
+	review := run.AcceptanceReview
+	if run.Stage != delivery.StageAcceptance || review == nil || review.Status != delivery.AcceptanceReviewOpen || review.CandidateGitRevision != productRevision || review.EnvironmentRevision != "" || review.EnvironmentRef != "" || review.RuntimeURL != "" || review.AcceptedBy != "" || review.AcceptedAt != nil {
+		t.Fatalf("product defect discovered during deployment repair did not reopen acceptance for the verified revision: stage=%s review=%#v", run.Stage, review)
+	}
+	if !hasProjectedAction(delivery.ProjectionFor(run), "acceptance.environment.ready", review.ID) {
+		t.Fatalf("reopened acceptance did not request the current environment: %#v", delivery.ProjectionFor(run).Workflow.AvailableActions)
+	}
+}
+
 func TestPlatformDeploymentFailureDoesNotInventSourceRepair(t *testing.T) {
 	run := completedRun(t)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision
