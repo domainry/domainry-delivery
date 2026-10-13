@@ -156,6 +156,31 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	return nil
 }
 
+func deleteFeature(product *Product, command Command) error {
+	var payload struct {
+		FeatureID string `json:"feature_id"`
+	}
+	if err := decode(command.Payload, &payload); err != nil {
+		return err
+	}
+	payload.FeatureID = strings.TrimSpace(payload.FeatureID)
+	if payload.FeatureID == "" {
+		return Invalid("feature_identity_incomplete")
+	}
+	for index := range product.Features {
+		feature := &product.Features[index]
+		if feature.ID != payload.FeatureID {
+			continue
+		}
+		if feature.Status != FeatureDraft || feature.Draft == nil {
+			return Invalid("feature_not_draft")
+		}
+		product.Features = append(product.Features[:index], product.Features[index+1:]...)
+		return nil
+	}
+	return NotFound("Feature", payload.FeatureID)
+}
+
 func featureAuthorizationPolicyFor(product *Product, _ string) featureAuthorizationPolicy {
 	knownRoleIDs := map[string]bool{}
 	if len(product.Revisions) > 0 {
@@ -311,6 +336,7 @@ func ProductProjectionFor(product Product) ProductProjection {
 		for _, feature := range product.Features {
 			switch feature.Status {
 			case FeatureDraft:
+				add(commandFeatureDelete, feature.ID)
 				if feature.Draft != nil && feature.Draft.Readiness.Status == "ready" {
 					add(commandFeatureConfirm, feature.ID)
 				}

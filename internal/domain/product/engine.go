@@ -18,6 +18,7 @@ const (
 	commandProductFoundationFail   = commanddomain.ProductFoundationFailed
 	commandFeatureDiscoveryOpen    = commanddomain.FeatureDiscoveryOpen
 	commandFeatureDiscoveryReplace = commanddomain.FeatureDiscoveryReplace
+	commandFeatureDelete           = commanddomain.FeatureDelete
 	commandFeatureConfirm          = commanddomain.FeatureConfirm
 	commandFeatureRebase           = commanddomain.FeatureRebase
 	commandFeatureDelivery         = commanddomain.FeatureDeliveryStart
@@ -144,6 +145,11 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 			return Invalid("actor_unauthorized")
 		}
 		err = replaceFeatureDiscovery(product, command, now)
+	case commandFeatureDelete:
+		if command.Actor.Kind != ActorHuman {
+			return Invalid("human_confirmation_required")
+		}
+		err = deleteFeature(product, command)
 	case commandFeatureConfirm:
 		if command.Actor.Kind != ActorHuman {
 			return Invalid("human_confirmation_required")

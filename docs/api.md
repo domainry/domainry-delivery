@@ -75,7 +75,7 @@ Product commands come from the typed command catalog:
 - `product.engineering.foundation.started`,
   `product.engineering.foundation.completed`,
   `product.engineering.foundation.failed`
-- `feature.discovery.open`, `feature.discovery.replace`, `feature.confirm`, `feature.rebase`
+- `feature.discovery.open`, `feature.discovery.replace`, `feature.delete`, `feature.confirm`, `feature.rebase`
 - `feature.delivery.start` through the DeliveryRun creation endpoint
 
 Frontend completion is a technical initialization gate backed by the recorded
@@ -86,6 +86,9 @@ acceptance environment.
 Feature confirmation freezes the complete discovery and specification as one
 immutable FeatureRevision against its exact ProductRevision baseline. Starting
 a run rejects stale baselines rather than silently rebasing the requirement.
+Only a draft Feature can be deleted. Deletion removes it from the active Product
+aggregate while retaining its archived conversation messages and original
+attachments for source traceability.
 
 ## DeliveryRun
 

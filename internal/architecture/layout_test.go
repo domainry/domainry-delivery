@@ -236,6 +236,7 @@ func TestTypedCommandCatalogIsTheCompleteMutationInventory(t *testing.T) {
 		commanddomain.DeliveryUnitModelComplete,
 		commanddomain.DeliveryUnitModelVerify,
 		commanddomain.FeatureConfirm,
+		commanddomain.FeatureDelete,
 		commanddomain.FeatureDeliveryStart,
 		commanddomain.FeatureDiscoveryOpen,
 		commanddomain.FeatureDiscoveryReplace,

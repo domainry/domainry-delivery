@@ -752,6 +752,42 @@ func TestEveryFeatureRequiresExplicitAuthorization(t *testing.T) {
 	}
 }
 
+func TestFeatureDeleteRequiresHumanAndOnlyRemovesDraft(t *testing.T) {
+	product := newProduct(t)
+	draft := featureDraftPayload("feature-draft", "F-001")
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", draft)
+	if !hasAction(delivery.ProductProjectionFor(product).AvailableActions, "feature.delete", "feature-draft", delivery.ActorHuman) {
+		t.Fatalf("draft Feature did not expose human deletion: %#v", delivery.ProductProjectionFor(product).AvailableActions)
+	}
+
+	err := applyProduct(&product, agent("pm-agent"), "feature.delete", map[string]any{"feature_id": "feature-draft"})
+	domainError, ok := err.(*delivery.Error)
+	if !ok || domainError.Code != "human_confirmation_required" {
+		t.Fatalf("expected human deletion requirement, got %#v", err)
+	}
+
+	mustApplyProduct(t, &product, human("product-owner"), "feature.delete", map[string]any{"feature_id": "feature-draft"})
+	if !reflect.DeepEqual(product.Features, []delivery.Feature{}) {
+		t.Fatalf("draft Feature was not removed: %#v", product.Features)
+	}
+
+	confirmed := featureDraftPayload("feature-confirmed", "F-001")
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", confirmed)
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-confirmed", "draft_version": 1})
+	if hasAction(delivery.ProductProjectionFor(product).AvailableActions, "feature.delete", "feature-confirmed", delivery.ActorHuman) {
+		t.Fatalf("confirmed Feature exposed deletion: %#v", delivery.ProductProjectionFor(product).AvailableActions)
+	}
+	confirmedBefore := product.Features[0]
+	err = applyProduct(&product, human("product-owner"), "feature.delete", map[string]any{"feature_id": "feature-confirmed"})
+	domainError, ok = err.(*delivery.Error)
+	if !ok || domainError.Code != "feature_not_draft" {
+		t.Fatalf("expected confirmed Feature deletion to fail, got %#v", err)
+	}
+	if !reflect.DeepEqual(product.Features, []delivery.Feature{confirmedBefore}) {
+		t.Fatalf("rejected deletion changed the confirmed Feature: %#v", product.Features)
+	}
+}
+
 func TestFeatureAuthorizationUnknownScenarioIdentifiesGrantAndScenario(t *testing.T) {
 	product := newProduct(t)
 	payload := featureDraftPayload("feature-cancel", "F-001")
