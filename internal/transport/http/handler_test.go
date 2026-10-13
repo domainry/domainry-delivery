@@ -269,6 +269,17 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 		t.Fatalf("feature.rebase did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
 	}
 
+	request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/workspaces/workspace-1/products/missing/commands",
+		strings.NewReader(`{"client_id":"delete-1","expected_revision":1,"type":"feature.delete","payload":{"feature_id":"feature-1"}}`),
+	).WithContext(requestContext)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("feature.delete did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
+	}
+
 	systemContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "deck", Kind: delivery.ActorSystem},
 		application.PermissionDeploymentRecord,
