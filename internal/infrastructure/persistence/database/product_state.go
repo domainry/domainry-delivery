@@ -218,6 +218,23 @@ func (store *Store) persistProductRelations(ctx context.Context, transaction sql
 			return storageError(err)
 		}
 	}
+	featurePredicate := ormquery.Equal("product_id", product.ID)
+	if len(product.Features) > 0 {
+		featureIDs := make([]any, 0, len(product.Features))
+		for _, feature := range product.Features {
+			featureIDs = append(featureIDs, feature.ID)
+		}
+		featurePredicate = ormquery.And(featurePredicate, ormquery.NotIn("feature_id", featureIDs...))
+	}
+	statement, arguments, err := ormquery.NewWorkspaceDeleteBuilder(store.renderer, TableFeatures, product.WorkspaceID).
+		Where(featurePredicate).
+		Build()
+	if err != nil {
+		return storageError(err)
+	}
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
+		return storageError(err)
+	}
 	for _, feature := range product.Features {
 		if err := store.persistFeature(ctx, transaction, product, feature); err != nil {
 			return err

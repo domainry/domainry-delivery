@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-delivery/internal/domain/conversation"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/testfixture"
@@ -251,6 +253,60 @@ func TestProductCommandsAreIdempotentAndRevisionFenced(t *testing.T) {
 	}
 	if len(products) != 1 || products[0].ID != "product-1" {
 		t.Fatalf("restored Product is not visible: %#v", products)
+	}
+}
+
+func TestFeatureDeletePersistsAcrossReloadAndRetainsConversationArchive(t *testing.T) {
+	store := openTestStore(t)
+	defer store.Close()
+	service := application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store})
+	product := testfixture.DemoProduct(time.Now().UTC())
+	deletedFeature := &product.Features[0]
+	deletedFeature.Status = productdomain.FeatureDraft
+	deletedFeature.CurrentRevision = 0
+	deletedFeature.ConfirmedRevision = 0
+	deletedFeature.DeliverySequence = 0
+	deletedFeature.QueuedAt = nil
+	deletedFeature.Revisions = []productdomain.FeatureRevision{}
+	deletedFeature.Draft = &productdomain.FeatureDraftState{Version: 1, Title: "Draft cancellation"}
+	deletedFeatureID := deletedFeature.ID
+	seedProduct(t, store, product)
+
+	message := conversation.Message{
+		ID: "message-1", ConversationID: conversation.ConversationID(product.WorkspaceID, product.ID, deletedFeatureID),
+		TurnID: "turn-1", Role: "user", Text: "Keep this archived requirement evidence.", AttachmentIDs: []string{},
+		CreatedBy: "owner", DeviceID: "device-1", CreatedAt: time.Now().UTC().UnixMilli(),
+	}
+	if _, err := store.PutMessage(t.Context(), product.WorkspaceID, product.ID, deletedFeatureID, message); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := application.WithTrustedPrincipal(
+		context.Background(), product.WorkspaceID, delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
+		application.PermissionProductRead, application.PermissionProductWrite,
+	)
+	updated, err := service.DispatchProduct(ctx, product.WorkspaceID, product.ID, delivery.Command{
+		ClientID: "delete-feature", ExpectedRevision: product.Revision,
+		Type: "feature.delete", Payload: json.RawMessage(`{"feature_id":"F-001"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.GetProduct(t.Context(), product.WorkspaceID, product.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reloaded.Features, updated.Features) {
+		t.Fatalf("deleted Feature returned after reload: got %#v, want %#v", reloaded.Features, updated.Features)
+	}
+
+	archived, err := store.ListMessages(t.Context(), product.WorkspaceID, product.ID, deletedFeatureID, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message.SourceID = conversation.SourceID(message.ConversationID, message.ID)
+	if !reflect.DeepEqual(archived, []conversation.Message{message}) {
+		t.Fatalf("Feature conversation archive changed during deletion: got %#v, want %#v", archived, []conversation.Message{message})
 	}
 }
 
