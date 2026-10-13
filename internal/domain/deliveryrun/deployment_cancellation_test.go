@@ -6,7 +6,7 @@ import (
 	delivery "github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 )
 
-func TestCancelledDeploymentCanBeRetriedWithoutAutomaticScheduling(t *testing.T) {
+func TestCancelledDeploymentCanBeRetriedByTheDeploymentAdapter(t *testing.T) {
 	run := completedRun(t)
 	revision := run.DeliveryUnits[0].IntegratedGitRevision
 	passIndependentQuality(t, &run)
@@ -32,8 +32,8 @@ func TestCancelledDeploymentCanBeRetriedWithoutAutomaticScheduling(t *testing.T)
 	if run.Stage != delivery.StageRelease || run.Releases[0].Status != delivery.ReleaseCancelled {
 		t.Fatalf("cancelled deployment did not remain resumable in release: %#v", run.Releases[0])
 	}
-	if hasProjectedAction(delivery.ProjectionFor(run), "release.deploy_result", releaseID) {
-		t.Fatal("cancelled deployment was immediately scheduled again")
+	if !hasProjectedAction(delivery.ProjectionFor(run), "release.deploy_result", releaseID) {
+		t.Fatal("cancelled deployment could not be resumed by the deployment adapter")
 	}
 
 	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
@@ -67,6 +67,9 @@ func TestFailedPlatformDeploymentCanRetryTheSameRelease(t *testing.T) {
 		"release_id": releaseID, "outcome": "failure", "environment_ref": "production",
 		"receipt_ref": "verdent://deployments/deploy-1/versions/version-1", "failure_kind": "platform",
 	})
+	if !hasProjectedAction(delivery.ProjectionFor(run), "release.deploy_result", releaseID) {
+		t.Fatal("failed platform deployment could not be retried by the deployment adapter")
+	}
 	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
 		"release_id": releaseID, "outcome": "success", "environment_ref": "production",
 		"launch_url": "https://product.example", "receipt_ref": "verdent://deployments/deploy-2/versions/version-2",

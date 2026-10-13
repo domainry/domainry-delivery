@@ -15,15 +15,23 @@ func releaseActions(run *DeliveryRun) []AvailableAction {
 			return []AvailableAction{catalogAction(commandReleaseReissue, release.ID)}
 		}
 	}
-	for _, release := range run.Releases {
+	for index := len(run.Releases) - 1; index >= 0; index-- {
+		release := &run.Releases[index]
 		switch release.Status {
 		case ReleaseDraft:
 			return []AvailableAction{catalogAction(commandReleaseApprove, release.ID)}
-		case ReleaseApproved:
+		case ReleaseApproved, ReleaseCancelled:
 			return []AvailableAction{catalogAction(commandReleaseDeployResult, release.ID)}
+		case ReleaseFailed:
+			if len(release.DeploymentAttempts) == 0 || release.DeploymentAttempts[len(release.DeploymentAttempts)-1].FailureKind != deploymentFailurePlatform {
+				continue
+			}
+			if ensureReleaseStillValid(run, release) == nil {
+				return []AvailableAction{catalogAction(commandReleaseDeployResult, release.ID)}
+			}
 		case ReleaseNeedsReconciliation:
 			return []AvailableAction{catalogAction(commandReleaseReconcile, release.ID)}
-		case ReleaseCancelled, ReleaseLive, ReleaseFailed, ReleaseUnpublished:
+		case ReleaseLive, ReleaseUnpublished:
 		}
 	}
 	actions := make([]AvailableAction, 0, len(run.ReleaseChecks)+1)
