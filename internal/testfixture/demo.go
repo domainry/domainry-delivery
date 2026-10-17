@@ -29,7 +29,7 @@ func DemoProduct(now time.Time) delivery.Product {
 		ID: DemoProductID, WorkspaceID: DemoWorkspaceID, Name: "GreenFit Location Operations", Code: "GREENFIT",
 		Goal: "Make booking, cancellation, capacity control, and exception approval executable and traceable.", Industry: "Fitness and wellness",
 		Engineering: delivery.ProductEngineering{
-			Status: delivery.EngineeringReady, FrontendCodeRevision: "workspace:demo-engineering", FrontendArtifactRef: "deck-artifact://sha256/demo-engineering",
+			Mode: delivery.EngineeringInitialize, Status: delivery.EngineeringReady, FrontendCodeRevision: "workspace:demo-engineering", FrontendArtifactRef: "deck-artifact://sha256/demo-engineering",
 			DesignContractRef: "deck-evidence://sha256/demo-design", LoginEntry: "frontend/src/pages/Login.tsx", ShellEntry: "frontend/src/AppShell.tsx", PreviewEntry: "frontend/dist/index.html",
 			ApplicationDeliverySHA256: strings.Repeat("a", 64), FoundationReleaseSHA256: strings.Repeat("b", 64), FoundationPackageSHA256: strings.Repeat("c", 64),
 			FoundationModelSHA256: strings.Repeat("d", 64), FoundationIdempotencyKey: strings.Repeat("e", 64), FoundationCodeRevision: strings.Repeat("f", 40),

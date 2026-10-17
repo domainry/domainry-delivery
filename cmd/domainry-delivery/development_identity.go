@@ -47,6 +47,7 @@ func developmentIdentityFromEnvironment(serverAddr string) (developmentIdentity,
 		application.PermissionProductWrite,
 		application.PermissionDeliveryRunRead,
 		application.PermissionDeliveryRunWrite,
+		application.PermissionDeploymentRecord,
 	}
 	inputs := []struct {
 		env   string

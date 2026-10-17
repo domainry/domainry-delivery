@@ -140,11 +140,11 @@ func (store *Store) insertProductState(ctx context.Context, transaction sqlhost.
 	statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableProducts, product.WorkspaceID).
 		Columns(
 			"product_id", "name", "code", "goal", "industry", "engineering_json", "status", "revision",
-			"current_definition_revision", "current_release_revision", "current_deployment_json", "created_at", "updated_at",
+			"current_definition_revision", "current_release_revision", "current_deployment_json", "active_code", "created_at", "updated_at",
 		).
 		Values(
 			product.ID, product.Name, product.Code, product.Goal, product.Industry, engineeringJSON, product.Status, product.Revision,
-			product.CurrentDefinitionRevision, product.CurrentReleaseRevision, deploymentJSON,
+			product.CurrentDefinitionRevision, product.CurrentReleaseRevision, deploymentJSON, activeProductCode(product),
 			product.CreatedAt.UnixMilli(), product.UpdatedAt.UnixMilli(),
 		).
 		Build()
@@ -177,6 +177,7 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 		Set("current_definition_revision", product.CurrentDefinitionRevision).
 		Set("current_release_revision", product.CurrentReleaseRevision).
 		Set("current_deployment_json", deploymentJSON).
+		Set("active_code", activeProductCode(product)).
 		Set("updated_at", product.UpdatedAt.UnixMilli()).
 		Where(ormquery.And(
 			ormquery.Equal("product_id", product.ID),
@@ -198,6 +199,13 @@ func (store *Store) updateProductState(ctx context.Context, transaction sqlhost.
 		return domain.Conflict(expectedRevision)
 	}
 	return store.persistProductRelations(ctx, transaction, product)
+}
+
+func activeProductCode(product productdomain.Product) any {
+	if product.Status == productdomain.ProductArchived {
+		return nil
+	}
+	return product.Code
 }
 
 func (store *Store) persistProductRelations(ctx context.Context, transaction sqlhost.DBTX, product productdomain.Product) error {

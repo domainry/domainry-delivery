@@ -16,7 +16,7 @@ import (
 func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRenderer, workspaceID, runID string) (deliveryrun.DeliveryRun, error) {
 	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(renderer, TableRuns, workspaceID).
 		Columns(
-			"run_id", "workspace_id", "name", "code", "goal", "target_date", "stage", "revision", "product_snapshot_json",
+			"run_id", "workspace_id", "mode", "source_revision", "source_ref", "name", "code", "goal", "target_date", "stage", "revision", "product_snapshot_json",
 			"feature_snapshot_json", "members_json", "active_delivery_unit_id", "executable_revision_json", "acceptance_review_json", "created_at", "updated_at",
 		).
 		Where(ormquery.Equal("run_id", runID)).
@@ -28,7 +28,7 @@ func loadRunState(ctx context.Context, database sqlhost.DBTX, renderer sqlRender
 	var productJSON, featureJSON, membersJSON, executableJSON, acceptanceJSON []byte
 	var createdAt, updatedAt int64
 	err = database.QueryRowContext(ctx, statement, arguments...).Scan(
-		&run.ID, &run.WorkspaceID, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
+		&run.ID, &run.WorkspaceID, &run.Mode, &run.SourceRevision, &run.SourceRef, &run.Name, &run.Code, &run.Goal, &run.TargetDate, &run.Stage, &run.Revision,
 		&productJSON, &featureJSON, &membersJSON, &run.ActiveDeliveryUnitID, &executableJSON, &acceptanceJSON, &createdAt, &updatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -97,12 +97,12 @@ func (store *Store) insertRunState(ctx context.Context, transaction sqlhost.DBTX
 	}
 	statement, arguments, err := ormquery.NewWorkspaceInsertBuilder(store.renderer, TableRuns, run.WorkspaceID).
 		Columns(
-			"run_id", "product_id", "name", "code", "goal", "target_date", "stage", "revision",
+			"run_id", "product_id", "mode", "source_revision", "source_ref", "name", "code", "goal", "target_date", "stage", "revision",
 			"product_snapshot_json", "feature_snapshot_json", "members_json", "active_delivery_unit_id",
 			"executable_revision_json", "acceptance_review_json", "created_at", "updated_at",
 		).
 		Values(
-			run.ID, run.Product.ID, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
+			run.ID, run.Product.ID, run.Mode, run.SourceRevision, run.SourceRef, run.Name, run.Code, run.Goal, run.TargetDate, run.Stage, run.Revision,
 			productJSON, featureJSON, membersJSON, run.ActiveDeliveryUnitID, executableJSON, acceptanceJSON,
 			run.CreatedAt.UnixMilli(), run.UpdatedAt.UnixMilli(),
 		).
@@ -123,6 +123,9 @@ func (store *Store) updateRunState(ctx context.Context, transaction sqlhost.DBTX
 	}
 	statement, arguments, err := ormquery.NewWorkspaceUpdateBuilder(store.renderer, TableRuns, run.WorkspaceID).
 		Set("product_id", run.Product.ID).
+		Set("mode", run.Mode).
+		Set("source_revision", run.SourceRevision).
+		Set("source_ref", run.SourceRef).
 		Set("name", run.Name).
 		Set("code", run.Code).
 		Set("goal", run.Goal).

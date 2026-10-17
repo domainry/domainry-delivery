@@ -8,7 +8,20 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain"
 )
 
-func newDeliveryUnits(feature FeatureSnapshot) ([]DeliveryUnit, string) {
+func newDeliveryUnits(feature FeatureSnapshot, mode DeliveryMode, sourceRevision string) ([]DeliveryUnit, string) {
+	if mode == DeliveryModeExistingSourceVerification {
+		unit := DeliveryUnit{
+			ID: feature.ID, Title: feature.Title, DependsOn: []string{},
+			Phase: DeliveryUnitModelVerification, ActiveRole: activeRoleForPhase(DeliveryUnitModelVerification),
+			InteractionStatus: DeliveryGatePassed, ModelStatus: DeliveryGatePending,
+			BackendStatus: DeliveryGatePassed, FrontendStatus: DeliveryGatePassed,
+			ContractStatus: DeliveryGatePending, JourneyStatus: DeliveryGatePending,
+			BackendGitRevision:     sourceRevision,
+			DevelopmentTodos:       existingSourceVerificationTodos(feature.ID),
+			DevelopmentRepairItems: []DevelopmentRepairWorkItem{},
+		}
+		return []DeliveryUnit{unit}, unit.ID
+	}
 	unit := DeliveryUnit{
 		ID:                     feature.ID,
 		Title:                  feature.Title,
@@ -65,7 +78,10 @@ func deliveryUnitReleaseGates(run *DeliveryRun) []ReleaseGate {
 		{Code: "backend_guide_verified", Label: "Plane backend guide verified", Detail: fmt.Sprintf("%d delivery units", len(run.DeliveryUnits)), OK: backendGuideEvidenceReady(run)},
 		{Code: "product_revision_bound", Label: "Executable ProductRevision bound", Detail: executableRevisionDetail(run), OK: executableRevisionReady(run)},
 	}
-	gates = append(gates, qualityReleaseGate(run), acceptanceReleaseGate(run), releaseChecksGate(run))
+	gates = append(gates, qualityReleaseGate(run), acceptanceReleaseGate(run))
+	if run.Mode != DeliveryModeExistingSourceVerification {
+		gates = append(gates, releaseChecksGate(run))
+	}
 	return gates
 }
 
@@ -104,7 +120,7 @@ func lifecycleActions(run *DeliveryRun) []AvailableAction {
 		return acceptanceActions(run)
 	case StageRelease:
 		return releaseActions(run)
-	case StageDevelopment, StageLive:
+	case StageDevelopment, StageVerified, StageLive:
 		return []AvailableAction{}
 	}
 	return []AvailableAction{}
@@ -233,6 +249,9 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 	payload.GitRevision = strings.TrimSpace(payload.GitRevision)
 	payload.Summary = strings.TrimSpace(payload.Summary)
 	payload.FailureOwner = strings.TrimSpace(payload.FailureOwner)
+	if run.Mode == DeliveryModeExistingSourceVerification && payload.GitRevision != run.SourceRevision {
+		return Invalid("delivery_source_revision_changed")
+	}
 	if !validCodeRevision(payload.GitRevision) || payload.Summary == "" || len(payload.Summary) > 2000 {
 		return Invalid("delivery_unit_gate_invalid")
 	}
@@ -269,14 +288,11 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 	if err := validateModelRepairImpact(unit, command.Type, payload); err != nil {
 		return err
 	}
-	if err := validateBackendGuideEvidence(command.Type, payload.BackendGuide); err != nil {
+	if err := validateBackendGuideEvidenceForRun(run, command.Type, payload.BackendGuide, payload.GitRevision); err != nil {
 		return err
 	}
 	if payload.BackendGuide != nil {
 		evidence := payload.BackendGuide
-		if err := validateBackendGuideEvidenceForRun(run, command.Type, evidence, payload.GitRevision); err != nil {
-			return err
-		}
 		if (command.Type == commandContractVerify || command.Type == commandJourneyComplete) &&
 			(unit.ModelEvidence == nil || !strings.EqualFold(strings.TrimSpace(evidence.ModelSHA256), strings.TrimSpace(unit.ModelEvidence.ModelSHA256))) {
 			return Invalid("backend_evidence_model_mismatch")
@@ -286,7 +302,11 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 }
 
 func validateBackendGuideEvidenceForRun(run *DeliveryRun, command string, evidence *BackendGuideEvidence, gitRevision string) error {
-	if err := validateBackendGuideEvidence(command, evidence); err != nil {
+	if run.Mode == DeliveryModeExistingSourceVerification && command == commandContractVerify {
+		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.HistoricalSourceContract || !evidence.ModelContractPresent || !evidence.RuntimeEntrypointPresent || !evidence.BackendModulePresent || !evidence.FrontendPackagePresent || !evidence.FrontendProjectClientPresent || !evidence.SourceRevisionUnchanged {
+			return Invalid("historical_source_contract_evidence_invalid")
+		}
+	} else if err := validateBackendGuideEvidence(command, evidence); err != nil {
 		return err
 	}
 	if evidence == nil {

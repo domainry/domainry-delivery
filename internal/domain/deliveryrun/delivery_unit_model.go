@@ -162,6 +162,13 @@ type BackendGuideEvidence struct {
 	EmptyDatabaseInitPassed       bool      `json:"empty_database_init_passed"`
 	SameModelRestartPassed        bool      `json:"same_model_restart_passed"`
 	IncrementalModelRestartPassed bool      `json:"incremental_model_restart_passed"`
+	HistoricalSourceContract      bool      `json:"historical_source_contract"`
+	ModelContractPresent          bool      `json:"model_contract_present"`
+	RuntimeEntrypointPresent      bool      `json:"runtime_entrypoint_present"`
+	BackendModulePresent          bool      `json:"backend_module_present"`
+	FrontendPackagePresent        bool      `json:"frontend_package_present"`
+	FrontendProjectClientPresent  bool      `json:"frontend_project_client_present"`
+	SourceRevisionUnchanged       bool      `json:"source_revision_unchanged"`
 	MockJourneyPassed             bool      `json:"mock_journey_passed"`
 	RuntimeJourneyPassed          bool      `json:"runtime_journey_passed"`
 }

@@ -29,6 +29,13 @@ const (
 	EngineeringReady                EngineeringStatus = "ready"
 )
 
+type EngineeringMode string
+
+const (
+	EngineeringInitialize          EngineeringMode = "initialize"
+	EngineeringAdoptExistingSource EngineeringMode = "adopt_existing_source"
+)
+
 // Product is the long-lived aggregate. Its story and executable definition are
 // versioned together so the human explanation cannot drift from the runtime
 // source of truth.
@@ -51,10 +58,13 @@ type Product struct {
 	UpdatedAt                 time.Time          `json:"updated_at"`
 }
 
-// ProductEngineering tracks the one-time technical project initialization
-// that RD performs outside the business Feature lifecycle.
+// ProductEngineering records whether Delivery initializes an empty project or
+// adopts an existing source baseline before the business Feature lifecycle.
 type ProductEngineering struct {
+	Mode                         EngineeringMode   `json:"mode"`
 	Status                       EngineeringStatus `json:"status"`
+	SourceRevision               string            `json:"source_revision,omitempty"`
+	SourceRef                    string            `json:"source_ref,omitempty"`
 	FrontendCodeRevision         string            `json:"frontend_code_revision,omitempty"`
 	FrontendArtifactRef          string            `json:"frontend_artifact_ref,omitempty"`
 	DesignContractRef            string            `json:"design_contract_ref,omitempty"`

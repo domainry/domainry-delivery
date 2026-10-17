@@ -32,53 +32,65 @@ type SummaryProgress struct {
 
 func SummaryFor(run DeliveryRun) Summary {
 	completed := 0
-	journeysPassed := 0
 	for _, unit := range run.DeliveryUnits {
 		if unit.Phase == DeliveryUnitComplete {
 			completed++
 		}
-		if unit.JourneyStatus == DeliveryGatePassed {
-			journeysPassed++
-		}
 	}
 
 	passed := 0
-	if run.Feature.ID != "" && run.Feature.Source.FeatureRevision > 0 {
-		passed++
-	}
-	if len(run.DeliveryUnits) > 0 && completed == len(run.DeliveryUnits) {
-		passed++
-	}
-	if len(run.DeliveryUnits) > 0 && journeysPassed == len(run.DeliveryUnits) {
-		passed++
-	}
-	if backendGuideEvidenceReady(&run) {
-		passed++
-	}
-	// Entering testing proves the executable revision gate passed. Later stages
-	// prove the preceding quality and acceptance gates by domain transition.
-	if stageAtLeast(run.Stage, StageTesting) {
-		passed++
-	}
-	if stageAtLeast(run.Stage, StageAcceptance) {
-		passed++
-	}
-	if stageAtLeast(run.Stage, StageRelease) {
-		passed++
-	}
-	if len(run.ReleaseChecks) > 0 {
-		allPassed := true
-		for _, check := range run.ReleaseChecks {
-			if check.Status != ReleaseCheckPassed {
-				allPassed = false
-				break
+	total := 8
+	if run.Mode == DeliveryModeExistingSourceVerification {
+		releaseGates := deliveryUnitReleaseGates(&run)
+		total = len(releaseGates)
+		for _, gate := range releaseGates {
+			if gate.OK {
+				passed++
 			}
 		}
-		if allPassed {
+	} else {
+		journeysPassed := 0
+		for _, unit := range run.DeliveryUnits {
+			if unit.JourneyStatus == DeliveryGatePassed {
+				journeysPassed++
+			}
+		}
+		if run.Feature.ID != "" && run.Feature.Source.FeatureRevision > 0 {
 			passed++
 		}
+		if len(run.DeliveryUnits) > 0 && completed == len(run.DeliveryUnits) {
+			passed++
+		}
+		if len(run.DeliveryUnits) > 0 && journeysPassed == len(run.DeliveryUnits) {
+			passed++
+		}
+		if backendGuideEvidenceReady(&run) {
+			passed++
+		}
+		// Entering testing proves the executable revision gate passed. Later stages
+		// prove the preceding quality and acceptance gates by domain transition.
+		if stageAtLeast(run.Stage, StageTesting) {
+			passed++
+		}
+		if stageAtLeast(run.Stage, StageAcceptance) {
+			passed++
+		}
+		if stageAtLeast(run.Stage, StageRelease) {
+			passed++
+		}
+		if len(run.ReleaseChecks) > 0 {
+			allPassed := true
+			for _, check := range run.ReleaseChecks {
+				if check.Status != ReleaseCheckPassed {
+					allPassed = false
+					break
+				}
+			}
+			if allPassed {
+				passed++
+			}
+		}
 	}
-
 	var latestActionable *time.Time
 	for _, release := range run.Releases {
 		if !actionableReleaseStatus(release.Status) {
@@ -104,7 +116,7 @@ func SummaryFor(run DeliveryRun) Summary {
 			DeliveryUnitsCompleted: completed,
 			DeliveryUnitsTotal:     len(run.DeliveryUnits),
 			ReleaseGatesPassed:     passed,
-			ReleaseGatesTotal:      8,
+			ReleaseGatesTotal:      total,
 		},
 		LatestActionableReleaseCreatedAt: latestActionable,
 		UpdatedAt:                        run.UpdatedAt,
@@ -116,6 +128,7 @@ func stageAtLeast(stage, expected Stage) bool {
 		StageDevelopment: 0,
 		StageTesting:     1,
 		StageAcceptance:  2,
+		StageVerified:    2,
 		StageRelease:     3,
 		StageLive:        4,
 	}

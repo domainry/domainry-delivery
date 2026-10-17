@@ -79,9 +79,10 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 		"client_id": "product-create-1", "expected_revision": 0, "type": "product.create",
 		"payload": map[string]any{
 			"name": "Booking Product", "code": "BOOKING", "goal": "Make booking executable", "industry": "Fitness",
-			"story":      map[string]any{"title": "Booking Product", "summary": "Booking", "narrative": "A member books a session and the location fulfills it."},
-			"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-			"decisions":  []any{},
+			"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+			"story":       map[string]any{"title": "Booking Product", "summary": "Booking", "narrative": "A member books a session and the location fulfills it."},
+			"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+			"decisions":   []any{},
 		},
 	})
 	if status != http.StatusCreated {

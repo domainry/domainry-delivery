@@ -35,10 +35,15 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 		return Product{}, Invalid("actor_unauthorized")
 	}
 	var payload struct {
-		Name       string            `json:"name"`
-		Code       string            `json:"code"`
-		Goal       string            `json:"goal"`
-		Industry   string            `json:"industry"`
+		Name        string `json:"name"`
+		Code        string `json:"code"`
+		Goal        string `json:"goal"`
+		Industry    string `json:"industry"`
+		Engineering struct {
+			Mode           EngineeringMode `json:"mode"`
+			SourceRevision string          `json:"source_revision"`
+			SourceRef      string          `json:"source_ref"`
+		} `json:"engineering"`
 		Story      ProductStory      `json:"story"`
 		Definition ProductDefinition `json:"definition"`
 		Decisions  []ProductDecision `json:"decisions"`
@@ -52,6 +57,8 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 	payload.Code = strings.TrimSpace(payload.Code)
 	payload.Goal = strings.TrimSpace(payload.Goal)
 	payload.Industry = strings.TrimSpace(payload.Industry)
+	payload.Engineering.SourceRevision = strings.TrimSpace(payload.Engineering.SourceRevision)
+	payload.Engineering.SourceRef = strings.TrimSpace(payload.Engineering.SourceRef)
 	payload.Definition = NormalizeProductDefinition(payload.Definition)
 	if workspaceID == "" || productID == "" || payload.Name == "" || payload.Code == "" || payload.Goal == "" || payload.Industry == "" {
 		return Product{}, Invalid("product_incomplete")
@@ -60,16 +67,22 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 	if err := ValidateProductRevisionContent(content, false); err != nil {
 		return Product{}, err
 	}
+	engineering, err := initialProductEngineering(
+		payload.Engineering.Mode,
+		payload.Engineering.SourceRevision,
+		payload.Engineering.SourceRef,
+	)
+	if err != nil {
+		return Product{}, err
+	}
 	return Product{
-		ID:          productID,
-		WorkspaceID: workspaceID,
-		Name:        payload.Name,
-		Code:        payload.Code,
-		Goal:        payload.Goal,
-		Industry:    payload.Industry,
-		Engineering: ProductEngineering{
-			Status: EngineeringFrontendQueued,
-		},
+		ID:                        productID,
+		WorkspaceID:               workspaceID,
+		Name:                      payload.Name,
+		Code:                      payload.Code,
+		Goal:                      payload.Goal,
+		Industry:                  payload.Industry,
+		Engineering:               engineering,
 		Status:                    ProductShaping,
 		Revision:                  1,
 		CurrentDefinitionRevision: 1,
@@ -82,6 +95,28 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
+}
+
+func initialProductEngineering(mode EngineeringMode, sourceRevision, sourceRef string) (ProductEngineering, error) {
+	switch mode {
+	case EngineeringInitialize:
+		if sourceRevision != "" || sourceRef != "" {
+			return ProductEngineering{}, Invalid("product_engineering_source_unexpected")
+		}
+		return ProductEngineering{Mode: mode, Status: EngineeringFrontendQueued}, nil
+	case EngineeringAdoptExistingSource:
+		if !validCodeRevision(sourceRevision) || sourceRef == "" {
+			return ProductEngineering{}, Invalid("product_engineering_source_incomplete")
+		}
+		return ProductEngineering{
+			Mode:           mode,
+			Status:         EngineeringReady,
+			SourceRevision: sourceRevision,
+			SourceRef:      sourceRef,
+		}, nil
+	default:
+		return ProductEngineering{}, Invalid("product_engineering_mode_invalid")
+	}
 }
 
 func ApplyProduct(product *Product, command Command, now time.Time) error {

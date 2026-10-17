@@ -197,7 +197,7 @@ func (store *Store) Transact(
 		if err := mutate(&run); err != nil {
 			return deliveryrun.DeliveryRun{}, err
 		}
-		if (run.Stage == deliveryrun.StageLive || mutation.CommandType == commanddomain.ReleaseDeployResult) && install != nil {
+		if (run.Stage == deliveryrun.StageLive || run.Stage == deliveryrun.StageVerified || mutation.CommandType == commanddomain.ReleaseDeployResult) && install != nil {
 			product, err := loadProductState(ctx, transaction, store.renderer, workspaceID, run.Product.ID)
 			if err != nil {
 				return deliveryrun.DeliveryRun{}, err

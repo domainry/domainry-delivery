@@ -166,9 +166,10 @@ func TestProductCommandsAreIdempotentAndRevisionFenced(t *testing.T) {
 	)
 	createPayload, _ := json.Marshal(map[string]any{
 		"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
-		"story":      map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
-		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-		"decisions":  []any{},
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+		"story":       map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
 	})
 	create := delivery.Command{
 		ClientID: "create-once", ExpectedRevision: 0, Actor: delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
@@ -237,6 +238,28 @@ func TestProductCommandsAreIdempotentAndRevisionFenced(t *testing.T) {
 	}
 	if retained.Status != productdomain.ProductArchived || retained.ID != "product-1" {
 		t.Fatalf("logical deletion did not retain the Product: %#v", retained)
+	}
+	replacementCreate := create
+	replacementCreate.ClientID = "create-replacement"
+	replacement, err := service.DispatchProduct(ctx, "workspace-1", "product-2", replacementCreate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replacement.Code != retained.Code {
+		t.Fatalf("replacement did not reuse the archived Product code: %#v", replacement)
+	}
+	_, err = service.DispatchProduct(ctx, "workspace-1", "product-1", delivery.Command{
+		ClientID: "restore-conflicting-product", ExpectedRevision: retained.Revision, Type: "product.restore", Payload: json.RawMessage(`{}`),
+	})
+	domainError, ok = err.(*delivery.Error)
+	if !ok || domainError.Code != "product_code_duplicate" {
+		t.Fatalf("expected active replacement to prevent restore, got %#v", err)
+	}
+	_, err = service.DispatchProduct(ctx, "workspace-1", "product-2", delivery.Command{
+		ClientID: "delete-replacement", ExpectedRevision: replacement.Revision, Type: "product.delete", Payload: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	restored, err := service.DispatchProduct(ctx, "workspace-1", "product-1", delivery.Command{
 		ClientID: "restore-product", ExpectedRevision: retained.Revision, Type: "product.restore", Payload: json.RawMessage(`{}`),
@@ -316,9 +339,10 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 	service := application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store})
 	createPayload, _ := json.Marshal(map[string]any{
 		"name": "Foundation Product", "code": "FOUNDATION", "goal": "Verify initialization", "industry": "Software",
-		"story":      map[string]any{"title": "Foundation Product", "summary": "Verified initialization", "narrative": "A product repository is initialized and verified before Feature delivery."},
-		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-		"decisions":  []any{},
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+		"story":       map[string]any{"title": "Foundation Product", "summary": "Verified initialization", "narrative": "A product repository is initialized and verified before Feature delivery."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
 	})
 	humanContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
@@ -434,6 +458,9 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	stored, err := loadRunState(ctx, store.db, store.renderer, run.WorkspaceID, run.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if stored.Mode != run.Mode || stored.SourceRevision != run.SourceRevision || stored.SourceRef != run.SourceRef {
+		t.Fatalf("delivery mode source binding was not persisted: stored=%#v run=%#v", stored, run)
 	}
 	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != 7 {
 		t.Fatalf("fixed development phases were not persisted inside the DeliveryUnit row: %#v", stored.DeliveryUnits)

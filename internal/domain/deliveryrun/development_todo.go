@@ -44,6 +44,32 @@ func newDevelopmentTodos(unitID string) []DevelopmentTodo {
 	return todos
 }
 
+func existingSourceVerificationTodos(unitID string) []DevelopmentTodo {
+	phases := []DeliveryUnitPhase{
+		DeliveryUnitModelVerification,
+		DeliveryUnitContractVerification,
+		DeliveryUnitJourneyTesting,
+	}
+	todos := make([]DevelopmentTodo, 0, len(phases))
+	for index, phase := range phases {
+		status := DevelopmentTodoNotStarted
+		if index == 0 {
+			status = DevelopmentTodoInProgress
+		}
+		workItem := DevelopmentPhaseWorkItem{
+			ID: fmt.Sprintf("%s:phase:%s", unitID, phase), Phase: phase,
+			Status: status, Evidence: []DevelopmentTodoEvidence{},
+		}
+		todos = append(todos, DevelopmentTodo{
+			ID: workItem.ID, Sequence: index + 1, Category: "source_verification",
+			SourceKind: "existing_source_phase", SourceID: string(phase),
+			Title: string(phase), Detail: string(phase), Status: status,
+			PhaseWorkItems: []DevelopmentPhaseWorkItem{workItem},
+		})
+	}
+	return todos
+}
+
 func developmentPhaseOrder(phase DeliveryUnitPhase) int {
 	for index, candidate := range orderedDevelopmentPhases {
 		if candidate == phase {

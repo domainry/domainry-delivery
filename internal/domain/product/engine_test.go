@@ -96,6 +96,44 @@ func TestProductFoundationFailureAllowsRetryAgainstCurrentDelivery(t *testing.T)
 	}
 }
 
+func TestExistingSourceProductSkipsEngineeringInitialization(t *testing.T) {
+	sourceRevision := "workspace-" + strings.Repeat("a", 64)
+	sourceRef := "source://workspace-snapshot/" + sourceRevision
+	payload := map[string]any{
+		"name": "Existing product", "code": "EXISTING", "goal": "Adopt implemented behavior", "industry": "Software",
+		"engineering": map[string]any{"mode": "adopt_existing_source", "source_revision": sourceRevision, "source_ref": sourceRef},
+		"story":       map[string]any{"title": "Existing product", "summary": "Implemented product", "narrative": "The existing source is adopted as the engineering baseline."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
+	}
+	raw, _ := json.Marshal(payload)
+	product, err := delivery.NewProduct("workspace-1", "product-existing", delivery.Command{
+		Actor: human("product-owner"), Type: "product.create", Payload: raw,
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := delivery.ProductEngineering{
+		Mode:           delivery.EngineeringAdoptExistingSource,
+		Status:         delivery.EngineeringReady,
+		SourceRevision: sourceRevision,
+		SourceRef:      sourceRef,
+	}
+	if !reflect.DeepEqual(product.Engineering, want) {
+		t.Fatalf("existing source did not become the ready engineering baseline: got %#v, want %#v", product.Engineering, want)
+	}
+	for _, action := range delivery.ProductProjectionFor(product).AvailableActions {
+		if strings.HasPrefix(action.Command, "product.engineering.") {
+			t.Fatalf("existing source exposed a blank-product initialization action: %#v", action)
+		}
+	}
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", featureDraftPayload("feature-baseline", "F-001"))
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-baseline", "draft_version": 1})
+	if !hasAction(delivery.ProductProjectionFor(product).AvailableActions, "feature.delivery.start", "feature-baseline", delivery.ActorAgent) {
+		t.Fatalf("confirmed historical Feature did not enter delivery after source adoption: %#v", delivery.ProductProjectionFor(product).AvailableActions)
+	}
+}
+
 func TestFeatureDeliveryWaitsForFoundationCompletion(t *testing.T) {
 	product := newQueuedProduct(t)
 	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
@@ -521,6 +559,57 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	}
 }
 
+func TestVerifiedExistingSourceInstallsBaselineWithoutDeployment(t *testing.T) {
+	product := newProduct(t)
+	sourceRevision := "workspace-" + strings.Repeat("a", 64)
+	product.Engineering = delivery.ProductEngineering{
+		Mode: delivery.EngineeringAdoptExistingSource, Status: delivery.EngineeringReady,
+		SourceRevision: sourceRevision, SourceRef: "source://workspace-snapshot/" + sourceRevision,
+	}
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", featureDraftPayload("historical-baseline", "F-001"))
+	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "historical-baseline", "draft_version": 1})
+	payload, _ := json.Marshal(map[string]any{
+		"feature_id": "historical-baseline", "feature_revision": 1, "name": "Historical baseline verification", "code": "VERIFY-001",
+		"goal": "Adopt the verified existing product baseline", "target_date": "2026-10-15",
+		"members": []map[string]any{
+			{"id": "owner", "name": "Owner", "roles": []string{deliveryrun.RoleProductOwner}},
+			{"id": "development", "name": "Development", "roles": []string{deliveryrun.RoleDevelopmentLead}},
+			{"id": "quality", "name": "Quality", "roles": []string{deliveryrun.RoleQualityLead}},
+			{"id": "acceptor", "name": "Acceptor", "roles": []string{deliveryrun.RoleBusinessAcceptor}},
+			{"id": "release", "name": "Release", "roles": []string{deliveryrun.RoleReleaseApprover}},
+		},
+	})
+	run, err := lifecycle.StartDelivery(&product, "run-historical-baseline", delivery.Command{Actor: agent("rd-agent"), Type: "feature.delivery.start", Payload: payload}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	base := product.Revisions[len(product.Revisions)-1]
+	run.Stage = deliveryrun.StageVerified
+	run.ExecutableRevision = &deliveryrun.ExecutableProductRevision{
+		BaseRevision: 1, TargetRevision: 2,
+		Content:     delivery.ProductRevisionContent{Story: base.Story, Definition: base.Definition, Decisions: base.Decisions},
+		EvidenceRef: product.Engineering.SourceRef, CodeRevision: sourceRevision,
+		ModelSHA256: strings.Repeat("d", 64), RecordedBy: "rd-agent", RecordedAt: now,
+	}
+	run.AcceptanceReview = &deliveryrun.AcceptanceReview{
+		ID: "acceptance-historical", Status: deliveryrun.AcceptanceReviewAccepted,
+		CandidateGitRevision: sourceRevision, EnvironmentRevision: sourceRevision,
+		EnvironmentRef: product.Engineering.SourceRef, Bugs: []deliveryrun.AcceptanceBug{}, Events: []deliveryrun.AcceptanceEvent{},
+		OpenedAt: now, AcceptedBy: "acceptor", AcceptedAt: &now,
+	}
+	if err := lifecycle.InstallDeliveryRun(&product, &run, human("acceptor"), now); err != nil {
+		t.Fatal(err)
+	}
+	if product.CurrentDefinitionRevision != 2 || product.CurrentReleaseRevision != 2 || product.Features[0].Status != delivery.FeatureInstalled || product.Features[0].InstalledReleaseID != "" || product.CurrentDeployment != nil || len(product.Revisions) != 2 {
+		t.Fatalf("verified source baseline was not installed without deployment: %#v", product)
+	}
+	installed := product.Revisions[1]
+	if installed.CodeRevision != sourceRevision || installed.ReleaseID != "" || installed.DeliveryRunID != run.ID {
+		t.Fatalf("verified source baseline gained a synthetic release: %#v", installed)
+	}
+}
+
 func backendGuideEvidence(command string) *deliveryrun.BackendGuideEvidence {
 	evidence := &deliveryrun.BackendGuideEvidence{ModelPath: "backend/model.json", ModelSHA256: strings.Repeat("d", 64)}
 	switch command {
@@ -657,9 +746,10 @@ func newQueuedProduct(t *testing.T) delivery.Product {
 	t.Helper()
 	payload := map[string]any{
 		"name": "Booking product", "code": "BOOKING", "goal": "Make the booking process operational", "industry": "Fitness and wellness",
-		"story":      map[string]any{"title": "Booking product", "summary": "Manage bookings consistently", "narrative": "A member requests a booking, and the location confirms capacity and completes the service."},
-		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-		"decisions":  []any{},
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+		"story":       map[string]any{"title": "Booking product", "summary": "Manage bookings consistently", "narrative": "A member requests a booking, and the location confirms capacity and completes the service."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
 	}
 	raw, _ := json.Marshal(payload)
 	product, err := delivery.NewProduct("workspace-1", "product-booking", delivery.Command{

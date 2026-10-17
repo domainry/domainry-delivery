@@ -10,8 +10,16 @@ const (
 	StageDevelopment Stage = "development"
 	StageTesting     Stage = "testing"
 	StageAcceptance  Stage = "acceptance"
+	StageVerified    Stage = "verified"
 	StageRelease     Stage = "release"
 	StageLive        Stage = "live"
+)
+
+type DeliveryMode string
+
+const (
+	DeliveryModeImplementation             DeliveryMode = "implementation"
+	DeliveryModeExistingSourceVerification DeliveryMode = "existing_source_verification"
 )
 
 type ProductSnapshot struct {
@@ -39,6 +47,9 @@ const (
 type DeliveryRun struct {
 	ID                   string                     `json:"id"`
 	WorkspaceID          string                     `json:"workspace_id"`
+	Mode                 DeliveryMode               `json:"mode"`
+	SourceRevision       string                     `json:"source_revision,omitempty"`
+	SourceRef            string                     `json:"source_ref,omitempty"`
 	Product              ProductSnapshot            `json:"product"`
 	Feature              FeatureSnapshot            `json:"feature"`
 	Name                 string                     `json:"name"`

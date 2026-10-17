@@ -21,16 +21,19 @@ type Command = domain.Command
 type Actor = domain.Actor
 
 const (
-	ActorAgent           = domain.ActorAgent
-	ActorHuman           = domain.ActorHuman
-	ActorSystem          = domain.ActorSystem
-	EngineeringReady     = product.EngineeringReady
-	FeatureDelivering    = product.FeatureDelivering
-	FeatureInstalled     = product.FeatureInstalled
-	ProductActive        = product.ProductActive
-	StageLive            = deliveryrun.StageLive
-	ReleaseLive          = deliveryrun.ReleaseLive
-	CommandTargetProduct = commanddomain.TargetProduct
+	ActorAgent                             = domain.ActorAgent
+	ActorHuman                             = domain.ActorHuman
+	ActorSystem                            = domain.ActorSystem
+	EngineeringReady                       = product.EngineeringReady
+	FeatureDelivering                      = product.FeatureDelivering
+	FeatureInstalled                       = product.FeatureInstalled
+	ProductActive                          = product.ProductActive
+	StageVerified                          = deliveryrun.StageVerified
+	StageLive                              = deliveryrun.StageLive
+	DeliveryModeExistingSourceVerification = deliveryrun.DeliveryModeExistingSourceVerification
+	AcceptanceReviewAccepted               = deliveryrun.AcceptanceReviewAccepted
+	ReleaseLive                            = deliveryrun.ReleaseLive
+	CommandTargetProduct                   = commanddomain.TargetProduct
 )
 
 func validateCommandActor(value Command, target commanddomain.Target) error {

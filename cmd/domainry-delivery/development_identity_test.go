@@ -45,6 +45,7 @@ func TestDevelopmentIdentityResolvesServerOwnedPrincipal(t *testing.T) {
 		WorkspaceID: "workspace-local",
 		Actor:       delivery.Actor{ID: "local-pm", Kind: delivery.ActorAgent},
 		Permissions: []string{
+			application.PermissionDeploymentRecord,
 			application.PermissionProductRead,
 			application.PermissionProductWrite,
 			application.PermissionDeliveryRunRead,

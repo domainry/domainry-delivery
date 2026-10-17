@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
 )
 
 type DeliveryRunSpec struct {
@@ -73,7 +75,11 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 		Specification: clone(featureRevisionValue.Specification), Decisions: clone(featureRevisionValue.Decisions),
 		Readiness: clone(featureRevisionValue.Readiness), Source: source,
 	}
-	deliveryUnits, activeDeliveryUnitID := newDeliveryUnits(featureSnapshot)
+	mode, sourceRevision, sourceRef, err := deliveryModeForProduct(product)
+	if err != nil {
+		return DeliveryRun{}, err
+	}
+	deliveryUnits, activeDeliveryUnitID := newDeliveryUnits(featureSnapshot, mode, sourceRevision)
 	testCases := make([]TestCase, 0, len(featureRevisionValue.Specification.Acceptance))
 	for index, criterion := range featureRevisionValue.Specification.Acceptance {
 		testCases = append(testCases, TestCase{
@@ -82,7 +88,8 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 		})
 	}
 	return DeliveryRun{
-		ID: spec.ID, WorkspaceID: product.WorkspaceID,
+		ID: spec.ID, WorkspaceID: product.WorkspaceID, Mode: mode,
+		SourceRevision: sourceRevision, SourceRef: sourceRef,
 		Product: ProductSnapshot{ID: product.ID, Name: product.Name, Code: product.Code, ProductRevision: featureRevisionValue.BaselineProductRevision},
 		Feature: featureSnapshot, Name: spec.Name, Code: spec.Code, Goal: spec.Goal, TargetDate: spec.TargetDate,
 		Revision: 1, Stage: StageDevelopment, Members: clone(spec.Members),
@@ -95,6 +102,20 @@ func NewDeliveryRun(product Product, featureID string, featureRevision uint64, s
 		}},
 		CreatedAt: now, UpdatedAt: now,
 	}, nil
+}
+
+func deliveryModeForProduct(product Product) (DeliveryMode, string, string, error) {
+	switch product.Engineering.Mode {
+	case productdomain.EngineeringInitialize:
+		return DeliveryModeImplementation, "", "", nil
+	case productdomain.EngineeringAdoptExistingSource:
+		if !validCodeRevision(product.Engineering.SourceRevision) || strings.TrimSpace(product.Engineering.SourceRef) == "" {
+			return "", "", "", Invalid("product_engineering_source_incomplete")
+		}
+		return DeliveryModeExistingSourceVerification, product.Engineering.SourceRevision, product.Engineering.SourceRef, nil
+	default:
+		return "", "", "", Invalid("product_engineering_mode_invalid")
+	}
 }
 
 func formatAcceptanceScenario(scenario FeatureAcceptanceScenario) string {

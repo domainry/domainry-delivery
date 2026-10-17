@@ -170,9 +170,10 @@ func productsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("current_definition_revision", ormschema.BigInt()),
 		requiredColumn("current_release_revision", ormschema.BigInt()),
 		ormschema.Column("current_deployment_json", ormschema.Binary()),
+		ormschema.Column("active_code", ormschema.TextKey(191)),
 		requiredColumn("created_at", ormschema.BigInt()),
 		requiredColumn("updated_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id").Unique("workspace_id", "code")
+	).PrimaryKey("workspace_id", "product_id").Unique("workspace_id", "active_code")
 }
 
 func productRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
@@ -220,6 +221,9 @@ func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("run_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
+		requiredColumn("mode", ormschema.TextKey(191)),
+		requiredColumn("source_revision", ormschema.TextKey(191)),
+		requiredColumn("source_ref", ormschema.LongText()),
 		requiredColumn("name", ormschema.LongText()),
 		requiredColumn("code", ormschema.TextKey(191)),
 		requiredColumn("goal", ormschema.LongText()),

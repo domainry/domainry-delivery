@@ -6,5 +6,5 @@ func acceptanceReviewRequiresRenewal(run *DeliveryRun) bool {
 		return false
 	}
 	revision, ready := verifiedJourneyRevision(run)
-	return ready && run.ExecutableRevision != nil && run.ExecutableRevision.CodeRevision == revision && allQualityPass(run, revision) && !acceptanceReviewCurrent(run)
+	return ready && run.ExecutableRevision != nil && run.ExecutableRevision.CodeRevision == revision && qualityReviewComplete(run, revision) && !acceptanceReviewCurrent(run)
 }

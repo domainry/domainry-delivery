@@ -54,14 +54,14 @@ func StartDelivery(product *Product, deliveryRunID string, command Command, now 
 	return run, nil
 }
 
-// InstallDeliveryRun applies a successful live release to the Product. The
-// caller must persist this Product update in the same transaction as the final
-// DeliveryRun command.
+// InstallDeliveryRun applies either a successful managed release or a verified
+// adopted-source baseline to the Product. The caller must persist this Product
+// update in the same transaction as the final DeliveryRun command.
 func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now time.Time) error {
 	if actor.Kind != ActorSystem && actor.Kind != ActorHuman {
 		return Invalid("installation_actor_invalid")
 	}
-	if run.Stage != StageLive {
+	if run.Stage != StageLive && run.Stage != StageVerified {
 		return Invalid("delivery_run_not_live")
 	}
 	feature := findFeature(product, run.Feature.ID)
@@ -96,6 +96,28 @@ func InstallDeliveryRun(product *Product, run *DeliveryRun, actor Actor, now tim
 	}
 	if !republishing && (executable.BaseRevision != product.CurrentDefinitionRevision || executable.TargetRevision != product.CurrentDefinitionRevision+1) {
 		return Invalid("product_revision_baseline_invalid")
+	}
+	if run.Stage == StageVerified {
+		if run.Mode != DeliveryModeExistingSourceVerification || installed || strings.TrimSpace(run.SourceRef) == "" || executable.CodeRevision != run.SourceRevision || run.AcceptanceReview == nil || run.AcceptanceReview.Status != AcceptanceReviewAccepted || run.AcceptanceReview.CandidateGitRevision != run.SourceRevision || run.AcceptanceReview.EnvironmentRevision != run.SourceRevision || run.AcceptanceReview.EnvironmentRef != run.SourceRef || run.AcceptanceReview.RuntimeURL != "" {
+			return Invalid("historical_source_verification_incomplete")
+		}
+		product.Revisions = append(product.Revisions, ProductRevision{
+			Number: executable.TargetRevision, Story: clone(executable.Content.Story),
+			Definition: clone(executable.Content.Definition), Decisions: clone(executable.Content.Decisions),
+			SourceFeatureID: feature.ID, FeatureRevision: run.Feature.Source.FeatureRevision,
+			DeliveryRunID: run.ID, CodeRevision: executable.CodeRevision,
+			DefinitionRef: executable.EvidenceRef, ModelSHA256: executable.ModelSHA256,
+			CreatedBy: executable.RecordedBy, CreatedAt: now,
+		})
+		product.CurrentDefinitionRevision = executable.TargetRevision
+		product.CurrentReleaseRevision = executable.TargetRevision
+		feature.Status = FeatureInstalled
+		feature.InstalledReleaseID = ""
+		feature.UpdatedAt = now
+		product.Status = ProductActive
+		product.CurrentDeployment = nil
+		product.UpdatedAt = now
+		return nil
 	}
 	var liveRelease *Release
 	for index := range run.Releases {

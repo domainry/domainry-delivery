@@ -74,7 +74,7 @@ func (service *Service) Dispatch(ctx context.Context, workspaceID, deliveryRunID
 						return err
 					}
 				}
-				if run.Stage != deliveryrun.StageLive {
+				if run.Stage != deliveryrun.StageLive && run.Stage != deliveryrun.StageVerified {
 					return nil
 				}
 				return lifecycle.InstallDeliveryRun(productState, run, command.Actor, now)

@@ -22,7 +22,8 @@ func qualityActions(run *DeliveryRun) []AvailableAction {
 		if !qualityCaseRequired(run, testCase.ID) {
 			continue
 		}
-		if latestQualityResult(run, revision, testCase.ID) == ResultPass {
+		result := latestQualityResult(run, revision, testCase.ID)
+		if result == ResultPass || run.Mode == DeliveryModeExistingSourceVerification && result == ResultFail {
 			continue
 		}
 		actions = append(actions, catalogAction(commandQualityRecord, testCase.ID))
@@ -75,6 +76,10 @@ func recordQuality(run *DeliveryRun, command Command, now time.Time) error {
 	})
 	appendActivity(run, command.Actor, "quality_recorded", testCase.ID+" independent QA result recorded", payload.Note, now)
 	if payload.Result == ResultFail {
+		if run.Mode == DeliveryModeExistingSourceVerification {
+			appendActivity(run, command.Actor, "historical_source_verification_failed", testCase.ID+" historical source verification failed", "The adopted source remains read-only; no implementation repair was created.", now)
+			return nil
+		}
 		return routeQualityFailure(run, testCase, payload.FailureOwner, payload.Note)
 	}
 	return nil
@@ -121,12 +126,15 @@ func deriveStage(run *DeliveryRun) Stage {
 			continue
 		}
 		result, _ := latestQualityObservation(run, revision, testCase.ID)
-		if result != ResultPass {
+		if result != ResultPass && (run.Mode != DeliveryModeExistingSourceVerification || result != ResultFail) {
 			return StageTesting
 		}
 	}
 	if run.AcceptanceReview != nil {
 		if acceptanceReviewCurrent(run) {
+			if run.Mode == DeliveryModeExistingSourceVerification {
+				return StageVerified
+			}
 			return StageRelease
 		}
 		return StageAcceptance
@@ -174,6 +182,25 @@ func allQualityPass(run *DeliveryRun, revision string) bool {
 			continue
 		}
 		if latestQualityResult(run, revision, testCase.ID) != ResultPass {
+			return false
+		}
+	}
+	return true
+}
+
+func qualityReviewComplete(run *DeliveryRun, revision string) bool {
+	if run.Mode != DeliveryModeExistingSourceVerification {
+		return allQualityPass(run, revision)
+	}
+	if run.ExecutableRevision == nil || len(run.TestCases) == 0 {
+		return false
+	}
+	for _, testCase := range run.TestCases {
+		if !qualityCaseRequired(run, testCase.ID) {
+			continue
+		}
+		result := latestQualityResult(run, revision, testCase.ID)
+		if result != ResultPass && result != ResultFail {
 			return false
 		}
 	}
@@ -268,9 +295,13 @@ func allTestCaseIDs(run *DeliveryRun) []string {
 
 func qualityReleaseGate(run *DeliveryRun) ReleaseGate {
 	revision, ready := verifiedJourneyRevision(run)
+	label := "Independent QA passed"
+	if run.Mode == DeliveryModeExistingSourceVerification {
+		label = "Historical source evidence recorded"
+	}
 	return ReleaseGate{
-		Code: "independent_quality_passed", Label: "Independent QA passed",
-		Detail: revision, OK: ready && allQualityPass(run, revision),
+		Code: "independent_quality_passed", Label: label,
+		Detail: revision, OK: ready && qualityReviewComplete(run, revision),
 	}
 }
 

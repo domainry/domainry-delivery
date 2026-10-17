@@ -115,20 +115,8 @@ func (store *Store) CreateProduct(
 		if err != nil {
 			return productdomain.Product{}, err
 		}
-		var existingProductID string
-		statement, arguments, buildErr = ormquery.NewWorkspaceSelectBuilder(store.renderer, TableProducts, workspaceID).
-			Columns("product_id").
-			Where(ormquery.Equal("code", product.Code)).
-			Build()
-		if buildErr != nil {
-			return productdomain.Product{}, storageError(buildErr)
-		}
-		err = transaction.QueryRowContext(ctx, statement, arguments...).Scan(&existingProductID)
-		if err == nil {
-			return productdomain.Product{}, domain.Invalid("product_code_duplicate")
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return productdomain.Product{}, storageError(err)
+		if err := store.ensureActiveProductCodeAvailable(ctx, transaction, workspaceID, productID, product.Code); err != nil {
+			return productdomain.Product{}, err
 		}
 		if err := store.insertProductState(ctx, transaction, product); err != nil {
 			return productdomain.Product{}, err
@@ -159,10 +147,43 @@ func (store *Store) TransactProduct(
 		if err := mutate(&product); err != nil {
 			return productdomain.Product{}, err
 		}
+		if product.Status != productdomain.ProductArchived {
+			if err := store.ensureActiveProductCodeAvailable(ctx, transaction, workspaceID, productID, product.Code); err != nil {
+				return productdomain.Product{}, err
+			}
+		}
 		product.Revision = actualRevision + 1
 		if err := store.updateProductState(ctx, transaction, product, actualRevision); err != nil {
 			return productdomain.Product{}, err
 		}
 		return product, nil
 	})
+}
+
+func (store *Store) ensureActiveProductCodeAvailable(
+	ctx context.Context,
+	transaction *sql.Tx,
+	workspaceID string,
+	productID string,
+	code string,
+) error {
+	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableProducts, workspaceID).
+		Columns("product_id").
+		Where(ormquery.And(
+			ormquery.Equal("active_code", code),
+			ormquery.NotEqual("product_id", productID),
+		)).
+		Build()
+	if err != nil {
+		return storageError(err)
+	}
+	var existingProductID string
+	err = transaction.QueryRowContext(ctx, statement, arguments...).Scan(&existingProductID)
+	if err == nil {
+		return domain.Invalid("product_code_duplicate")
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return storageError(err)
+	}
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	delivery "github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
+	productdomain "github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/testfixture"
 )
 
@@ -586,6 +587,193 @@ func TestDevelopmentPlanIsAlwaysTheSevenFixedPhases(t *testing.T) {
 	if unit.DevelopmentTodos[3].SourceID != "frontend_implementation" || unit.DevelopmentTodos[4].SourceID != "backend_implementation" || len(unit.DevelopmentRepairItems) != 0 {
 		t.Fatalf("Frontend is not implemented before Backend in the fixed phase plan: %#v", unit.DevelopmentTodos)
 	}
+}
+
+func TestExistingSourceDeliveryVerifiesTheAdoptedRevisionWithoutImplementationPhases(t *testing.T) {
+	now := time.Now().UTC()
+	product := testfixture.DemoProduct(now)
+	sourceRevision := "workspace-" + strings.Repeat("a", 64)
+	product.Engineering = productdomain.ProductEngineering{
+		Mode:           productdomain.EngineeringAdoptExistingSource,
+		Status:         productdomain.EngineeringReady,
+		SourceRevision: sourceRevision,
+		SourceRef:      "source://workspace-snapshot/" + sourceRevision,
+	}
+	run, err := delivery.NewDeliveryRun(product, "F-001", 1, delivery.DeliveryRunSpec{
+		ID: "existing-source-run", Name: "Existing source verification", Code: "VERIFY-1", Goal: "Verify the reconstructed requirement against the adopted source.",
+		Members: []delivery.Member{
+			{ID: "product", Name: "Product", Roles: []string{delivery.RoleProductOwner}},
+			{ID: "development", Name: "Development", Roles: []string{delivery.RoleDevelopmentLead}},
+			{ID: "quality", Name: "Quality", Roles: []string{delivery.RoleQualityLead}},
+			{ID: "acceptance", Name: "Acceptance", Roles: []string{delivery.RoleBusinessAcceptor}},
+			{ID: "release", Name: "Release", Roles: []string{delivery.RoleReleaseApprover}},
+		},
+	}, agent("verification-agent"), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := run.DeliveryUnits[0]
+	if run.Mode != delivery.DeliveryModeExistingSourceVerification || run.SourceRevision != sourceRevision || unit.Phase != delivery.DeliveryUnitModelVerification || unit.InteractionStatus != delivery.DeliveryGatePassed || unit.FrontendStatus != delivery.DeliveryGatePassed || unit.BackendStatus != delivery.DeliveryGatePassed {
+		t.Fatalf("existing source did not enter read-only verification: %#v", run)
+	}
+	if len(unit.DevelopmentTodos) != 3 {
+		t.Fatalf("existing source must schedule only trusted verification gates: %#v", unit.DevelopmentTodos)
+	}
+	err = applyUnitAtRevision(&run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification", "workspace-"+strings.Repeat("b", 64), "", nil)
+	assertCode(t, err, "delivery_source_revision_changed")
+	advanceUnitAtRevision(t, &run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification", sourceRevision)
+	if run.DeliveryUnits[0].Phase != delivery.DeliveryUnitContractVerification {
+		t.Fatalf("existing source did not advance to contract verification: %#v", run.DeliveryUnits[0])
+	}
+	standardEvidence := backendGuideEvidence("delivery_unit.contract.verify")
+	standardEvidence.WorkspaceID = run.WorkspaceID
+	standardEvidence.ProductID = run.Product.ID
+	standardEvidence.FeatureRevision = run.Feature.Source.FeatureRevision
+	standardEvidence.RepositoryIdentity = "github.com/domainry/product-fixture"
+	standardEvidence.GitRevision = sourceRevision
+	standardEvidence.CheckSuite = "plane-backend-guide"
+	standardEvidence.CheckVersion = "1"
+	standardEvidence.ExecutedBy = "contract-verifier"
+	standardEvidence.OccurredAt = now
+	standardEvidence.EvidenceRefs = []string{"workspace:" + sourceRevision + "#evidence:standard-contract.json"}
+	err = applyExistingSourceContractAtRevision(&run, sourceRevision, standardEvidence)
+	assertCode(t, err, "historical_source_contract_evidence_invalid")
+
+	historicalEvidence := backendGuideEvidence("delivery_unit.contract.verify")
+	historicalEvidence.ProjectHTTP = false
+	historicalEvidence.HandlerUnitOfWork = false
+	historicalEvidence.HandlerIdempotency = false
+	historicalEvidence.DefinitionsRegistered = false
+	historicalEvidence.RuntimeBootstrap = false
+	historicalEvidence.NoProjectSchemaSQL = false
+	historicalEvidence.BackendGoModOnly = false
+	historicalEvidence.NoRootGoMod = false
+	historicalEvidence.NoGoWork = false
+	historicalEvidence.NoCompilerBuilder = false
+	historicalEvidence.NoGeneratedRuntimeContract = false
+	historicalEvidence.AuthWorkspacePermission = false
+	historicalEvidence.DataAuditPersistence = false
+	historicalEvidence.EmptyDatabaseInitPassed = false
+	historicalEvidence.SameModelRestartPassed = false
+	historicalEvidence.IncrementalModelRestartPassed = false
+	historicalEvidence.HistoricalSourceContract = true
+	historicalEvidence.ModelContractPresent = true
+	historicalEvidence.RuntimeEntrypointPresent = true
+	historicalEvidence.BackendModulePresent = true
+	historicalEvidence.FrontendPackagePresent = true
+	historicalEvidence.FrontendProjectClientPresent = true
+	historicalEvidence.SourceRevisionUnchanged = true
+	historicalEvidence.WorkspaceID = run.WorkspaceID
+	historicalEvidence.ProductID = run.Product.ID
+	historicalEvidence.FeatureRevision = run.Feature.Source.FeatureRevision
+	historicalEvidence.RepositoryIdentity = "github.com/domainry/product-fixture"
+	historicalEvidence.GitRevision = sourceRevision
+	historicalEvidence.CheckSuite = "plane-backend-guide"
+	historicalEvidence.CheckVersion = "1"
+	historicalEvidence.ExecutedBy = "contract-verifier"
+	historicalEvidence.OccurredAt = now
+	historicalEvidence.EvidenceRefs = []string{"workspace:" + sourceRevision + "#evidence:historical-contract.json"}
+	if err := applyExistingSourceContractAtRevision(&run, sourceRevision, historicalEvidence); err != nil {
+		t.Fatalf("historical source contract evidence was rejected: %v", err)
+	}
+	if run.DeliveryUnits[0].Phase != delivery.DeliveryUnitJourneyTesting {
+		t.Fatalf("historical source contract did not advance to source-owned tests: %#v", run.DeliveryUnits[0])
+	}
+}
+
+func TestExistingSourceQualityFailureStopsWithoutCreatingImplementationRepair(t *testing.T) {
+	run := completedRun(t)
+	run.Mode = delivery.DeliveryModeExistingSourceVerification
+	run.SourceRevision = run.ExecutableRevision.CodeRevision
+	revision := run.ExecutableRevision.CodeRevision
+	testCase := run.TestCases[0]
+
+	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
+		"test_case_id": testCase.ID, "git_revision": revision,
+		"result": "fail", "failure_owner": "backend", "note": "The reconstructed expectation is not supported by the adopted source.",
+		"evidence_refs": []string{"workspace:" + revision + "#evidence:backend/model.json"},
+	})
+
+	if run.Stage != delivery.StageTesting || run.ActiveDeliveryUnitID != "" || len(run.DeliveryUnits[0].DevelopmentRepairItems) != 0 {
+		t.Fatalf("historical verification failure opened an implementation repair: stage=%s active=%q repairs=%#v", run.Stage, run.ActiveDeliveryUnitID, run.DeliveryUnits[0].DevelopmentRepairItems)
+	}
+	for _, action := range delivery.ProjectionFor(run).Workflow.AvailableActions {
+		if action.Command == "quality.record" && action.TargetID == testCase.ID {
+			t.Fatalf("historical verification failure was scheduled again: %#v", action)
+		}
+	}
+}
+
+func TestExistingSourceAcceptanceUsesEvidenceAndCompletesWithoutRelease(t *testing.T) {
+	run := completedRun(t)
+	run.Mode = delivery.DeliveryModeExistingSourceVerification
+	run.SourceRevision = run.ExecutableRevision.CodeRevision
+	run.SourceRef = "source://workspace-snapshot/" + run.SourceRevision
+
+	testCase := run.TestCases[0]
+	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
+		"test_case_id": testCase.ID, "git_revision": run.SourceRevision,
+		"result": "fail", "failure_owner": "backend", "note": "The historical expectation is not implemented by the adopted source.",
+		"evidence_refs": []string{"workspace:" + run.SourceRevision + "#evidence:backend/model.json"},
+	})
+	passIndependentQuality(t, &run)
+	if run.Stage != delivery.StageAcceptance || run.AcceptanceReview == nil || run.AcceptanceReview.EnvironmentRevision != run.SourceRevision || run.AcceptanceReview.EnvironmentRef != run.SourceRef || run.AcceptanceReview.RuntimeURL != "" {
+		t.Fatalf("historical source acceptance was not bound directly to source evidence: %#v", run.AcceptanceReview)
+	}
+	projection := delivery.ProjectionFor(run)
+	if !hasProjectedAction(projection, "acceptance.confirm", run.AcceptanceReview.ID) || hasProjectedAction(projection, "acceptance.environment.ready", run.AcceptanceReview.ID) || hasProjectedAction(projection, "acceptance.bug.report", run.AcceptanceReview.ID) {
+		t.Fatalf("historical source acceptance exposed runtime or repair actions: %#v", projection.Workflow.AvailableActions)
+	}
+	err := apply(&run, delivery.Actor{ID: "acceptance-runtime", Kind: delivery.ActorSystem}, "acceptance.environment.ready", map[string]any{
+		"git_revision": run.SourceRevision, "environment_ref": "acceptance://runtime", "runtime_url": "http://127.0.0.1:4173",
+	})
+	assertCode(t, err, "historical_source_acceptance_runtime_forbidden")
+
+	mustApply(t, &run, human("m-business"), "acceptance.confirm", map[string]any{
+		"git_revision": run.SourceRevision, "note": "The reconstructed requirements and tests match the adopted source evidence.",
+	})
+	if run.Stage != delivery.StageVerified || len(run.Releases) != 0 || len(delivery.ProjectionFor(run).Workflow.AvailableActions) != 0 {
+		t.Fatalf("historical verification did not stop before release: stage=%s releases=%#v", run.Stage, run.Releases)
+	}
+	projection = delivery.ProjectionFor(run)
+	if len(projection.Workflow.ReleaseGates) != 7 {
+		t.Fatalf("historical verification exposed release-only gates: %#v", projection.Workflow.ReleaseGates)
+	}
+	qualityRecorded := false
+	for _, gate := range projection.Workflow.ReleaseGates {
+		if gate.Code == "release_checks_passed" {
+			t.Fatalf("historical verification exposed a release check gate: %#v", gate)
+		}
+		if gate.Code == "independent_quality_passed" {
+			qualityRecorded = gate.OK && gate.Label == "Historical source evidence recorded"
+		}
+	}
+	if !qualityRecorded {
+		t.Fatalf("historical source observations did not complete the evidence gate: %#v", projection.Workflow.ReleaseGates)
+	}
+	summary := delivery.SummaryFor(run)
+	if summary.Progress.ReleaseGatesTotal != 7 {
+		t.Fatalf("historical verification summary retained release-only progress: %#v", summary.Progress)
+	}
+}
+
+func applyExistingSourceContractAtRevision(run *delivery.DeliveryRun, revision string, evidence *delivery.BackendGuideEvidence) error {
+	payload, err := json.Marshal(map[string]any{
+		"delivery_unit_id": run.ActiveDeliveryUnitID,
+		"phase":            "contract_verification",
+		"git_revision":     revision,
+		"summary":          "The adopted source contract was inspected without changing source.",
+		"evidence_refs":    evidence.EvidenceRefs,
+		"backend_guide":    evidence,
+	})
+	if err != nil {
+		return err
+	}
+	return delivery.Apply(run, delivery.Command{
+		Actor:   delivery.Actor{ID: "contract-verifier", Kind: delivery.ActorSystem},
+		Type:    "delivery_unit.contract.verify",
+		Payload: payload,
+	}, time.Now().UTC())
 }
 
 func advanceUnit(t *testing.T, run *delivery.DeliveryRun, actor delivery.Actor, command, phase string) {

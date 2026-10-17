@@ -18,22 +18,24 @@ import (
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
 )
 
-func TestProductCreateReadAndAgentContext(t *testing.T) {
+func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "delivery.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
 	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	sourceRevision := "workspace-" + strings.Repeat("a", 64)
 
 	command := map[string]any{
 		"client_id": "create-product-1", "expected_revision": 0,
 		"type": "product.create",
 		"payload": map[string]any{
 			"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
-			"story":      map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
-			"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-			"decisions":  []any{},
+			"engineering": map[string]any{"mode": "adopt_existing_source", "source_revision": sourceRevision, "source_ref": "source://workspace-snapshot/" + sourceRevision},
+			"story":       map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
+			"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+			"decisions":   []any{},
 		},
 	}
 	body, _ := json.Marshal(command)
@@ -51,14 +53,14 @@ func TestProductCreateReadAndAgentContext(t *testing.T) {
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(requestContext)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"current_definition_revision":1`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"current_definition_revision":1`) || !strings.Contains(response.Body.String(), `"mode":"adopt_existing_source"`) || !strings.Contains(response.Body.String(), `"status":"ready"`) {
 		t.Fatalf("get status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1/agent-context", nil).WithContext(requestContext)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"feature.discovery.replace"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"feature.discovery.replace"`) || strings.Contains(response.Body.String(), `"product.engineering.frontend.start"`) {
 		t.Fatalf("agent context status=%d body=%s", response.Code, response.Body.String())
 	}
 }
@@ -92,9 +94,10 @@ func TestArchivedProductsCanBeListedAndRestored(t *testing.T) {
 	}
 	dispatch("create-product", 0, "product.create", map[string]any{
 		"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
-		"story":      map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session."},
-		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-		"decisions":  []any{},
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+		"story":       map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
 	}, http.StatusCreated)
 	dispatch("delete-product", 1, "product.delete", map[string]any{}, http.StatusOK)
 
@@ -151,9 +154,10 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 
 	dispatch(humanContext, "create-product", 0, "product.create", map[string]any{
 		"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
-		"story":      map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
-		"definition": map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
-		"decisions":  []any{},
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
+		"story":       map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
+		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
+		"decisions":   []any{},
 	}, http.StatusCreated)
 	dispatch(agentContext, "frontend-start", 1, "product.engineering.frontend.start", map[string]any{}, http.StatusOK)
 	dispatch(agentContext, "frontend-complete", 2, "product.engineering.frontend.complete", map[string]any{

@@ -210,6 +210,7 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 func productCreateCommand() deliverysdk.Command {
 	payload, _ := json.Marshal(map[string]any{
 		"name": "Contract Product", "code": "CONTRACT", "goal": "Verify deployment-neutral behavior", "industry": "Professional services",
+		"engineering": map[string]any{"mode": "initialize", "source_revision": "", "source_ref": ""},
 		"story": map[string]any{
 			"title": "Contract Product", "summary": "One contract", "narrative": "Module and SaaS execute the same Delivery domain behavior.",
 		},
