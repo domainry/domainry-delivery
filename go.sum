@@ -44,10 +44,10 @@ github.com/domainry/domainry-delivery-sdk v0.1.23 h1:LwYfRq1PWfXRgE+4AX9gaFs7+Zs
 github.com/domainry/domainry-delivery-sdk v0.1.23/go.mod h1:uXH2qWTPocfoXfym8gntMeELNSnUfaK4KM8ZGoo9kKA=
 github.com/domainry/domainry-foundation v0.1.44 h1:FulJAT8YJG6yLEYOyWa0Umwu9XlAV8o2c+eNH44u4fQ=
 github.com/domainry/domainry-foundation v0.1.44/go.mod h1:nCw272N/NTkHfJNWvAGL8vZybUtOpgw3ZyCIshRSqF4=
-github.com/domainry/domainry-identity-bridge v0.1.9 h1:YmS3FDs9xJ9dXdWpVgdzQOll8iRiU1/w9AipJXiPtD4=
-github.com/domainry/domainry-identity-bridge v0.1.9/go.mod h1:ZLzCNTRkR1xpUuedInVADcMI+uFsWwvrQgUMGxlwnQs=
-github.com/domainry/domainry-identity-sdk v0.1.20 h1:QZCnTPv8bpSwAaZ/t3T4a5ifmXDMgBrj8/l4MqNxXio=
-github.com/domainry/domainry-identity-sdk v0.1.20/go.mod h1:VK/D3Zq+9iVyVJ50+zyel/9x5/cbMA1imlcwtoCsmj8=
+github.com/domainry/domainry-identity-bridge v0.1.10 h1:UQ4qXLf4n97j0FIpO7jdYdYpo8yfzJGRHtrcn3hwuK0=
+github.com/domainry/domainry-identity-bridge v0.1.10/go.mod h1:BaedQFPDt6pHwFO+hjahasJPGSPrNNaImXNzpTczd+0=
+github.com/domainry/domainry-identity-sdk v0.1.22 h1:wHpUm6YsEMXJj4IthYCEJ/kHpH2y51/QNRhLiWkZjfA=
+github.com/domainry/domainry-identity-sdk v0.1.22/go.mod h1:VK/D3Zq+9iVyVJ50+zyel/9x5/cbMA1imlcwtoCsmj8=
 github.com/domainry/domainry-orm v0.1.33 h1:gpCXkwDvJhJkiLMkA9awJ44KaFVtpBC6fh9v/EywT24=
 github.com/domainry/domainry-orm v0.1.33/go.mod h1:gB/ooN737tsBYHbeHqCpngEprvdvZKp0Zygtzv+IPJY=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=
