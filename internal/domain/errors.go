@@ -1,5 +1,7 @@
 package domain
 
+import "strings"
+
 type Error struct {
 	Code    string         `json:"code"`
 	Message string         `json:"message"`
@@ -12,6 +14,40 @@ func (e *Error) Error() string {
 	}
 	return e.Code
 }
+
+func (e *Error) ApplicationErrorKind() string {
+	if e == nil {
+		return ""
+	}
+	switch e.Code {
+	case "authentication_required", "permission_denied", "identity_workspace_mismatch", "actor_unauthorized":
+		return "forbidden"
+	case "not_found":
+		return "not_found"
+	case "revision_conflict", "idempotency_key_reused":
+		return "conflict"
+	case "storage_failure":
+		return "internal"
+	default:
+		return "bad_request"
+	}
+}
+
+func (e *Error) ErrorCode() string {
+	if e == nil {
+		return ""
+	}
+	code := strings.TrimSpace(e.Code)
+	if code == "" {
+		return ""
+	}
+	if strings.Contains(code, ".") {
+		return code
+	}
+	return "delivery." + code
+}
+
+func (*Error) ErrorParams() map[string]string { return nil }
 
 func Invalid(code string) error {
 	return &Error{Code: code}

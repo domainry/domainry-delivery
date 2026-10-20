@@ -13,6 +13,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/presentation"
 	"github.com/domainry/domainry-delivery/internal/utcjson"
+	"github.com/domainry/domainry-foundation/telemetry"
 )
 
 type Handler struct {
@@ -244,6 +245,7 @@ func domainCommand(command deliverysdk.Command) domain.Command {
 func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Request, err error) {
 	var domainError *domain.Error
 	if !errors.As(err, &domainError) {
+		telemetry.RecordHTTPStatusError(writer, http.StatusInternalServerError, "delivery.internal_error")
 		writeJSON(writer, http.StatusInternalServerError, presentation.LocalizeError(&domain.Error{Code: "internal_error", Message: "The server could not process the request."}, requestLocale(request)))
 		return
 	}
@@ -262,6 +264,7 @@ func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Req
 	case "request_invalid", "client_id_required", "command_invalid", "payload_invalid":
 		status = http.StatusBadRequest
 	}
+	telemetry.RecordHTTPStatusError(writer, status, "delivery."+domainError.Code)
 	writeJSON(writer, status, presentation.LocalizeError(domainError, requestLocale(request)))
 }
 
