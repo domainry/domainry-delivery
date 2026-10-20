@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.6
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/domainry/domainry-delivery-sdk v0.1.26
-	github.com/domainry/domainry-foundation v0.2.8
+	github.com/domainry/domainry-foundation v0.2.9
 	github.com/domainry/domainry-identity-bridge v0.1.10
 	github.com/domainry/domainry-identity-sdk v0.1.22
 	github.com/domainry/domainry-orm v0.1.33

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
+	"github.com/domainry/domainry-foundation/logging"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	"github.com/domainry/domainry-foundation/processhost"
 	bridgemodule "github.com/domainry/domainry-identity-bridge/module"
@@ -33,7 +35,16 @@ func run() (runErr error) {
 	if err != nil {
 		return err
 	}
-	defer func() { runErr = observability.Finish(context.Background(), nil, runErr) }()
+	started := false
+	startupFailure := logging.Failure{Stage: "application_initialize", Dependency: "delivery_database"}
+	defer func() {
+		if !started && runErr != nil {
+			observability.StartFailed(context.Background(), runErr, startupFailure)
+			runErr = errors.Join(runErr, observability.Close(context.Background(), nil))
+			return
+		}
+		runErr = observability.Finish(context.Background(), nil, runErr)
+	}()
 	databaseDriver := env("DELIVERY_DB_DRIVER", "sqlite")
 	applicationRuntime, err := deliverysaas.Open(ctx, deliverysaas.DatabaseConfig{
 		Driver: databaseDriver, MySQLDSN: os.Getenv("DELIVERY_MYSQL_DSN"), SQLitePath: env("DELIVERY_DB", "data/domainry-delivery.db"),
@@ -46,6 +57,7 @@ func run() (runErr error) {
 	service := applicationRuntime.Service
 	deliveryHandler := httpapi.New(service, env("DELIVERY_RUNTIME_ID", "domainry-delivery-dev"))
 	serverAddr := env("DELIVERY_ADDR", "127.0.0.1:8096")
+	startupFailure = logging.Failure{Stage: "identity_initialize", Dependency: "identity"}
 	authenticatedHandler, identityRoutes, closeIdentity, _, err := authenticatedDeliveryHandler(ctx, serverAddr, applicationRuntime, deliveryHandler)
 	if err != nil {
 		return err
@@ -60,8 +72,14 @@ func run() (runErr error) {
 		IdleTimeout:       60 * time.Second,
 	}
 
+	startupFailure = logging.Failure{Stage: "listener_bind", Dependency: "public_listener"}
+	listener, err := net.Listen("tcp", serverAddr)
+	if err != nil {
+		return err
+	}
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- server.ListenAndServe() }()
+	go func() { serveErr <- server.Serve(listener) }()
+	started = true
 	observability.Started(ctx, map[string]any{"listener_group": "public", "database_driver": databaseDriver})
 	select {
 	case err := <-serveErr:
