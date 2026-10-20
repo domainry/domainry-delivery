@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
 	"net/http"
 
 	deliverysdk "github.com/domainry/domainry-delivery-sdk"
@@ -18,12 +17,11 @@ import (
 
 type Handler struct {
 	service   *application.Service
-	logger    *slog.Logger
 	runtimeID string
 }
 
-func New(service *application.Service, logger *slog.Logger, runtimeID string) http.Handler {
-	handler := &Handler{service: service, logger: logger, runtimeID: runtimeID}
+func New(service *application.Service, runtimeID string) http.Handler {
+	handler := &Handler{service: service, runtimeID: runtimeID}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handler.health)
 	mux.HandleFunc("GET /api/v1/delivery/descriptor", handler.descriptor)
@@ -246,7 +244,6 @@ func domainCommand(command deliverysdk.Command) domain.Command {
 func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Request, err error) {
 	var domainError *domain.Error
 	if !errors.As(err, &domainError) {
-		handler.logger.Error("delivery request failed", "method", request.Method, "path", request.URL.Path, "error", err)
 		writeJSON(writer, http.StatusInternalServerError, presentation.LocalizeError(&domain.Error{Code: "internal_error", Message: "The server could not process the request."}, requestLocale(request)))
 		return
 	}

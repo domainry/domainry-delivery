@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -57,7 +55,7 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 	handler := httpapi.New(application.NewService(application.Ports{
 		Products: store, Runs: store, Lifecycle: store, Conversations: store,
 		Attachments: objects, AttachmentRecords: store,
-	}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	}), "delivery-test")
 	requestContext := application.WithTrustedPrincipal(context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman}, application.PermissionProductRead, application.PermissionProductWrite)
 	call := func(method, path string, body any) (int, map[string]any) {
 		t.Helper()

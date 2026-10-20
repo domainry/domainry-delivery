@@ -6,8 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -86,7 +84,7 @@ func TestModuleAndSaaSBindingsShareOneContract(t *testing.T) {
 	saasHandler := httpapi.New(application.NewService(application.Ports{
 		Products: saasStore, Runs: saasStore, Lifecycle: saasStore,
 		Conversations: saasStore, Attachments: objects, AttachmentRecords: saasStore,
-	}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-contract-test")
+	}), "delivery-contract-test")
 	server := httptest.NewServer(contractAuthentication(saasHandler))
 	defer server.Close()
 	remoteBinding, err := deliveryremote.Open(t.Context(), deliveryremote.Config{BaseURL: server.URL, RuntimeID: "delivery-contract-test", Client: server.Client()})

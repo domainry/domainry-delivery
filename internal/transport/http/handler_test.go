@@ -3,8 +3,6 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -24,7 +22,7 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	sourceRevision := "workspace-" + strings.Repeat("a", 64)
 
 	command := map[string]any{
@@ -71,7 +69,7 @@ func TestArchivedProductsCanBeListedAndRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	requestContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
 		application.PermissionProductRead, application.PermissionProductWrite,
@@ -123,7 +121,7 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer store.Close()
-	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	humanContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
 		application.PermissionProductRead, application.PermissionProductWrite,
@@ -211,7 +209,7 @@ func TestAcceptLanguageLocalizesErrorsWithoutChangingCodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	requestContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
 		application.PermissionProductRead,
@@ -238,7 +236,7 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), slog.New(slog.NewTextHandler(io.Discard, nil)), "delivery-test")
+	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	requestContext := application.WithTrustedPrincipal(
 		context.Background(), "workspace-1", delivery.Actor{ID: "owner", Kind: delivery.ActorHuman},
 		application.PermissionProductWrite,

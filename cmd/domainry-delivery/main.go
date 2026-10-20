@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +11,7 @@ import (
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/processhost"
 	bridgemodule "github.com/domainry/domainry-identity-bridge/module"
 	identityprincipal "github.com/domainry/domainry-identity-sdk/authorization/principal"
 	identityhttpmiddleware "github.com/domainry/domainry-identity-sdk/httpmiddleware"
@@ -21,50 +21,59 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if run() != nil {
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	observability, err := processhost.Open(ctx, processhost.Config{ServiceName: "domainry-delivery"})
+	if err != nil {
+		return err
+	}
+	defer func() { runErr = observability.Finish(context.Background(), nil, runErr) }()
 	databaseDriver := env("DELIVERY_DB_DRIVER", "sqlite")
-	applicationRuntime, err := deliverysaas.Open(context.Background(), deliverysaas.DatabaseConfig{
+	applicationRuntime, err := deliverysaas.Open(ctx, deliverysaas.DatabaseConfig{
 		Driver: databaseDriver, MySQLDSN: os.Getenv("DELIVERY_MYSQL_DSN"), SQLitePath: env("DELIVERY_DB", "data/domainry-delivery.db"),
 	})
 	if err != nil {
-		logger.Error("open delivery store", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer func() { _ = applicationRuntime.Close() }()
 
 	service := applicationRuntime.Service
-	deliveryHandler := httpapi.New(service, logger, env("DELIVERY_RUNTIME_ID", "domainry-delivery-dev"))
+	deliveryHandler := httpapi.New(service, env("DELIVERY_RUNTIME_ID", "domainry-delivery-dev"))
 	serverAddr := env("DELIVERY_ADDR", "127.0.0.1:8096")
-	authenticatedHandler, identityRoutes, closeIdentity, _, err := authenticatedDeliveryHandler(context.Background(), serverAddr, applicationRuntime, deliveryHandler)
+	authenticatedHandler, identityRoutes, closeIdentity, _, err := authenticatedDeliveryHandler(ctx, serverAddr, applicationRuntime, deliveryHandler)
 	if err != nil {
-		logger.Error("configure Delivery identity", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer closeIdentity()
 	server := &http.Server{
 		Addr:              serverAddr,
-		Handler:           publicDeliveryRoutes(deliveryHandler, authenticatedHandler, identityRoutes),
+		Handler:           observability.Handler("public", publicDeliveryRoutes(deliveryHandler, authenticatedHandler, identityRoutes)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		logger.Info("domainry-delivery listening", "addr", server.Addr, "database_driver", databaseDriver)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("delivery server stopped", "error", err)
-			os.Exit(1)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	observability.Started(ctx, map[string]any{"listener_group": "public", "database_driver": databaseDriver})
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
 		}
-	}()
-
-	<-stop
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Error("graceful shutdown failed", "error", err)
+		return err
+	case <-ctx.Done():
+		observability.Stopping(context.Background(), map[string]any{"reason": "signal"})
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
 	}
 }
 
