@@ -8,7 +8,6 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	"github.com/domainry/domainry-delivery/internal/domain"
-	"github.com/domainry/domainry-delivery/internal/presentation"
 )
 
 func (handler *Handler) appendFeatureMessage(writer http.ResponseWriter, request *http.Request) {
@@ -17,7 +16,7 @@ func (handler *Handler) appendFeatureMessage(writer http.ResponseWriter, request
 	decoder.DisallowUnknownFields()
 	var input application.AppendFeatureMessage
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 		return
 	}
 	message, err := handler.service.AppendFeatureMessage(request.Context(), request.PathValue("workspaceID"), request.PathValue("productID"), request.PathValue("featureID"), input)
@@ -34,7 +33,7 @@ func (handler *Handler) listFeatureMessages(writer http.ResponseWriter, request 
 		var err error
 		limit, err = strconv.Atoi(raw)
 		if err != nil {
-			writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+			handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 			return
 		}
 	}

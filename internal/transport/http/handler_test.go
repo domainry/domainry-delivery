@@ -14,6 +14,7 @@ import (
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
+	"github.com/domainry/domainry-foundation/httpresponse"
 )
 
 func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
@@ -221,11 +222,11 @@ func TestAcceptLanguageLocalizesErrorsWithoutChangingCodes(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	var body delivery.Error
+	var body httpresponse.ErrorResponse
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Code != "not_found" || body.Message != "No se encontró el recurso solicitado." {
+	if body.Code != "delivery.not_found" || body.Message != "No se encontró el recurso solicitado." {
 		t.Fatalf("localized error differs: %#v", body)
 	}
 }
@@ -246,9 +247,9 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 		body string
 		code string
 	}{
-		{name: "missing client id", body: `{"expected_revision":0,"type":"product.create","payload":{}}`, code: "client_id_required"},
-		{name: "unknown command", body: `{"client_id":"request-1","expected_revision":0,"type":"product.unknown","payload":{}}`, code: "command_unknown"},
-		{name: "missing payload", body: `{"client_id":"request-1","expected_revision":0,"type":"product.create"}`, code: "payload_invalid"},
+		{name: "missing client id", body: `{"expected_revision":0,"type":"product.create","payload":{}}`, code: "delivery.client_id_required"},
+		{name: "unknown command", body: `{"client_id":"request-1","expected_revision":0,"type":"product.unknown","payload":{}}`, code: "delivery.command_unknown"},
+		{name: "missing payload", body: `{"client_id":"request-1","expected_revision":0,"type":"product.create"}`, code: "delivery.payload_invalid"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/workspace-1/products/product-1/commands", strings.NewReader(test.body)).WithContext(requestContext)
@@ -267,7 +268,7 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 	).WithContext(requestContext)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"delivery.not_found"`) {
 		t.Fatalf("feature.rebase did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
 	}
 
@@ -278,7 +279,7 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 	).WithContext(requestContext)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"delivery.not_found"`) {
 		t.Fatalf("feature.delete did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
 	}
 
@@ -293,7 +294,7 @@ func TestCommandEnvelopeIsValidatedBeforeDispatch(t *testing.T) {
 	).WithContext(systemContext)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"not_found"`) {
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"delivery.not_found"`) {
 		t.Fatalf("release.reissue did not cross the public SDK boundary: status=%d body=%s", response.Code, response.Body.String())
 	}
 }

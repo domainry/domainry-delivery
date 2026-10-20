@@ -63,3 +63,25 @@ func TestDevelopmentIdentityRejectsNonLoopbackListener(t *testing.T) {
 		t.Fatal("development identity accepted a non-loopback listener")
 	}
 }
+
+func TestDevelopmentIdentityUsesCanonicalHTTPErrorResponse(t *testing.T) {
+	identity := developmentIdentity{workspaceID: "workspace-local"}
+	handler := identity.Authenticate(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unauthenticated request reached the protected handler")
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/session", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var failure struct {
+		Code      string            `json:"code"`
+		Message   string            `json:"message"`
+		Params    map[string]string `json:"params"`
+		RequestID string            `json:"request_id"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&failure); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusUnauthorized || failure.Code != "delivery.authentication_required" || failure.Message == "" || failure.Params != nil {
+		t.Fatalf("unexpected canonical failure: status=%d response=%+v", response.Code, failure)
+	}
+}

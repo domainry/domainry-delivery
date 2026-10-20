@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-foundation/httpresponse"
 )
 
 const developmentIdentityEnv = "DELIVERY_DEV_IDENTITY"
@@ -89,10 +89,8 @@ func (identity developmentIdentity) Authenticate(next http.Handler) http.Handler
 		token := strings.TrimSpace(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "))
 		principal, found := identity.principal(token)
 		if !found {
-			writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-			writer.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(writer).Encode(map[string]string{
-				"code": "authentication_required", "message": "A valid local development credential is required.",
+			httpresponse.WriteError(writer, request, httpresponse.Failure{
+				Status: http.StatusUnauthorized, Code: "delivery.authentication_required", Message: "A valid local development credential is required.",
 			})
 			return
 		}

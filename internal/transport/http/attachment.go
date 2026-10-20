@@ -7,7 +7,6 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	"github.com/domainry/domainry-delivery/internal/domain"
-	"github.com/domainry/domainry-delivery/internal/presentation"
 )
 
 func (handler *Handler) uploadFeatureAttachment(writer http.ResponseWriter, request *http.Request) {
@@ -16,7 +15,7 @@ func (handler *Handler) uploadFeatureAttachment(writer http.ResponseWriter, requ
 	decoder.DisallowUnknownFields()
 	var input application.UploadFeatureAttachment
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 		return
 	}
 	metadata, err := handler.service.UploadFeatureAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("productID"), request.PathValue("featureID"), input)
@@ -55,7 +54,7 @@ func (handler *Handler) removeFeatureAttachment(writer http.ResponseWriter, requ
 		ExpectedRevision uint64 `json:"expected_revision"`
 	}
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 		return
 	}
 	value, err := handler.service.RemoveFeatureAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("productID"), request.PathValue("featureID"), request.PathValue("attachmentID"), input.ClientID, input.DeviceID, input.ExpectedRevision)
@@ -72,7 +71,7 @@ func (handler *Handler) uploadAcceptanceAttachment(writer http.ResponseWriter, r
 	decoder.DisallowUnknownFields()
 	var input application.UploadFeatureAttachment
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 		return
 	}
 	metadata, err := handler.service.UploadAcceptanceAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("deliveryRunID"), input)
@@ -102,7 +101,7 @@ func (handler *Handler) removeAcceptanceAttachment(writer http.ResponseWriter, r
 		ExpectedRevision uint64 `json:"expected_revision"`
 	}
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
 		return
 	}
 	value, err := handler.service.RemoveAcceptanceAttachment(request.Context(), request.PathValue("workspaceID"), request.PathValue("deliveryRunID"), request.PathValue("attachmentID"), input.ClientID, input.DeviceID, input.ExpectedRevision)

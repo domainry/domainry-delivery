@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -13,7 +14,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/presentation"
 	"github.com/domainry/domainry-delivery/internal/utcjson"
-	"github.com/domainry/domainry-foundation/telemetry"
+	"github.com/domainry/domainry-foundation/httpresponse"
 )
 
 type Handler struct {
@@ -213,25 +214,25 @@ func (handler *Handler) decodeCommand(writer http.ResponseWriter, request *http.
 		if errors.Is(err, io.EOF) {
 			message = "The request body cannot be empty."
 		}
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid", Message: message}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: message})
 		return deliverysdk.Command{}, false
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid", Message: "The request must contain exactly one JSON object."}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: "The request must contain exactly one JSON object."})
 		return deliverysdk.Command{}, false
 	}
 	if err := command.Validate(); err != nil {
 		var contractError *deliverysdk.Error
 		if errors.As(err, &contractError) {
-			writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: contractError.Code, Message: contractError.Message, Details: contractError.Details}, requestLocale(request)))
+			handler.writeError(writer, request, &domain.Error{Code: contractError.Code, Message: contractError.Message, Details: contractError.Details})
 		} else {
-			writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "request_invalid", Message: "The Delivery command is invalid."}, requestLocale(request)))
+			handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: "The Delivery command is invalid."})
 		}
 		return deliverysdk.Command{}, false
 	}
 	normalized, err := utcjson.NormalizeInput(command.Payload)
 	if err != nil {
-		writeJSON(writer, http.StatusBadRequest, presentation.LocalizeError(&domain.Error{Code: "payload_invalid"}, requestLocale(request)))
+		handler.writeError(writer, request, &domain.Error{Code: "payload_invalid"})
 		return deliverysdk.Command{}, false
 	}
 	command.Payload = normalized
@@ -245,8 +246,7 @@ func domainCommand(command deliverysdk.Command) domain.Command {
 func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Request, err error) {
 	var domainError *domain.Error
 	if !errors.As(err, &domainError) {
-		telemetry.RecordHTTPStatusError(writer, http.StatusInternalServerError, "delivery.internal_error", err)
-		writeJSON(writer, http.StatusInternalServerError, presentation.LocalizeError(&domain.Error{Code: "internal_error", Message: "The server could not process the request."}, requestLocale(request)))
+		httpresponse.WriteError(writer, request, httpresponse.Failure{Status: http.StatusInternalServerError, Code: "delivery.internal_error", Cause: err})
 		return
 	}
 	status := http.StatusUnprocessableEntity
@@ -261,11 +261,15 @@ func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Req
 		status = http.StatusConflict
 	case "storage_failure":
 		status = http.StatusInternalServerError
-	case "request_invalid", "client_id_required", "command_invalid", "payload_invalid":
+	case "request_invalid", "client_id_required", "command_invalid", "command_unknown", "payload_invalid":
 		status = http.StatusBadRequest
 	}
-	telemetry.RecordHTTPStatusError(writer, status, "delivery."+domainError.Code, err)
-	writeJSON(writer, status, presentation.LocalizeError(domainError, requestLocale(request)))
+	localized := presentation.LocalizeError(domainError, requestLocale(request))
+	params := make(map[string]string, len(localized.Details))
+	for key, value := range localized.Details {
+		params[key] = fmt.Sprint(value)
+	}
+	httpresponse.WriteError(writer, request, httpresponse.Failure{Status: status, Code: domainError.ErrorCode(), Message: localized.Message, Params: params, Cause: err})
 }
 
 func requestLocale(request *http.Request) string {
@@ -283,7 +287,7 @@ func (handler *Handler) securityHeaders(next http.Handler) http.Handler {
 func writeJSON(writer http.ResponseWriter, status int, value any) {
 	raw, err := utcjson.Marshal(value)
 	if err != nil {
-		http.Error(writer, "Delivery response encoding failed", http.StatusInternalServerError)
+		httpresponse.WriteError(writer, nil, httpresponse.Failure{Status: http.StatusInternalServerError, Code: "backend.response_write_failed", Cause: err})
 		return
 	}
 	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
