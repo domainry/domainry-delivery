@@ -13,7 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.4
 	github.com/domainry/domainry-delivery-sdk v0.1.27
 	github.com/domainry/domainry-foundation v0.2.9
-	github.com/domainry/domainry-identity-bridge v0.1.16
+	github.com/domainry/domainry-identity-bridge v0.1.17
 	github.com/domainry/domainry-identity-sdk v0.1.27
 	github.com/domainry/domainry-orm v0.1.33
 	github.com/gabriel-vasile/mimetype v1.4.15
