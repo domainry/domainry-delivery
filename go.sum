@@ -46,6 +46,8 @@ github.com/domainry/domainry-delivery-sdk v0.1.28 h1:PgwSfjKzKrrlTpR9uvrNfSpzOGp
 github.com/domainry/domainry-delivery-sdk v0.1.28/go.mod h1:ulWlMA0NzvzMLvo/abh/sHcBUJ7NfAUFgDIiKNtSbAI=
 github.com/domainry/domainry-foundation v0.2.10 h1:/4MsUDjhGMC11KAk6D9XGpvAlzblNO80B+ELFRdWC70=
 github.com/domainry/domainry-foundation v0.2.10/go.mod h1:nCw272N/NTkHfJNWvAGL8vZybUtOpgw3ZyCIshRSqF4=
+github.com/domainry/domainry-foundation v0.2.11 h1:QHw9fUFKFBkrzW/w6U/AyQoS9aisC1kyFgkAjPGKWQM=
+github.com/domainry/domainry-foundation v0.2.11/go.mod h1:nCw272N/NTkHfJNWvAGL8vZybUtOpgw3ZyCIshRSqF4=
 github.com/domainry/domainry-identity-bridge v0.1.18 h1:17A8a+N1SpHUxHw4cRTDkcvudV2wkbOFs9buee6oQgc=
 github.com/domainry/domainry-identity-bridge v0.1.18/go.mod h1:4/gaIixQE2VPV2PuEXeOu2FtDGtTqA44+bUX9qZQh/8=
 github.com/domainry/domainry-identity-sdk v0.1.31 h1:6hNfQBl8E4LIEtnxpXSuNJ45VOpKYF8RV5W9wushEsY=
