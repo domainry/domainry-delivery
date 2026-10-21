@@ -82,6 +82,16 @@ Environment:
   remote Identity service or service credential.
 - `DELIVERY_DEV_IDENTITY`: optional local-only test identity, deliberately
   restricted to loopback listeners and never used by the dev deployment.
+- `LOG_LEVEL`, `LOG_ENCODING`, and `LOG_CONSOLE`: process log level, encoding,
+  and console output. The container defaults are `info`, `json`, and `true`.
+- `LOG_DIRECTORY`: enables the secondary process-owned file archive. The
+  container defaults to `/app/logs`; application events are written to
+  `domainry-delivery.application.YYYY-MM-DD.log` and terminal HTTP request
+  events are written only to `domainry-delivery.access.YYYY-MM-DD.log`.
+- `LOG_MAX_FILE_SIZE_MB`, `LOG_MAX_TOTAL_SIZE_MB`, and `LOG_RETENTION_DAYS`:
+  size rotation, total archive budget, and UTC-day retention. Container
+  defaults are 100 MiB, 2048 MiB, and 30 days. Historical files are gzip
+  compressed. Container stdout remains the primary platform collection path.
 
 The dev Kubernetes configuration lives in the separate devops repository at
 `domainry-delivery/k8s/dev`. It uses MySQL, environment-owned database and
@@ -90,6 +100,13 @@ and IAM role, Jenkins image builds, ECR, and Argo CD; no database values are
 committed. Original bytes use `delivery/YYYYMMDD/` with a UTC date and hashed
 filename. The dev bucket grants public object reads, so uploaded originals
 are not confidential from anyone who knows their S3 key.
+
+The dev Pod mounts a per-replica writable `emptyDir` at `/app/logs`. This keeps
+application and access files separate while the Pod is alive and avoids
+sharing a rotating file set across replicas. It is a secondary local archive,
+not durable cluster retention: stdout/stderr must still be collected by the
+platform, and durable file retention requires a collector or a per-replica
+persistent volume owned by the deployment environment.
 
 All Delivery-owned Product, Feature, DeliveryRun, conversation and attachment
 timestamp columns and API fields use UTC Unix milliseconds. Foundation-owned

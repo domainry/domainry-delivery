@@ -22,13 +22,21 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/domainr
 FROM ${BASE_IMAGE_REGISTRY}alpine:latest
 
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata && \
-    addgroup -S -g 10001 domainry && adduser -S -D -H -u 10001 -G domainry domainry
+    addgroup -S -g 10001 domainry && adduser -S -D -H -u 10001 -G domainry domainry && \
+    mkdir -p /app/logs && chown domainry:domainry /app/logs
 
 WORKDIR /app
 COPY --from=builder /out/domainry-delivery /app/domainry-delivery
 COPY conf/identity-external.json /app/conf/identity-external.json
 
-ENV DELIVERY_ADDR=:8096
+ENV DELIVERY_ADDR=:8096 \
+    LOG_LEVEL=info \
+    LOG_ENCODING=json \
+    LOG_CONSOLE=true \
+    LOG_DIRECTORY=/app/logs \
+    LOG_MAX_FILE_SIZE_MB=100 \
+    LOG_MAX_TOTAL_SIZE_MB=2048 \
+    LOG_RETENTION_DAYS=30
 USER 10001:10001
 EXPOSE 8096
 ENTRYPOINT ["/app/domainry-delivery"]
