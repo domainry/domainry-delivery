@@ -16,7 +16,7 @@ func (store *Store) PutAttachment(ctx context.Context, workspaceID, productID, f
 		if previous.Filename == metadata.Filename && previous.SHA256 == metadata.SHA256 && previous.CreatedBy == metadata.CreatedBy && previous.DeviceID == metadata.DeviceID {
 			return previous, nil
 		}
-		return attachment.Metadata{}, domain.Invalid("idempotency_key_reused")
+		return attachment.Metadata{}, domain.ConflictCode("idempotency_key_reused")
 	}
 	var domainError *domain.Error
 	if !errors.As(err, &domainError) || domainError.Code != "not_found" {

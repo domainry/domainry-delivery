@@ -62,7 +62,7 @@ func LocalizeError(err *Error, locale string) *Error {
 	if message == "" {
 		return err
 	}
-	return &Error{Code: err.Code, Message: message, Details: err.Details}
+	return &Error{Class: err.Class, Code: err.Code, Message: message, Details: err.Details}
 }
 
 var releaseGateLabels = map[string]map[string]string{

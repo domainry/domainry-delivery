@@ -16,7 +16,7 @@ func (handler *Handler) appendFeatureMessage(writer http.ResponseWriter, request
 	decoder.DisallowUnknownFields()
 	var input application.AppendFeatureMessage
 	if decoder.Decode(&input) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
+		handler.writeError(writer, request, domain.Invalid("request_invalid"))
 		return
 	}
 	message, err := handler.service.AppendFeatureMessage(request.Context(), request.PathValue("workspaceID"), request.PathValue("productID"), request.PathValue("featureID"), input)
@@ -33,7 +33,7 @@ func (handler *Handler) listFeatureMessages(writer http.ResponseWriter, request 
 		var err error
 		limit, err = strconv.Atoi(raw)
 		if err != nil {
-			handler.writeError(writer, request, &domain.Error{Code: "request_invalid"})
+			handler.writeError(writer, request, domain.Invalid("request_invalid"))
 			return
 		}
 	}

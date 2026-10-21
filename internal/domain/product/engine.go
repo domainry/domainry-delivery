@@ -32,7 +32,7 @@ func NewProduct(workspaceID, productID string, command Command, now time.Time) (
 		return Product{}, err
 	}
 	if command.Actor.Kind == ActorSystem {
-		return Product{}, Invalid("actor_unauthorized")
+		return Product{}, Forbidden("actor_unauthorized")
 	}
 	var payload struct {
 		Name        string `json:"name"`
@@ -172,12 +172,12 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 		err = failProductFoundation(product, command)
 	case commandFeatureDiscoveryOpen:
 		if command.Actor.Kind != ActorHuman {
-			return Invalid("actor_unauthorized")
+			return Forbidden("actor_unauthorized")
 		}
 		err = openFeatureDiscovery(product, command, now)
 	case commandFeatureDiscoveryReplace:
 		if command.Actor.Kind == ActorSystem {
-			return Invalid("actor_unauthorized")
+			return Forbidden("actor_unauthorized")
 		}
 		err = replaceFeatureDiscovery(product, command, now)
 	case commandFeatureDelete:

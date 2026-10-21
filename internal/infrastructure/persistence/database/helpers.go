@@ -5,5 +5,5 @@ import (
 )
 
 func storageError(err error) error {
-	return &domain.Error{Code: "storage_failure", Message: "Delivery data storage failed.", Details: map[string]any{"cause": err.Error()}}
+	return domain.Internal("storage_failure", map[string]any{"cause": err.Error()})
 }

@@ -43,7 +43,7 @@ func (store *Store) PutMessage(ctx context.Context, workspaceID, productID, feat
 
 func matchingMessage(previous, requested conversation.Message) (conversation.Message, error) {
 	if previous.ID != requested.ID || previous.ConversationID != requested.ConversationID || previous.TurnID != requested.TurnID || previous.Role != requested.Role || previous.Text != requested.Text || previous.CreatedBy != requested.CreatedBy || previous.DeviceID != requested.DeviceID || !reflect.DeepEqual(previous.AttachmentIDs, requested.AttachmentIDs) {
-		return conversation.Message{}, domain.Invalid("idempotency_key_reused")
+		return conversation.Message{}, domain.ConflictCode("idempotency_key_reused")
 	}
 	return previous, nil
 }

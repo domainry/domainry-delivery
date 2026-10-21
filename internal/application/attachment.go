@@ -73,7 +73,7 @@ func (service *Service) uploadAttachment(ctx context.Context, workspaceID, produ
 		if previous.Filename == input.Filename && previous.SHA256 == sha && previous.CreatedBy == actorID && previous.DeviceID == input.DeviceID {
 			return previous, nil
 		}
-		return attachment.Metadata{}, domain.Invalid("idempotency_key_reused")
+		return attachment.Metadata{}, domain.ConflictCode("idempotency_key_reused")
 	} else if !isNotFound(err) {
 		return attachment.Metadata{}, err
 	}

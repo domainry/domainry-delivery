@@ -14,6 +14,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/product"
 	"github.com/domainry/domainry-delivery/internal/presentation"
 	"github.com/domainry/domainry-delivery/internal/utcjson"
+	"github.com/domainry/domainry-foundation/apperror"
 	"github.com/domainry/domainry-foundation/httpresponse"
 )
 
@@ -214,25 +215,25 @@ func (handler *Handler) decodeCommand(writer http.ResponseWriter, request *http.
 		if errors.Is(err, io.EOF) {
 			message = "The request body cannot be empty."
 		}
-		handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: message})
+		handler.writeError(writer, request, &domain.Error{Class: apperror.KindBadRequest, Code: "request_invalid", Message: message})
 		return deliverysdk.Command{}, false
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
-		handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: "The request must contain exactly one JSON object."})
+		handler.writeError(writer, request, &domain.Error{Class: apperror.KindBadRequest, Code: "request_invalid", Message: "The request must contain exactly one JSON object."})
 		return deliverysdk.Command{}, false
 	}
 	if err := command.Validate(); err != nil {
 		var contractError *deliverysdk.Error
 		if errors.As(err, &contractError) {
-			handler.writeError(writer, request, &domain.Error{Code: contractError.Code, Message: contractError.Message, Details: contractError.Details})
+			handler.writeError(writer, request, &domain.Error{Class: apperror.ErrorKind(contractError.Class), Code: contractError.Code, Message: contractError.Message, Details: contractError.Details})
 		} else {
-			handler.writeError(writer, request, &domain.Error{Code: "request_invalid", Message: "The Delivery command is invalid."})
+			handler.writeError(writer, request, &domain.Error{Class: apperror.KindBadRequest, Code: "request_invalid", Message: "The Delivery command is invalid."})
 		}
 		return deliverysdk.Command{}, false
 	}
 	normalized, err := utcjson.NormalizeInput(command.Payload)
 	if err != nil {
-		handler.writeError(writer, request, &domain.Error{Code: "payload_invalid"})
+		handler.writeError(writer, request, domain.Invalid("payload_invalid"))
 		return deliverysdk.Command{}, false
 	}
 	command.Payload = normalized
@@ -249,27 +250,32 @@ func (handler *Handler) writeError(writer http.ResponseWriter, request *http.Req
 		httpresponse.WriteError(writer, request, httpresponse.Failure{Status: http.StatusInternalServerError, Code: "delivery.internal_error", Cause: err})
 		return
 	}
-	status := http.StatusUnprocessableEntity
-	switch domainError.Code {
-	case "authentication_required":
-		status = http.StatusUnauthorized
-	case "permission_denied", "identity_workspace_mismatch", "actor_unauthorized":
-		status = http.StatusForbidden
-	case "not_found":
-		status = http.StatusNotFound
-	case "revision_conflict", "idempotency_key_reused":
-		status = http.StatusConflict
-	case "storage_failure":
-		status = http.StatusInternalServerError
-	case "request_invalid", "client_id_required", "command_invalid", "command_unknown", "payload_invalid":
-		status = http.StatusBadRequest
-	}
+	status := deliveryHTTPStatus(apperror.KindOf(domainError))
 	localized := presentation.LocalizeError(domainError, requestLocale(request))
 	params := make(map[string]string, len(localized.Details))
 	for key, value := range localized.Details {
 		params[key] = fmt.Sprint(value)
 	}
 	httpresponse.WriteError(writer, request, httpresponse.Failure{Status: status, Code: domainError.ErrorCode(), Message: localized.Message, Params: params, Cause: err})
+}
+
+func deliveryHTTPStatus(kind apperror.ErrorKind) int {
+	switch kind {
+	case apperror.KindBadRequest:
+		return http.StatusBadRequest
+	case apperror.KindForbidden:
+		return http.StatusForbidden
+	case apperror.KindNotFound:
+		return http.StatusNotFound
+	case apperror.KindConflict:
+		return http.StatusConflict
+	case apperror.KindRateLimited:
+		return http.StatusTooManyRequests
+	case apperror.KindUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func requestLocale(request *http.Request) string {

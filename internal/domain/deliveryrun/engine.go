@@ -445,7 +445,7 @@ func authorizeHumanCommand(run *DeliveryRun, command Command) error {
 			return nil
 		}
 	}
-	return Invalid("actor_unauthorized")
+	return Forbidden("actor_unauthorized")
 }
 
 func AgentContextFor(run DeliveryRun) AgentContext {

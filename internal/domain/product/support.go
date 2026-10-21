@@ -38,6 +38,7 @@ func clone[T any](value T) T                           { return domain.Clone(val
 func cleanStrings(values []string) []string            { return domain.CleanStrings(values) }
 func validCodeRevision(value string) bool              { return domain.ValidCodeRevision(value) }
 func Invalid(code string) error                        { return domain.Invalid(code) }
+func Forbidden(code string) error                      { return domain.Forbidden(code) }
 func NotFound(entity, id string) error                 { return domain.NotFound(entity, id) }
 
 const CommandTargetProduct = commanddomain.TargetProduct

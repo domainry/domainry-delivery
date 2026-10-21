@@ -55,6 +55,7 @@ func catalogAction(key, targetID string) AvailableAction {
 }
 
 func Invalid(code string) error                      { return domain.Invalid(code) }
+func Forbidden(code string) error                    { return domain.Forbidden(code) }
 func NotFound(entity, id string) error               { return domain.NotFound(entity, id) }
 func Conflict(actual uint64) error                   { return domain.Conflict(actual) }
 func validateActor(actor Actor) error                { return commanddomain.ValidateIdentity(actor) }

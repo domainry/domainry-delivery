@@ -136,14 +136,14 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 			"conversation_id": value["conversation_id"], "run_id": "turn-1", "source_ids": []string{"conversation://another/message/message-1"},
 		}},
 	})
-	if status != http.StatusUnprocessableEntity || invalidSource["code"] != "delivery.feature_source_reference_unverified" {
+	if status != http.StatusBadRequest || invalidSource["code"] != "delivery.feature_source_reference_unverified" {
 		t.Fatalf("unverified source was accepted: status=%d body=%v", status, invalidSource)
 	}
 	status, verifiedSource := call(http.MethodPost, productPath+"/commands", map[string]any{
 		"client_id": "feature-source-valid", "expected_revision": 1, "type": "feature.discovery.replace",
 		"payload": map[string]any{"feature_id": "feature-1", "code": "F-001", "baseline_product_revision": 1, "source": featureSource},
 	})
-	if status != http.StatusUnprocessableEntity || verifiedSource["code"] == "delivery.feature_source_reference_unverified" {
+	if status != http.StatusBadRequest || verifiedSource["code"] == "delivery.feature_source_reference_unverified" {
 		t.Fatalf("archived message and attachment were not verified: status=%d body=%v", status, verifiedSource)
 	}
 	status, downloaded := call(http.MethodGet, featurePath+"/attachments/"+id, nil)

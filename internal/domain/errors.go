@@ -1,11 +1,16 @@
 package domain
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/domainry/domainry-foundation/apperror"
+)
 
 type Error struct {
-	Code    string         `json:"code"`
-	Message string         `json:"message"`
-	Details map[string]any `json:"details,omitempty"`
+	Class   apperror.ErrorKind `json:"-"`
+	Code    string             `json:"code"`
+	Message string             `json:"message"`
+	Details map[string]any     `json:"details,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -19,18 +24,7 @@ func (e *Error) ApplicationErrorKind() string {
 	if e == nil {
 		return ""
 	}
-	switch e.Code {
-	case "authentication_required", "permission_denied", "identity_workspace_mismatch", "actor_unauthorized":
-		return "forbidden"
-	case "not_found":
-		return "not_found"
-	case "revision_conflict", "idempotency_key_reused":
-		return "conflict"
-	case "storage_failure":
-		return "internal"
-	default:
-		return "bad_request"
-	}
+	return string(apperror.NormalizeKind(string(e.Class)))
 }
 
 func (e *Error) ErrorCode() string {
@@ -50,13 +44,25 @@ func (e *Error) ErrorCode() string {
 func (*Error) ErrorParams() map[string]string { return nil }
 
 func Invalid(code string) error {
-	return &Error{Code: code}
+	return &Error{Class: apperror.KindBadRequest, Code: code}
+}
+
+func Forbidden(code string) error {
+	return &Error{Class: apperror.KindForbidden, Code: code}
+}
+
+func ConflictCode(code string) error {
+	return &Error{Class: apperror.KindConflict, Code: code}
+}
+
+func Internal(code string, details map[string]any) error {
+	return &Error{Class: apperror.KindInternal, Code: code, Details: details}
 }
 
 func NotFound(entity, id string) error {
-	return &Error{Code: "not_found", Details: map[string]any{"entity": entity, "id": id}}
+	return &Error{Class: apperror.KindNotFound, Code: "not_found", Details: map[string]any{"entity": entity, "id": id}}
 }
 
 func Conflict(actual uint64) error {
-	return &Error{Code: "revision_conflict", Details: map[string]any{"actual_revision": actual}}
+	return &Error{Class: apperror.KindConflict, Code: "revision_conflict", Details: map[string]any{"actual_revision": actual}}
 }

@@ -191,7 +191,7 @@ func toSDKError(ctx context.Context, err error) error {
 		return err
 	}
 	localized := presentation.LocalizeError(domainError, deliverysdk.LocaleFromContext(ctx))
-	return &deliverysdk.Error{Code: localized.Code, Message: localized.Message, Details: localized.Details}
+	return &deliverysdk.Error{Class: deliverysdk.ErrorClass(domainError.Class), Code: localized.Code, Message: localized.Message, Details: localized.Details}
 }
 
 var _ deliverysdk.Factory = (*Factory)(nil)
