@@ -323,13 +323,44 @@ func TestFeatureDeletePersistsAcrossReloadAndRetainsConversationArchive(t *testi
 		t.Fatalf("deleted Feature returned after reload: got %#v, want %#v", reloaded.Features, updated.Features)
 	}
 
-	archived, err := store.ListMessages(t.Context(), product.WorkspaceID, product.ID, deletedFeatureID, "", 10)
+	archived, err := store.ListMessages(t.Context(), product.WorkspaceID, product.ID, deletedFeatureID, 0, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
 	message.SourceID = conversation.SourceID(message.ConversationID, message.ID)
-	if !reflect.DeepEqual(archived, []conversation.Message{message}) {
-		t.Fatalf("Feature conversation archive changed during deletion: got %#v, want %#v", archived, []conversation.Message{message})
+	if !reflect.DeepEqual(archived.Messages, []conversation.Message{message}) {
+		t.Fatalf("Feature conversation archive changed during deletion: got %#v, want %#v", archived.Messages, []conversation.Message{message})
+	}
+}
+
+func TestFeatureMessagePaginationUsesAutoIncrementID(t *testing.T) {
+	store := openTestStore(t)
+	defer store.Close()
+	workspaceID, productID, featureID := "workspace-cursor", "product-cursor", "feature-cursor"
+	conversationID := conversation.ConversationID(workspaceID, productID, featureID)
+	for index, messageID := range []string{"message-z", "message-a", "message-m"} {
+		message := conversation.Message{
+			ID: messageID, ConversationID: conversationID, TurnID: "turn-" + messageID,
+			Role: "user", Text: messageID, AttachmentIDs: []string{}, CreatedBy: "owner", DeviceID: "device",
+			CreatedAt: int64(300 - index),
+		}
+		if _, err := store.PutMessage(t.Context(), workspaceID, productID, featureID, message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := store.ListMessages(t.Context(), workspaceID, productID, featureID, 0, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.HasMore || first.NextAfterID < 1 || len(first.Messages) != 2 || first.Messages[0].ID != "message-z" || first.Messages[1].ID != "message-a" {
+		t.Fatalf("first page=%#v", first)
+	}
+	second, err := store.ListMessages(t.Context(), workspaceID, productID, featureID, first.NextAfterID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.HasMore || second.NextAfterID != 0 || len(second.Messages) != 1 || second.Messages[0].ID != "message-m" {
+		t.Fatalf("second page=%#v", second)
 	}
 }
 

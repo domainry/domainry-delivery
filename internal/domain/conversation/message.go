@@ -22,6 +22,14 @@ type Message struct {
 	CreatedAt      int64    `json:"created_at"`
 }
 
+// MessagePage keeps the storage cursor separate from the public Message ID.
+// NextAfterID is the last auto-increment row id returned by the repository.
+type MessagePage struct {
+	Messages    []Message
+	NextAfterID int64
+	HasMore     bool
+}
+
 // ConversationID is stable for one Workspace/Product/Feature scope. It does
 // not disclose tenant identifiers in cross-service source references.
 func ConversationID(workspaceID, productID, featureID string) string {

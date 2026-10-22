@@ -18,6 +18,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/attachment"
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
+	"github.com/domainry/domainry-foundation/entityid"
 )
 
 type archiveObjectStore struct {
@@ -95,6 +96,9 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 	if status != http.StatusOK || value["text"] != first["text"] || value["source_id"] == "" || value["device_id"] != "device-1" {
 		t.Fatalf("archive user: status=%d body=%v", status, value)
 	}
+	if err := entityid.Validate("delmsg", value["id"].(string)); err != nil {
+		t.Fatalf("message id did not use the shared entity rule: %v", err)
+	}
 	status, replay := call(http.MethodPost, featurePath+"/messages", first)
 	if status != http.StatusOK || replay["id"] != value["id"] {
 		t.Fatalf("idempotent replay: status=%d body=%v", status, replay)
@@ -109,10 +113,11 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 		t.Fatalf("archive assistant status=%d", status)
 	}
 	status, page := call(http.MethodGet, featurePath+"/messages?limit=1", nil)
-	if status != http.StatusOK || page["next_cursor"] != "message-1" || len(page["data"].([]any)) != 1 {
+	cursor, cursorOK := page["next_cursor"].(string)
+	if status != http.StatusOK || !cursorOK || cursor == "" || cursor == value["id"] || len(page["data"].([]any)) != 1 {
 		t.Fatalf("first page: status=%d body=%v", status, page)
 	}
-	status, page = call(http.MethodGet, featurePath+"/messages?cursor=message-1&limit=1", nil)
+	status, page = call(http.MethodGet, featurePath+"/messages?cursor="+cursor+"&limit=1", nil)
 	if status != http.StatusOK || len(page["data"].([]any)) != 1 || page["data"].([]any)[0].(map[string]any)["text"] != "PM 原始回复" {
 		t.Fatalf("second page: status=%d body=%v", status, page)
 	}
@@ -126,6 +131,9 @@ func TestFeatureConversationAndAttachmentArchive(t *testing.T) {
 		t.Fatalf("upload: status=%d body=%v", status, uploaded)
 	}
 	id := uploaded["id"].(string)
+	if err := entityid.Validate("delatt", id); err != nil {
+		t.Fatalf("attachment id did not use the shared entity rule: %v", err)
+	}
 	featureSource := map[string]any{
 		"conversation_id": value["conversation_id"], "run_id": "turn-1",
 		"source_ids": []string{value["source_id"].(string), "attachment://" + id},

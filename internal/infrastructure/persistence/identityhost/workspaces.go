@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	identity "github.com/domainry/domainry-identity-sdk"
 	identitymodulehost "github.com/domainry/domainry-identity-sdk/modulehost"
 	ormquery "github.com/domainry/domainry-orm/query"
@@ -13,6 +14,14 @@ import (
 )
 
 const workspaceTable = "workspaces"
+
+func SchemaOwnership() []schemaownership.Table {
+	return []schemaownership.Table{{
+		Name: workspaceTable, Owner: "delivery-host", Kind: schemaownership.KindEntity, WorkspaceScope: schemaownership.ScopeWorkspace,
+		RetentionClass: schemaownership.RetentionProduct, PrimaryKey: []string{"id"}, EntityIDColumn: "workspace_id", EntityIDPrefix: "ws", BusinessKey: []string{"workspace_id"},
+		BoundedQueryPath: "exact workspace identity", DeletionPolicy: "standalone workspace deletion removes the workspace and its Delivery data",
+	}}
+}
 
 type Workspaces struct {
 	db         *sql.DB
@@ -34,12 +43,7 @@ func NewDatabaseHandle(ctx context.Context, database *sql.DB, driver string, ren
 }
 
 func (host *Workspaces) prepare(ctx context.Context) error {
-	statement, arguments, err := schema.NewTable(host.renderer, workspaceTable).Columns(
-		schema.Column("id", schema.TextKey(191)).NotNull(),
-		schema.Column("owner_user_id", schema.TextKey(191)).NotNull(),
-		schema.Column("name", schema.Text()).NotNull(),
-		schema.Column("active", schema.Boolean()).NotNull(),
-	).PrimaryKey("id").Build()
+	statement, arguments, err := workspaceTableDDL(host.renderer)
 	if err != nil {
 		return err
 	}
@@ -49,6 +53,15 @@ func (host *Workspaces) prepare(ctx context.Context) error {
 	return host.migrations.ApplyOwnedMigrations(ctx, "delivery_host", []identitymodulehost.SchemaMigration{{
 		Version: 1, Name: "personal_workspaces", Statements: []string{statement},
 	}})
+}
+
+func workspaceTableDDL(renderer ormquery.Renderer) (string, []any, error) {
+	return schema.NewTableWithRequiredColumns(renderer, workspaceTable, schema.Column("id", schema.BigInt()).NotNull().AutoIncrement()).Columns(
+		schema.Column("workspace_id", schema.TextKey(191)).NotNull(),
+		schema.Column("owner_user_id", schema.TextKey(191)).NotNull(),
+		schema.Column("name", schema.Text()).NotNull(),
+		schema.Column("active", schema.Boolean()).NotNull(),
+	).PrimaryKey("id").Unique("workspace_id").Build()
 }
 
 func (host *Workspaces) RunExternalWorkspaceTransaction(ctx context.Context, apply func(context.Context, identity.EmbeddedTransaction) error) error {
@@ -71,7 +84,7 @@ func (host *Workspaces) CreateExternalWorkspace(ctx context.Context, request ide
 		return fmt.Errorf("verified Workspace owner and transaction are required")
 	}
 	statement, arguments, err := ormquery.NewInsertBuilder(host.renderer, workspaceTable).
-		Columns("id", "owner_user_id", "name", "active").
+		Columns("workspace_id", "owner_user_id", "name", "active").
 		Values(request.WorkspaceID, request.UserID, request.Name, true).Build()
 	if err != nil {
 		return err
@@ -89,7 +102,7 @@ func (*Workspaces) InitializeExternalWorkspaceApplication(_ context.Context, req
 
 func (host *Workspaces) ExternalWorkspaceActive(ctx context.Context, workspaceID string) (bool, error) {
 	statement, arguments, err := ormquery.NewSelectBuilder(host.renderer, workspaceTable).
-		Columns("active").Where(ormquery.Equal("id", workspaceID)).Build()
+		Columns("active").Where(ormquery.Equal("workspace_id", workspaceID)).Build()
 	if err != nil {
 		return false, err
 	}

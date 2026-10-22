@@ -2,13 +2,11 @@ package database
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/entityid"
 	sharedoperation "github.com/domainry/domainry-foundation/operation"
 	"github.com/domainry/domainry-orm/sqlhost"
 
@@ -23,7 +21,7 @@ func (store *Store) claimOperation(ctx context.Context, transaction sqlhost.DBTX
 	scope := sharedoperation.Scope{WorkspaceID: workspaceID, ResourceType: resourceType, ResourceID: resourceID}
 	identity := operationID(workspaceID, resourceType, resourceID, kind, mutation.ClientID)
 	receipt, claimed, err := store.operations.Claim(operationContext, sharedoperation.Command{
-		ID: identity, Scope: scope, Owner: operationOwner, Kind: kind, ActionKey: mutation.CommandType,
+		OperationID: identity, Scope: scope, Owner: operationOwner, Kind: kind, ActionKey: mutation.CommandType,
 		IdempotencyKey: mutation.ClientID, RequestFingerprint: mutation.Fingerprint, RequestedBy: mutation.ActorID,
 		Reason: "Apply Delivery command " + mutation.CommandType, Reference: resourceType + ":" + resourceID,
 		StatusURL: "delivery://operations/" + identity, CreatedAt: mutation.OccurredAt,
@@ -45,7 +43,7 @@ func (store *Store) claimOperation(ctx context.Context, transaction sqlhost.DBTX
 
 func (store *Store) completeOperation(ctx context.Context, transaction sqlhost.DBTX, receipt sharedoperation.Receipt, result json.RawMessage, completedAt time.Time) error {
 	completion := sharedoperation.Completion{
-		ID: receipt.Command.ID, Scope: receipt.Command.Scope, Owner: receipt.Command.Owner, Kind: receipt.Command.Kind,
+		OperationID: receipt.Command.OperationID, Scope: receipt.Command.Scope, Owner: receipt.Command.Owner, Kind: receipt.Command.Kind,
 		IdempotencyKey: receipt.Command.IdempotencyKey, RequestFingerprint: receipt.Command.RequestFingerprint,
 		Result: append(json.RawMessage(nil), result...), CompletedAt: completedAt,
 	}
@@ -56,6 +54,9 @@ func (store *Store) completeOperation(ctx context.Context, transaction sqlhost.D
 }
 
 func operationID(parts ...string) string {
-	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
-	return "delivery-" + hex.EncodeToString(sum[:])
+	value, err := entityid.Derive("op", "delivery.operation", parts...)
+	if err != nil {
+		panic(err)
+	}
+	return value
 }

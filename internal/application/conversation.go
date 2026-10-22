@@ -2,10 +2,12 @@ package application
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/domain/conversation"
+	"github.com/domainry/domainry-foundation/entityid"
 )
 
 type AppendFeatureMessage struct {
@@ -39,10 +41,14 @@ func (service *Service) AppendFeatureMessage(ctx context.Context, workspaceID, p
 		return conversation.Message{}, err
 	}
 	conversationID := conversation.ConversationID(workspaceID, productID, featureID)
+	messageID, err := entityid.Derive("delmsg", "delivery.feature-message", workspaceID, productID, featureID, input.ClientID)
+	if err != nil {
+		return conversation.Message{}, domain.Invalid("request_invalid")
+	}
 	message := conversation.Message{
-		ID: input.ClientID, ConversationID: conversationID, TurnID: input.TurnID,
+		ID: messageID, ConversationID: conversationID, TurnID: input.TurnID,
 		Role: input.Role, Text: input.Text, AttachmentIDs: append([]string{}, input.AttachmentIDs...),
-		SourceID: conversation.SourceID(conversationID, input.ClientID), CreatedBy: actor.ID, DeviceID: input.DeviceID,
+		SourceID: conversation.SourceID(conversationID, messageID), CreatedBy: actor.ID, DeviceID: input.DeviceID,
 		CreatedAt: service.now().UnixMilli(),
 	}
 	if _, err := service.ports.Conversations.GetMessage(ctx, workspaceID, productID, featureID, message.ID); err == nil {
@@ -72,8 +78,16 @@ func (service *Service) ListFeatureMessages(ctx context.Context, workspaceID, pr
 	if _, err := authenticatedActor(ctx, workspaceID, PermissionProductRead, nil); err != nil {
 		return FeatureMessagesPage{}, err
 	}
-	if !conversation.ValidID(productID) || !conversation.ValidID(featureID) || (cursor != "" && !conversation.ValidID(cursor)) || limit < 0 || limit > 100 {
+	if !conversation.ValidID(productID) || !conversation.ValidID(featureID) || limit < 0 || limit > 100 {
 		return FeatureMessagesPage{}, domain.Invalid("request_invalid")
+	}
+	afterID := int64(0)
+	if cursor = strings.TrimSpace(cursor); cursor != "" {
+		var err error
+		afterID, err = strconv.ParseInt(cursor, 10, 64)
+		if err != nil || afterID < 1 {
+			return FeatureMessagesPage{}, domain.Invalid("request_invalid")
+		}
 	}
 	if _, err := service.ports.Products.GetProduct(ctx, workspaceID, productID); err != nil {
 		return FeatureMessagesPage{}, err
@@ -81,14 +95,16 @@ func (service *Service) ListFeatureMessages(ctx context.Context, workspaceID, pr
 	if limit == 0 {
 		limit = 100
 	}
-	messages, err := service.ports.Conversations.ListMessages(ctx, workspaceID, productID, featureID, cursor, limit+1)
+	messages, err := service.ports.Conversations.ListMessages(ctx, workspaceID, productID, featureID, afterID, limit)
 	if err != nil {
 		return FeatureMessagesPage{}, err
 	}
-	page := FeatureMessagesPage{ConversationID: conversation.ConversationID(workspaceID, productID, featureID), Data: messages}
-	if len(messages) > limit {
-		page.Data = messages[:limit]
-		page.NextCursor = page.Data[len(page.Data)-1].ID
+	page := FeatureMessagesPage{ConversationID: conversation.ConversationID(workspaceID, productID, featureID), Data: messages.Messages}
+	if messages.HasMore {
+		if messages.NextAfterID < 1 {
+			return FeatureMessagesPage{}, domain.Invalid("message_cursor_invalid")
+		}
+		page.NextCursor = strconv.FormatInt(messages.NextAfterID, 10)
 	}
 	return page, nil
 }

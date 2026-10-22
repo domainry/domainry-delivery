@@ -1,11 +1,11 @@
 package domain
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"regexp"
 	"strings"
+
+	"github.com/domainry/domainry-foundation/entityid"
 )
 
 var codeRevisionPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/@:+-]{6,255}$`)
@@ -49,9 +49,9 @@ func ValidCodeRevision(revision string) bool {
 }
 
 func NewID(prefix string) string {
-	value := make([]byte, 8)
-	if _, err := rand.Read(value); err != nil {
+	value, err := entityid.New(strings.TrimSpace(prefix))
+	if err != nil {
 		panic(err)
 	}
-	return prefix + "-" + hex.EncodeToString(value)
+	return value
 }

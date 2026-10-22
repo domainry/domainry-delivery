@@ -36,7 +36,7 @@ type LifecycleRepository interface {
 // A Feature revision cites these records rather than embedding conversation text.
 type ConversationRepository interface {
 	PutMessage(context.Context, string, string, string, conversation.Message) (conversation.Message, error)
-	ListMessages(context.Context, string, string, string, string, int) ([]conversation.Message, error)
+	ListMessages(context.Context, string, string, string, int64, int) (conversation.MessagePage, error)
 	GetMessage(context.Context, string, string, string, string) (conversation.Message, error)
 }
 

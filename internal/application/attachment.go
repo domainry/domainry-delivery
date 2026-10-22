@@ -12,6 +12,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/domain/attachment"
 	"github.com/domainry/domainry-delivery/internal/domain/conversation"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
+	"github.com/domainry/domainry-foundation/entityid"
 )
 
 type UploadFeatureAttachment struct {
@@ -65,8 +66,10 @@ func (service *Service) uploadAttachment(ctx context.Context, workspaceID, produ
 	if !supported {
 		return attachment.Metadata{}, domain.Invalid("attachment_type_unsupported")
 	}
-	digest := sha256.Sum256([]byte(input.ClientID))
-	id := "attachment-" + hex.EncodeToString(digest[:16])
+	id, err := entityid.Derive("delatt", "delivery.attachment", workspaceID, productID, scopeID, input.ClientID)
+	if err != nil {
+		return attachment.Metadata{}, domain.Invalid("request_invalid")
+	}
 	contentDigest := sha256.Sum256(input.Data)
 	sha := hex.EncodeToString(contentDigest[:])
 	if previous, err := service.ports.AttachmentRecords.GetAttachment(ctx, workspaceID, productID, scopeID, id); err == nil {

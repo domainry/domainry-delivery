@@ -1,14 +1,13 @@
 package deliveryrun
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
 	commanddomain "github.com/domainry/domainry-delivery/internal/domain/command"
 	"github.com/domainry/domainry-delivery/internal/domain/product"
+	"github.com/domainry/domainry-foundation/entityid"
 )
 
 type Actor = domain.Actor
@@ -129,9 +128,9 @@ func clone[T any](value T) T {
 }
 
 func newID(prefix string) string {
-	var raw [12]byte
-	if _, err := rand.Read(raw[:]); err != nil {
+	value, err := entityid.New(prefix)
+	if err != nil {
 		panic(err)
 	}
-	return prefix + "_" + hex.EncodeToString(raw[:])
+	return value
 }

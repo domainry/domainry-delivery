@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	"github.com/domainry/domainry-orm/query"
 	"github.com/domainry/domainry-orm/schema"
@@ -15,6 +16,14 @@ import (
 )
 
 const migrationLedgerTable = "_schema_migrations"
+
+func StandaloneHostSchemaOwnership() []schemaownership.Table {
+	return []schemaownership.Table{{
+		Name: migrationLedgerTable, Owner: "delivery-host", Kind: schemaownership.KindInfrastructure, WorkspaceScope: schemaownership.ScopeInstallation,
+		RetentionClass: schemaownership.RetentionInstallation, PrimaryKey: []string{"id"}, UniqueKey: []string{"owner", "version"},
+		BoundedQueryPath: "exact migration owner and version", DeletionPolicy: "retained for the standalone database lifetime",
+	}}
+}
 
 // directMigrationRegistrar is the migration owner for the standalone SaaS
 // database. Embedded Module assembly delegates this responsibility to its
@@ -47,14 +56,7 @@ func (registrar directMigrationRegistrar) ApplyOwnedMigrations(ctx context.Conte
 }
 
 func (registrar directMigrationRegistrar) ensureLedger(ctx context.Context) error {
-	statement, arguments, err := schema.NewTable(registrar.renderer, migrationLedgerTable).IfNotExists().Columns(
-		schema.Column("owner", schema.TextKey(191)).NotNull(),
-		schema.Column("version", schema.BigInt()).NotNull(),
-		schema.Column("name", schema.TextKey(191)).NotNull(),
-		schema.Column("checksum", schema.TextKey(64)).NotNull(),
-		schema.Column("dirty", schema.Boolean()).NotNull(),
-		schema.Column("applied_at", schema.BigInt()).NotNull(),
-	).PrimaryKey("owner", "version").Build()
+	statement, arguments, err := migrationLedgerDDL(registrar.renderer)
 	if err != nil {
 		return fmt.Errorf("build standalone Delivery migration ledger: %w", err)
 	}
@@ -62,6 +64,17 @@ func (registrar directMigrationRegistrar) ensureLedger(ctx context.Context) erro
 		return fmt.Errorf("prepare standalone Delivery migration ledger: %w", err)
 	}
 	return nil
+}
+
+func migrationLedgerDDL(renderer query.Renderer) (string, []any, error) {
+	return schema.NewTableWithRequiredColumns(renderer, migrationLedgerTable, schema.Column("id", schema.BigInt()).NotNull().AutoIncrement()).IfNotExists().Columns(
+		schema.Column("owner", schema.TextKey(191)).NotNull(),
+		schema.Column("version", schema.BigInt()).NotNull(),
+		schema.Column("name", schema.TextKey(191)).NotNull(),
+		schema.Column("checksum", schema.TextKey(64)).NotNull(),
+		schema.Column("dirty", schema.Boolean()).NotNull(),
+		schema.Column("applied_at", schema.BigInt()).NotNull(),
+	).PrimaryKey("id").Unique("owner", "version").Build()
 }
 
 func (registrar directMigrationRegistrar) apply(ctx context.Context, owner string, migration ormmigration.Migration) error {

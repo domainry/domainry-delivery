@@ -65,43 +65,47 @@ func (store *Store) GetMessage(ctx context.Context, workspaceID, productID, feat
 	return message, nil
 }
 
-func (store *Store) ListMessages(ctx context.Context, workspaceID, productID, featureID, cursor string, limit int) ([]conversation.Message, error) {
+func (store *Store) ListMessages(ctx context.Context, workspaceID, productID, featureID string, afterID int64, limit int) (conversation.MessagePage, error) {
 	predicate := ormquery.And(ormquery.Equal("product_id", productID), ormquery.Equal("feature_id", featureID))
-	if cursor != "" {
-		previous, err := store.GetMessage(ctx, workspaceID, productID, featureID, cursor)
-		if err != nil {
-			return nil, err
-		}
-		createdAt := previous.CreatedAt
-		predicate = ormquery.And(predicate, ormquery.Or(
-			ormquery.GreaterThan("created_at", createdAt),
-			ormquery.And(ormquery.Equal("created_at", createdAt), ormquery.GreaterThan("message_id", cursor)),
-		))
+	if afterID > 0 {
+		predicate = ormquery.And(predicate, ormquery.GreaterThan("id", afterID))
 	}
 	statement, arguments, err := ormquery.NewWorkspaceSelectBuilder(store.renderer, TableFeatureMessages, workspaceID).
-		Columns("message_id", "conversation_id", "turn_id", "role", "text", "attachment_ids_json", "created_by", "device_id", "created_at").
+		Columns("id", "message_id", "conversation_id", "turn_id", "role", "text", "attachment_ids_json", "created_by", "device_id", "created_at").
 		Where(predicate).
-		OrderBy(ormquery.Ascending("created_at"), ormquery.Ascending("message_id")).Limit(limit).Build()
+		OrderBy(ormquery.Ascending("id")).Limit(limit + 1).Build()
 	if err != nil {
-		return nil, storageError(err)
+		return conversation.MessagePage{}, storageError(err)
 	}
 	rows, err := store.db.QueryContext(ctx, statement, arguments...)
 	if err != nil {
-		return nil, storageError(err)
+		return conversation.MessagePage{}, storageError(err)
 	}
 	defer rows.Close()
 	messages := make([]conversation.Message, 0)
+	ids := make([]int64, 0)
 	for rows.Next() {
-		message, err := scanConversationMessage(rows)
+		var id int64
+		message, err := scanConversationMessageWithID(rows, &id)
 		if err != nil {
-			return nil, storageError(err)
+			return conversation.MessagePage{}, storageError(err)
 		}
+		ids = append(ids, id)
 		messages = append(messages, message)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, storageError(err)
+		return conversation.MessagePage{}, storageError(err)
 	}
-	return messages, nil
+	hasMore := len(messages) > limit
+	nextAfterID := int64(0)
+	if hasMore {
+		messages = messages[:limit]
+		ids = ids[:limit]
+	}
+	if hasMore && len(ids) > 0 {
+		nextAfterID = ids[len(ids)-1]
+	}
+	return conversation.MessagePage{Messages: messages, NextAfterID: nextAfterID, HasMore: hasMore}, nil
 }
 
 type messageScanner interface{ Scan(...any) error }
@@ -110,6 +114,19 @@ func scanConversationMessage(row messageScanner) (conversation.Message, error) {
 	var message conversation.Message
 	var attachmentIDs []byte
 	if err := row.Scan(&message.ID, &message.ConversationID, &message.TurnID, &message.Role, &message.Text, &attachmentIDs, &message.CreatedBy, &message.DeviceID, &message.CreatedAt); err != nil {
+		return conversation.Message{}, err
+	}
+	if err := json.Unmarshal(attachmentIDs, &message.AttachmentIDs); err != nil {
+		return conversation.Message{}, err
+	}
+	message.SourceID = conversation.SourceID(message.ConversationID, message.ID)
+	return message, nil
+}
+
+func scanConversationMessageWithID(row messageScanner, id *int64) (conversation.Message, error) {
+	var message conversation.Message
+	var attachmentIDs []byte
+	if err := row.Scan(id, &message.ID, &message.ConversationID, &message.TurnID, &message.Role, &message.Text, &attachmentIDs, &message.CreatedBy, &message.DeviceID, &message.CreatedAt); err != nil {
 		return conversation.Message{}, err
 	}
 	if err := json.Unmarshal(attachmentIDs, &message.AttachmentIDs); err != nil {

@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 
+	"github.com/domainry/domainry-foundation/schemaownership"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	ormschema "github.com/domainry/domainry-orm/schema"
@@ -33,7 +34,41 @@ func baselineTables() []string {
 }
 
 func OwnedTables() []string {
-	return baselineTables()
+	return schemaownership.Names(SchemaOwnership())
+}
+
+// SchemaOwnership classifies durable Delivery rows. Aggregate children keep
+// their contextual natural key but do not pretend to own a public entity ID.
+func SchemaOwnership() []schemaownership.Table {
+	entity := func(name, idColumn, prefix, queryPath, deletion string) schemaownership.Table {
+		return schemaownership.Table{
+			Name: name, Owner: "delivery", Kind: schemaownership.KindEntity, WorkspaceScope: schemaownership.ScopeWorkspace,
+			RetentionClass: schemaownership.RetentionProduct, PrimaryKey: []string{"id"}, EntityIDColumn: idColumn,
+			EntityIDPrefix: prefix, BusinessKey: []string{idColumn}, BoundedQueryPath: queryPath, DeletionPolicy: deletion,
+		}
+	}
+	dependent := func(name string, unique []string, queryPath, deletion string) schemaownership.Table {
+		return schemaownership.Table{
+			Name: name, Owner: "delivery", Kind: schemaownership.KindDependent, WorkspaceScope: schemaownership.ScopeWorkspace,
+			RetentionClass: schemaownership.RetentionProduct, PrimaryKey: []string{"id"}, UniqueKey: unique,
+			BoundedQueryPath: queryPath, DeletionPolicy: deletion,
+		}
+	}
+	return []schemaownership.Table{
+		entity(TableProducts, "product_id", "prod", "workspace product identity or bounded workspace list", "workspace deletion removes products"),
+		dependent(TableProductRevisions, []string{"workspace_id", "product_id", "revision_number"}, "workspace product revision", "product deletion removes revision history"),
+		entity(TableFeatures, "feature_id", "feat", "workspace product feature identity", "product deletion removes features"),
+		dependent(TableFeatureRevisions, []string{"workspace_id", "product_id", "feature_id", "revision_number"}, "workspace feature revision", "feature deletion removes revision history"),
+		entity(TableRuns, "run_id", "delrun", "workspace run identity or bounded workspace list", "workspace deletion removes delivery runs"),
+		dependent(TableDeliveryUnits, []string{"workspace_id", "run_id", "unit_id"}, "workspace run components", "run deletion removes delivery units"),
+		dependent(TableTestCases, []string{"workspace_id", "run_id", "test_case_id"}, "workspace run components", "run deletion removes test cases"),
+		dependent(TableQualityRuns, []string{"workspace_id", "run_id", "quality_run_id"}, "workspace run components", "run deletion removes quality runs"),
+		dependent(TableReleaseChecks, []string{"workspace_id", "run_id", "check_id"}, "workspace run components", "run deletion removes release checks"),
+		dependent(TableReleases, []string{"workspace_id", "run_id", "release_id"}, "workspace run components", "run deletion removes release snapshots"),
+		dependent(TableActivity, []string{"workspace_id", "run_id", "event_id"}, "workspace run activity", "run deletion removes activity"),
+		entity(TableFeatureMessages, "message_id", "delmsg", "workspace product feature message cursor", "workspace deletion removes archived feature messages"),
+		entity(TableFeatureAttachments, "attachment_id", "delatt", "workspace product feature attachment identity", "workspace deletion removes attachment metadata and objects"),
+	}
 }
 
 // SchemaStatements is the one physical baseline shared by Module and SaaS.
@@ -57,7 +92,7 @@ func archiveSchemaStatements(driver string, renderer baseSQLRenderer) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	message, arguments, err := ormschema.NewTable(named, TableFeatureMessages).IfNotExists().Columns(
+	message, arguments, err := ormschema.NewTableWithRequiredColumns(named, TableFeatureMessages, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("feature_id", ormschema.TextKey(191)),
@@ -70,11 +105,11 @@ func archiveSchemaStatements(driver string, renderer baseSQLRenderer) ([]string,
 		requiredColumn("created_by", ormschema.TextKey(191)),
 		requiredColumn("device_id", ormschema.TextKey(191)),
 		requiredColumn("created_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id", "feature_id", "message_id").Build()
+	).PrimaryKey("id").Unique("message_id").Unique("workspace_id", "product_id", "feature_id", "message_id").Build()
 	if err != nil || len(arguments) != 0 {
 		return nil, fmt.Errorf("build Feature message table: %w", err)
 	}
-	attachment, attachmentArguments, err := ormschema.NewTable(named, TableFeatureAttachments).IfNotExists().Columns(
+	attachment, attachmentArguments, err := ormschema.NewTableWithRequiredColumns(named, TableFeatureAttachments, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("feature_id", ormschema.TextKey(191)),
@@ -91,7 +126,7 @@ func archiveSchemaStatements(driver string, renderer baseSQLRenderer) ([]string,
 		requiredColumn("created_by", ormschema.TextKey(191)),
 		requiredColumn("device_id", ormschema.TextKey(191)),
 		requiredColumn("created_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id", "feature_id", "attachment_id").Build()
+	).PrimaryKey("id").Unique("attachment_id").Unique("workspace_id", "product_id", "feature_id", "attachment_id").Build()
 	if err != nil || len(attachmentArguments) != 0 {
 		return nil, fmt.Errorf("build Feature attachment table: %w", err)
 	}
@@ -157,7 +192,7 @@ func schemaStatements(driver string, renderer baseSQLRenderer) ([]string, error)
 }
 
 func productsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, TableProducts).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, TableProducts, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("name", ormschema.LongText()),
@@ -173,21 +208,21 @@ func productsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		ormschema.Column("active_code", ormschema.TextKey(191)),
 		requiredColumn("created_at", ormschema.BigInt()),
 		requiredColumn("updated_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id").Unique("workspace_id", "active_code")
+	).PrimaryKey("id").Unique("product_id").Unique("workspace_id", "product_id").Unique("workspace_id", "active_code")
 }
 
 func productRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, TableProductRevisions).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, TableProductRevisions, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("revision_number", ormschema.BigInt()),
 		requiredColumn("revision_json", ormschema.Binary()),
 		requiredColumn("created_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id", "revision_number")
+	).PrimaryKey("id").Unique("workspace_id", "product_id", "revision_number")
 }
 
 func featuresTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, TableFeatures).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, TableFeatures, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("feature_id", ormschema.TextKey(191)),
@@ -202,22 +237,22 @@ func featuresTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		ormschema.Column("draft_json", ormschema.Binary()),
 		requiredColumn("created_at", ormschema.BigInt()),
 		requiredColumn("updated_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id", "feature_id").Unique("workspace_id", "product_id", "code")
+	).PrimaryKey("id").Unique("feature_id").Unique("workspace_id", "product_id", "feature_id").Unique("workspace_id", "product_id", "code")
 }
 
 func featureRevisionsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, TableFeatureRevisions).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, TableFeatureRevisions, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
 		requiredColumn("feature_id", ormschema.TextKey(191)),
 		requiredColumn("revision_number", ormschema.BigInt()),
 		requiredColumn("revision_json", ormschema.Binary()),
 		requiredColumn("created_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "product_id", "feature_id", "revision_number")
+	).PrimaryKey("id").Unique("workspace_id", "product_id", "feature_id", "revision_number")
 }
 
 func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, TableRuns).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, TableRuns, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("run_id", ormschema.TextKey(191)),
 		requiredColumn("product_id", ormschema.TextKey(191)),
@@ -238,21 +273,25 @@ func runsTable(renderer ormschema.Renderer) *ormschema.TableBuilder {
 		ormschema.Column("acceptance_review_json", ormschema.Binary()),
 		requiredColumn("created_at", ormschema.BigInt()),
 		requiredColumn("updated_at", ormschema.BigInt()),
-	).PrimaryKey("workspace_id", "run_id")
+	).PrimaryKey("id").Unique("run_id").Unique("workspace_id", "run_id")
 }
 
 func componentTable(renderer ormschema.Renderer, table, idColumn string) *ormschema.TableBuilder {
-	return ormschema.NewTable(renderer, table).IfNotExists().Columns(
+	return ormschema.NewTableWithRequiredColumns(renderer, table, physicalID()).IfNotExists().Columns(
 		requiredColumn("workspace_id", ormschema.TextKey(191)),
 		requiredColumn("run_id", ormschema.TextKey(191)),
 		requiredColumn(idColumn, ormschema.TextKey(191)),
 		requiredColumn("ordinal", ormschema.BigInt()),
 		requiredColumn("value_json", ormschema.Binary()),
-	).PrimaryKey("workspace_id", "run_id", idColumn)
+	).PrimaryKey("id").Unique("workspace_id", "run_id", idColumn)
 }
 
 func requiredColumn(name string, kind ormschema.ColumnType) ormschema.ColumnDefinition {
 	return ormschema.Column(name, kind).NotNull()
+}
+
+func physicalID() ormschema.ColumnDefinition {
+	return ormschema.Column("id", ormschema.BigInt()).NotNull().AutoIncrement()
 }
 
 func Migrations(driver string) ([]ormmigration.Migration, error) {

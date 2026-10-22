@@ -277,7 +277,7 @@ func deploymentRepairRevision(run *DeliveryRun, revision string) bool {
 
 func appendAcceptanceEvent(review *AcceptanceReview, actor Actor, bugID, kind, note, revision string, evidenceRefs []string, now time.Time) {
 	review.Events = append(review.Events, AcceptanceEvent{
-		ID: newID("acceptance_event"), BugID: bugID, Kind: kind, Note: note,
+		ID: newID("accevt"), BugID: bugID, Kind: kind, Note: note,
 		GitRevision: revision, EvidenceRefs: clone(evidenceRefs), ActorID: actor.ID, OccurredAt: now,
 	})
 }
