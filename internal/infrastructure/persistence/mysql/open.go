@@ -2,11 +2,11 @@ package mysql
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	deliverydb "github.com/domainry/domainry-delivery/internal/infrastructure/persistence/database"
+	"github.com/domainry/domainry-foundation/telemetry"
 	_ "github.com/go-sql-driver/mysql"
 )
 
@@ -21,7 +21,7 @@ func Open(ctx context.Context, config Config) (*deliverydb.Store, error) {
 	if ctx == nil || config.DSN == "" {
 		return nil, fmt.Errorf("MySQL context and DSN are required")
 	}
-	database, err := sql.Open("mysql", config.DSN)
+	database, err := telemetry.OpenObservedSQL("mysql", config.DSN, "runtime", nil)
 	if err != nil {
 		return nil, err
 	}

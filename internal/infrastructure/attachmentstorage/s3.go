@@ -11,16 +11,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/domainry/domainry-foundation/telemetry"
 
 	attachmentdomain "github.com/domainry/domainry-delivery/internal/domain/attachment"
 )
@@ -72,11 +75,13 @@ func NewFromEnvironment(ctx context.Context) (attachmentdomain.Store, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
-	awsConfiguration, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(config.Region))
+	awsHTTPClient := telemetry.InstrumentHTTPClientWithOptions(http.DefaultClient, "domainry.delivery.s3", telemetry.HTTPClientInstrumentationOptions{DisableDiagnosticContent: true})
+	awsContext := telemetry.WithHTTPClientOperation(ctx, "delivery.s3.configure")
+	awsConfiguration, err := awsconfig.LoadDefaultConfig(awsContext, awsconfig.WithRegion(config.Region), awsconfig.WithHTTPClient(awsHTTPClient))
 	if err != nil {
 		return nil, fmt.Errorf("load AWS attachment configuration: %w", err)
 	}
-	if _, err := awsConfiguration.Credentials.Retrieve(ctx); err != nil {
+	if _, err := awsConfiguration.Credentials.Retrieve(telemetry.WithHTTPClientOperation(ctx, "delivery.s3.credentials")); err != nil {
 		return nil, fmt.Errorf("retrieve AWS attachment credentials: %w", err)
 	}
 	client := s3.NewFromConfig(awsConfiguration, func(options *s3.Options) {
@@ -121,7 +126,11 @@ func (config Config) validate() error {
 	return nil
 }
 
-func (store *Store) Put(ctx context.Context, request attachmentdomain.PutRequest) (attachmentdomain.PutResult, error) {
+func (store *Store) Put(ctx context.Context, request attachmentdomain.PutRequest) (result attachmentdomain.PutResult, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordAttachmentCall(ctx, "delivery.attachment_s3", "put", map[string]any{"object_key": request.ObjectKey, "content_bytes": len(request.Content), "content_sha256": request.ContentSHA256}, map[string]any{"content_ref": result.ContentRef, "etag": result.ETag}, started, returnErr)
+	}()
 	if strings.TrimSpace(request.ObjectKey) == "" || path.Clean(request.ObjectKey) != request.ObjectKey || strings.HasPrefix(request.ObjectKey, "..") {
 		return attachmentdomain.PutResult{}, errors.New("attachment object key must be a clean relative path")
 	}
@@ -134,7 +143,8 @@ func (store *Store) Put(ctx context.Context, request attachmentdomain.PutRequest
 	}
 	objectKey := store.prefix + "/" + request.ObjectKey
 	idempotencyDigest := sha256.Sum256([]byte(request.IdempotencyKey))
-	result, err := store.client.PutObject(ctx, &s3.PutObjectInput{
+	ctx = telemetry.WithHTTPClientOperation(ctx, "delivery.s3.put_object")
+	putResult, err := store.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(store.bucket), Key: aws.String(objectKey), Body: bytes.NewReader(request.Content),
 		ContentLength: aws.Int64(int64(len(request.Content))), ContentType: aws.String(request.ContentType),
 		ServerSideEncryption: types.ServerSideEncryptionAes256,
@@ -147,14 +157,19 @@ func (store *Store) Put(ctx context.Context, request attachmentdomain.PutRequest
 	if err != nil {
 		return attachmentdomain.PutResult{}, fmt.Errorf("put S3 attachment: %w", err)
 	}
-	return attachmentdomain.PutResult{ContentRef: objectKey, ETag: strings.Trim(aws.ToString(result.ETag), "\"")}, nil
+	return attachmentdomain.PutResult{ContentRef: objectKey, ETag: strings.Trim(aws.ToString(putResult.ETag), "\"")}, nil
 }
 
-func (store *Store) Get(ctx context.Context, _ string, contentRef string) ([]byte, error) {
+func (store *Store) Get(ctx context.Context, _ string, contentRef string) (content []byte, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordAttachmentCall(ctx, "delivery.attachment_s3", "get", map[string]any{"content_ref": contentRef}, map[string]any{"content_bytes": len(content)}, started, returnErr)
+	}()
 	contentRef = strings.TrimSpace(contentRef)
 	if contentRef == "" || path.Clean(contentRef) != contentRef || !strings.HasPrefix(contentRef, store.prefix+"/") {
 		return nil, attachmentdomain.ErrContentNotFound
 	}
+	ctx = telemetry.WithHTTPClientOperation(ctx, "delivery.s3.get_object")
 	result, err := store.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(store.bucket), Key: aws.String(contentRef)})
 	if err != nil {
 		var missing *types.NoSuchKey
@@ -164,7 +179,7 @@ func (store *Store) Get(ctx context.Context, _ string, contentRef string) ([]byt
 		return nil, fmt.Errorf("get S3 attachment: %w", err)
 	}
 	defer result.Body.Close()
-	content, err := io.ReadAll(io.LimitReader(result.Body, attachmentdomain.MaxUploadBytes+1))
+	content, err = io.ReadAll(io.LimitReader(result.Body, attachmentdomain.MaxUploadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read S3 attachment: %w", err)
 	}
@@ -172,6 +187,12 @@ func (store *Store) Get(ctx context.Context, _ string, contentRef string) ([]byt
 		return nil, errors.New("stored attachment exceeds maximum size")
 	}
 	return content, nil
+}
+
+func recordAttachmentCall(ctx context.Context, dependency, operation string, input, output map[string]any, started time.Time, err error) {
+	telemetry.RecordDependencyCall(ctx, telemetry.DependencyCall{
+		Feature: telemetry.DiagnosticFeatureObjectStore, Dependency: dependency, Operation: operation, Input: input,
+	}, telemetry.DependencyResult{Output: output, Err: err}, time.Since(started))
 }
 
 func identityDigest(value string) string {

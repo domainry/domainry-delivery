@@ -11,6 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	attachmentdomain "github.com/domainry/domainry-delivery/internal/domain/attachment"
 )
@@ -29,7 +30,11 @@ func NewFileStore(root string) (*FileStore, error) {
 	return &FileStore{root: root}, nil
 }
 
-func (store *FileStore) Put(_ context.Context, request attachmentdomain.PutRequest) (attachmentdomain.PutResult, error) {
+func (store *FileStore) Put(ctx context.Context, request attachmentdomain.PutRequest) (result attachmentdomain.PutResult, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordAttachmentCall(ctx, "delivery.attachment_filesystem", "put", map[string]any{"object_key": request.ObjectKey, "content_bytes": len(request.Content), "content_sha256": request.ContentSHA256}, map[string]any{"content_ref": result.ContentRef, "etag": result.ETag}, started, returnErr)
+	}()
 	if !validObjectKey(request.ObjectKey) || len(request.Content) == 0 || int64(len(request.Content)) > attachmentdomain.MaxUploadBytes {
 		return attachmentdomain.PutResult{}, errors.New("attachment object key or content is invalid")
 	}
@@ -69,7 +74,11 @@ func (store *FileStore) Put(_ context.Context, request attachmentdomain.PutReque
 	return attachmentdomain.PutResult{ContentRef: ref, ETag: sha}, nil
 }
 
-func (store *FileStore) Get(_ context.Context, _ string, contentRef string) ([]byte, error) {
+func (store *FileStore) Get(ctx context.Context, _ string, contentRef string) (content []byte, returnErr error) {
+	started := time.Now()
+	defer func() {
+		recordAttachmentCall(ctx, "delivery.attachment_filesystem", "get", map[string]any{"content_ref": contentRef}, map[string]any{"content_bytes": len(content)}, started, returnErr)
+	}()
 	if !strings.HasPrefix(contentRef, defaultPrefix+"/") || !validObjectKey(contentRef) {
 		return nil, attachmentdomain.ErrContentNotFound
 	}
@@ -82,7 +91,7 @@ func (store *FileStore) Get(_ context.Context, _ string, contentRef string) ([]b
 		return nil, fmt.Errorf("open attachment object: %w", err)
 	}
 	defer file.Close()
-	content, err := io.ReadAll(io.LimitReader(file, attachmentdomain.MaxUploadBytes+1))
+	content, err = io.ReadAll(io.LimitReader(file, attachmentdomain.MaxUploadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read attachment object: %w", err)
 	}
