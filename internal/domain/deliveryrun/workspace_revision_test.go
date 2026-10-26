@@ -17,13 +17,8 @@ func TestWorkspaceSnapshotDrivesDevelopmentAndQuality(t *testing.T) {
 		phase   string
 		actor   delivery.Actor
 	}{
-		{"delivery_unit.interaction.complete", "interaction_modeling", agent("rd")},
-		{"delivery_unit.model.complete", "domain_modeling", agent("rd")},
-		{"delivery_unit.model.verify", "model_verification", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}},
-		{"delivery_unit.frontend.complete", "frontend_implementation", agent("rd")},
-		{"delivery_unit.backend.complete", "backend_implementation", agent("rd")},
-		{"delivery_unit.contract.verify", "contract_verification", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}},
-		{"delivery_unit.journey.complete", "journey_testing", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}},
+		{"delivery_unit.implementation.complete", "implementation", agent("rd")},
+		{"delivery_unit.verify", "verification", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}},
 	}
 	for _, step := range phases {
 		if err := applyUnitAtRevision(&run, step.actor, step.command, step.phase, revision, "", nil); err != nil {

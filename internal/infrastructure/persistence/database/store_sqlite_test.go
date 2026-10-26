@@ -29,36 +29,32 @@ func storeBackendGuideEvidence(run deliveryrun.DeliveryRun, actor delivery.Actor
 		"evidence_refs": []string{"workspace:" + revision + "#evidence:backend-guide.json"},
 		"model_path":    "backend/model.json", "model_sha256": strings.Repeat("d", 64),
 	}
-	switch command {
-	case "delivery_unit.model.verify":
-		evidence["single_backend_model"] = true
-		evidence["strict_model_validation"] = true
-		evidence["cross_references_resolved"] = true
-		evidence["go_behavior_registry"] = true
-		evidence["no_executable_behavior_json"] = true
-	case "delivery_unit.contract.verify":
-		evidence["project_http"] = true
-		evidence["handler_unit_of_work"] = true
-		evidence["handler_idempotency"] = true
-		evidence["definitions_registered"] = true
-		evidence["runtime_bootstrap"] = true
-		evidence["no_project_schema_sql"] = true
-		evidence["backend_go_mod_only"] = true
-		evidence["no_root_go_mod"] = true
-		evidence["no_go_work"] = true
-		evidence["no_compiler_builder"] = true
-		evidence["no_generated_runtime_contract"] = true
-		evidence["auth_workspace_permission"] = true
-		evidence["data_audit_persistence"] = true
-		evidence["empty_database_init_passed"] = true
-		evidence["same_model_restart_passed"] = true
-		evidence["incremental_model_restart_passed"] = true
-	case "delivery_unit.journey.complete":
-		evidence["mock_journey_passed"] = true
-		evidence["runtime_journey_passed"] = true
-	default:
+	if command != "delivery_unit.verify" {
 		return nil
 	}
+	evidence["single_backend_model"] = true
+	evidence["strict_model_validation"] = true
+	evidence["cross_references_resolved"] = true
+	evidence["go_behavior_registry"] = true
+	evidence["no_executable_behavior_json"] = true
+	evidence["project_http"] = true
+	evidence["handler_unit_of_work"] = true
+	evidence["handler_idempotency"] = true
+	evidence["definitions_registered"] = true
+	evidence["runtime_bootstrap"] = true
+	evidence["no_project_schema_sql"] = true
+	evidence["backend_go_mod_only"] = true
+	evidence["no_root_go_mod"] = true
+	evidence["no_go_work"] = true
+	evidence["no_compiler_builder"] = true
+	evidence["no_generated_runtime_contract"] = true
+	evidence["auth_workspace_permission"] = true
+	evidence["data_audit_persistence"] = true
+	evidence["empty_database_init_passed"] = true
+	evidence["same_model_restart_passed"] = true
+	evidence["incremental_model_restart_passed"] = true
+	evidence["mock_journey_passed"] = true
+	evidence["runtime_journey_passed"] = true
 	return evidence
 }
 
@@ -75,8 +71,8 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 		ClientID:         "client-once",
 		ExpectedRevision: 1,
 		Actor:            actor,
-		Type:             "delivery_unit.interaction.complete",
-		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"interaction_modeling","git_revision":"0123456","summary":"interaction model completed","evidence_refs":["workspace:0123456#evidence:interaction.json"]}`),
+		Type:             "delivery_unit.implementation.complete",
+		Payload:          json.RawMessage(`{"delivery_unit_id":"F-001","phase":"implementation","git_revision":"0123456","summary":"integrated implementation completed","evidence_refs":["workspace:0123456#evidence:implementation.json"]}`),
 	}
 	first, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
 	if err != nil {
@@ -86,30 +82,31 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Revision != 2 || second.Revision != 2 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
+	if first.Revision != 2 || second.Revision != 2 || second.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitVerification {
 		t.Fatalf("idempotent retry changed state: first=%d second=%d", first.Revision, second.Revision)
 	}
-	progress := command
-	progress.ClientID = "client-progress"
-	progress.ExpectedRevision = 2
-	progress.Type = "delivery_unit.model.complete"
-	progress.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["workspace:0123456#evidence:model.json"]}`)
-	current, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, progress)
+	progress := delivery.Command{
+		ClientID: "client-progress", ExpectedRevision: 2,
+		Actor: delivery.Actor{ID: "integrated-verifier", Kind: delivery.ActorSystem}, Type: "delivery_unit.gap.report",
+		Payload: json.RawMessage(`{"delivery_unit_id":"F-001","phase":"verification","git_revision":"0123456","summary":"verification needs a repair","evidence_refs":["workspace:0123456#evidence:verification.json"],"failure_owner":"engineer","diagnostics":[{"code":"verification_failed","severity":"error","path":"/","message":"repair required","owner":"engineer","category":"contract"}]}`),
+	}
+	systemContext := application.WithTrustedPrincipal(ctx, testfixture.DemoWorkspaceID, progress.Actor, application.PermissionDeploymentRecord)
+	current, err := service.Dispatch(systemContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, progress)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Revision != 3 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitModelVerification {
+	if current.Revision != 3 || current.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitImplementation {
 		t.Fatalf("progress command did not advance current state: %#v", current)
 	}
 	lateReplay, err := service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, command)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lateReplay.Revision != first.Revision || lateReplay.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitDomainModeling {
+	if lateReplay.Revision != first.Revision || lateReplay.DeliveryUnits[0].Phase != deliveryrun.DeliveryUnitVerification {
 		t.Fatalf("late replay was rebuilt from current state instead of the original receipt: %#v", lateReplay)
 	}
-	changedFingerprint := progress
-	changedFingerprint.ClientID = command.ClientID
+	changedFingerprint := command
+	changedFingerprint.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"implementation","git_revision":"0123456","summary":"different content","evidence_refs":["workspace:0123456#evidence:implementation.json"]}`)
 	_, err = service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, changedFingerprint)
 	domainError, ok := err.(*delivery.Error)
 	if !ok || domainError.Code != "idempotency_key_reused" {
@@ -117,8 +114,7 @@ func TestCommandReceiptIsIdempotentAndRevisionIsOptimistic(t *testing.T) {
 	}
 	stale := command
 	stale.ClientID = "client-stale"
-	stale.Type = "delivery_unit.model.complete"
-	stale.Payload = json.RawMessage(`{"delivery_unit_id":"F-001","phase":"domain_modeling","git_revision":"0123456","summary":"model completed","evidence_refs":["workspace:0123456#evidence:model.json"]}`)
+	stale.Type = "delivery_unit.implementation.complete"
 	_, err = service.Dispatch(dispatchContext, testfixture.DemoWorkspaceID, testfixture.DemoDeliveryRunID, stale)
 	domainError, ok = err.(*delivery.Error)
 	if !ok || domainError.Code != "revision_conflict" {
@@ -389,24 +385,45 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 		context.Background(), "workspace-1", delivery.Actor{ID: "rd-agent", Kind: delivery.ActorAgent},
 		application.PermissionProductWrite,
 	)
+	initialFeaturePayload, _ := json.Marshal(testfixture.InitialFeatureCommandPayload("workspace-1", product.ID))
 	product, err = service.DispatchProduct(agentContext, "workspace-1", product.ID, delivery.Command{
-		ClientID: "frontend-start", ExpectedRevision: product.Revision, Type: "product.engineering.frontend.start", Payload: json.RawMessage(`{}`),
+		ClientID: "initial-feature", ExpectedRevision: product.Revision, Type: "feature.discovery.replace", Payload: initialFeaturePayload,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	frontendPayload, _ := json.Marshal(map[string]any{
+	product, err = service.DispatchProduct(humanContext, "workspace-1", product.ID, delivery.Command{
+		ClientID: "confirm-initial-feature", ExpectedRevision: product.Revision, Type: "feature.confirm", Payload: json.RawMessage(`{"feature_id":"feature-initial","draft_version":1}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	product, err = service.DispatchProduct(agentContext, "workspace-1", product.ID, delivery.Command{
+		ClientID: "engineering-start", ExpectedRevision: product.Revision, Type: "product.engineering.prepare.start", Payload: json.RawMessage(`{}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparationPayload, _ := json.Marshal(map[string]any{
 		"code_revision": "workspace:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
 		"login_entry": "frontend/login.tsx", "shell_entry": "frontend/shell.tsx", "preview_entry": "frontend/dist/index.html",
+		"model": map[string]any{
+			"schema_version": 1,
+			"project":        map[string]any{"key": "foundation", "name": "Foundation Product"},
+			"roles":          []map[string]any{{"key": "administrator", "name": "Administrator"}},
+			"objects":        []any{},
+		},
+		"capabilities":       []string{"report"},
+		"module_deployments": []map[string]any{{"capability": "report", "mode": "module"}},
 	})
 	product, err = service.DispatchProduct(agentContext, "workspace-1", product.ID, delivery.Command{
-		ClientID: "frontend-complete", ExpectedRevision: product.Revision, Type: "product.engineering.frontend.complete", Payload: frontendPayload,
+		ClientID: "engineering-complete", ExpectedRevision: product.Revision, Type: "product.engineering.prepare.complete", Payload: preparationPayload,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	startPayload, _ := json.Marshal(map[string]any{
-		"application_delivery_sha256": strings.Repeat("a", 64), "idempotency_key": strings.Repeat("b", 64),
+		"application_delivery_sha256": strings.Repeat("a", 64), "foundation_design_sha256": product.Engineering.FoundationDesign.DesignSHA256, "idempotency_key": strings.Repeat("b", 64),
 	})
 	_, err = service.DispatchProduct(humanContext, "workspace-1", product.ID, delivery.Command{
 		ClientID: "foundation-start-denied", ExpectedRevision: product.Revision, Type: "product.engineering.foundation.started", Payload: startPayload,
@@ -427,7 +444,7 @@ func TestFoundationCommandsRequireSystemDeploymentPermissionAndPersistEvidence(t
 	}
 	completePayload, _ := json.Marshal(map[string]any{
 		"application_delivery_sha256": strings.Repeat("a", 64), "foundation_release_sha256": strings.Repeat("c", 64),
-		"foundation_package_sha256": strings.Repeat("d", 64), "model_sha256": strings.Repeat("e", 64),
+		"foundation_package_sha256": strings.Repeat("d", 64), "model_sha256": product.Engineering.FoundationDesign.ModelSHA256,
 		"idempotency_key": strings.Repeat("b", 64), "code_revision": "workspace-" + strings.Repeat("1", 64),
 		"verification_sha256": strings.Repeat("2", 64), "identity_baseline_result": "passed",
 	})
@@ -493,8 +510,8 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 	if stored.Mode != run.Mode || stored.SourceRevision != run.SourceRevision || stored.SourceRef != run.SourceRef {
 		t.Fatalf("delivery mode source binding was not persisted: stored=%#v run=%#v", stored, run)
 	}
-	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != 7 {
-		t.Fatalf("fixed development phases were not persisted inside the DeliveryUnit row: %#v", stored.DeliveryUnits)
+	if len(stored.DeliveryUnits) != 1 || len(stored.DeliveryUnits[0].DevelopmentTodos) != 2 {
+		t.Fatalf("coarse engineering boundaries were not persisted inside the DeliveryUnit row: %#v", stored.DeliveryUnits)
 	}
 
 	phaseCommands := []struct {
@@ -503,13 +520,8 @@ func TestDeliveryStartAndSuccessfulInstallAreAtomic(t *testing.T) {
 		command string
 		phase   string
 	}{
-		{"interaction", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "delivery_unit.interaction.complete", "interaction_modeling"},
-		{"model", delivery.Actor{ID: "backend-agent", Kind: delivery.ActorAgent}, "delivery_unit.model.complete", "domain_modeling"},
-		{"model-verify", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification"},
-		{"frontend", delivery.Actor{ID: "frontend-agent", Kind: delivery.ActorAgent}, "delivery_unit.frontend.complete", "frontend_implementation"},
-		{"backend", delivery.Actor{ID: "backend-agent", Kind: delivery.ActorAgent}, "delivery_unit.backend.complete", "backend_implementation"},
-		{"contract-verify", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification"},
-		{"journey", delivery.Actor{ID: "journey-runner", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing"},
+		{"implementation", delivery.Actor{ID: "engineer", Kind: delivery.ActorAgent}, "delivery_unit.implementation.complete", "implementation"},
+		{"verification", delivery.Actor{ID: "runner", Kind: delivery.ActorSystem}, "delivery_unit.verify", "verification"},
 	}
 	for _, phase := range phaseCommands {
 		payload := map[string]any{

@@ -29,70 +29,94 @@ func TestProductRevisionKeepsStoryAndDefinitionTogether(t *testing.T) {
 
 func TestNewProductQueuesEngineeringInitializationBeforeFeatureDelivery(t *testing.T) {
 	product := newQueuedProduct(t)
-	if product.Industry != "Fitness and wellness" || product.Engineering.Status != delivery.EngineeringFrontendQueued {
+	if product.Industry != "Fitness and wellness" || product.Engineering.Status != delivery.EngineeringPreparationQueued {
 		t.Fatalf("new Product did not retain its industry and queued engineering initialization: %#v", product)
 	}
 	projection := delivery.ProductProjectionFor(product)
-	if len(projection.AvailableActions) != 4 || projection.AvailableActions[2].Command != "product.engineering.frontend.start" || projection.AvailableActions[2].ActorKind != delivery.ActorAgent || projection.AvailableActions[3].Command != "product.delete" || projection.AvailableActions[3].ActorKind != delivery.ActorHuman {
-		t.Fatalf("queued Product did not expose the RD engineering claim: %#v", projection.AvailableActions)
+	if hasAction(projection.AvailableActions, "product.engineering.prepare.start", product.ID, delivery.ActorAgent) {
+		t.Fatalf("Product without a confirmed initial requirement exposed engineering: %#v", projection.AvailableActions)
+	}
+	confirmInitialFeature(t, &product)
+	projection = delivery.ProductProjectionFor(product)
+	if !hasAction(projection.AvailableActions, "product.engineering.prepare.start", product.ID, delivery.ActorAgent) {
+		t.Fatalf("confirmed initial scope did not expose engineering preparation: %#v", projection.AvailableActions)
 	}
 
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
-	if product.Engineering.Status != delivery.EngineeringFrontendInitializing || product.Engineering.FrontendStartedAt == nil {
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.start", map[string]any{})
+	if product.Engineering.Status != delivery.EngineeringPreparing || product.Engineering.PreparationStartedAt == nil || len(product.Engineering.InitialFeatureRevisions) != 1 {
 		t.Fatalf("RD did not claim Product engineering initialization: %#v", product.Engineering)
 	}
 	projection = delivery.ProductProjectionFor(product)
-	if projection.AvailableActions[2].Command != "product.engineering.frontend.complete" {
+	if projection.AvailableActions[2].Command != "product.engineering.prepare.complete" {
 		t.Fatalf("initializing Product did not expose engineering completion: %#v", projection.AvailableActions)
 	}
 
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.complete", frontendEvidence())
 	projection = delivery.ProductProjectionFor(product)
-	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.FrontendCompletedAt == nil || projection.AvailableActions[2].Command != "product.engineering.foundation.started" || projection.AvailableActions[2].ActorKind != delivery.ActorSystem {
-		t.Fatalf("verified frontend completion did not open Foundation installation: %#v %#v", product.Engineering, projection.AvailableActions)
+	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.PreparationCompletedAt == nil || product.Engineering.FoundationDesign == nil {
+		t.Fatalf("engineering preparation did not bind Foundation design: %#v %#v", product.Engineering, projection.AvailableActions)
+	}
+	if !hasAction(projection.AvailableActions, "product.engineering.foundation.started", product.ID, delivery.ActorSystem) {
+		t.Fatalf("Foundation design did not open installation: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
-	err := applyProduct(&product, agent("rd-agent"), "product.engineering.foundation.started", foundationStartEvidence())
+	err := applyProduct(&product, agent("rd-agent"), "product.engineering.foundation.started", foundationStartEvidence(product))
 	assertCode(t, err, "system_execution_required")
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence(product))
 	projection = delivery.ProductProjectionFor(product)
 	if product.Engineering.Status != delivery.EngineeringFoundationInstalling || len(projection.AvailableActions) != 5 || projection.AvailableActions[2].Command != "product.engineering.foundation.completed" || projection.AvailableActions[3].Command != "product.engineering.foundation.failed" {
 		t.Fatalf("foundation installation did not expose its system outcomes: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence())
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence(product))
 	projection = delivery.ProductProjectionFor(product)
-	if product.Engineering.Status != delivery.EngineeringReady || product.Engineering.FoundationCompletedAt == nil || projection.AvailableActions[2].Command != "product.delete" {
+	if product.Engineering.Status != delivery.EngineeringReady || product.Engineering.FoundationCompletedAt == nil ||
+		!hasAction(projection.AvailableActions, "product.delete", product.ID, delivery.ActorHuman) {
 		t.Fatalf("verified foundation did not complete Product engineering: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 }
 
 func TestProductFoundationFailureAllowsRetryAgainstCurrentDelivery(t *testing.T) {
 	product := newQueuedProduct(t)
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	confirmInitialFeature(t, &product)
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.complete", frontendEvidence())
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.failed", map[string]any{"code": "verification_failed", "message": "runtime check rejected the installed source"})
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence(product))
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.failed", map[string]any{"code": "verification_failed", "message": "runtime check rejected the installed source", "disposition": "retry_same_design"})
 
 	if product.Engineering.Status != delivery.EngineeringFoundationPending || product.Engineering.ApplicationDeliverySHA256 != "" || product.Engineering.FoundationIdempotencyKey != "" {
 		t.Fatalf("foundation failure retained an obsolete retry identity: %#v", product.Engineering)
 	}
-	// A Product persisted by an older Delivery build can still carry the failed
-	// attempt identity. The recorded failure makes replacing it safe.
-	product.Engineering.ApplicationDeliverySHA256 = strings.Repeat("a", 64)
-	product.Engineering.FoundationIdempotencyKey = strings.Repeat("b", 64)
-	retry := foundationStartEvidence()
+	retry := foundationStartEvidence(product)
 	retry["application_delivery_sha256"] = strings.Repeat("e", 64)
 	retry["idempotency_key"] = strings.Repeat("f", 64)
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", retry)
-	completed := foundationCompleteEvidence()
+	completed := foundationCompleteEvidence(product)
 	completed["application_delivery_sha256"] = strings.Repeat("e", 64)
 	completed["idempotency_key"] = strings.Repeat("f", 64)
 	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", completed)
 	if product.Engineering.Status != delivery.EngineeringReady {
 		t.Fatalf("fresh foundation retry did not complete: %#v", product.Engineering)
+	}
+}
+
+func TestProductFoundationFailureCanReturnToAdaptiveDesignWithoutANewState(t *testing.T) {
+	product := newQueuedProduct(t)
+	confirmInitialFeature(t, &product)
+	mustApplyProduct(t, &product, agent("engineer"), "product.engineering.prepare.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("engineer"), "product.engineering.prepare.complete", frontendEvidence())
+	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence(product))
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.failed", map[string]any{
+		"code": "model_invalid", "message": "Runtime rejected the initial model", "disposition": "revise_design",
+	})
+
+	projection := delivery.ProductProjectionFor(product)
+	if product.Engineering.Status != delivery.EngineeringPreparing || product.Engineering.FoundationDesign != nil ||
+		!hasAction(projection.AvailableActions, "product.engineering.prepare.complete", product.ID, delivery.ActorAgent) {
+		t.Fatalf("repairable Foundation failure did not return to design evidence: %#v %#v", product.Engineering, projection.AvailableActions)
 	}
 }
 
@@ -136,8 +160,9 @@ func TestExistingSourceProductSkipsEngineeringInitialization(t *testing.T) {
 
 func TestFeatureDeliveryWaitsForFoundationCompletion(t *testing.T) {
 	product := newQueuedProduct(t)
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	confirmInitialFeature(t, &product)
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.complete", frontendEvidence())
 	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", featureDraftPayload("feature-cancel", "F-001"))
 	mustApplyProduct(t, &product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-cancel", "draft_version": 1})
 	for _, action := range delivery.ProductProjectionFor(product).AvailableActions {
@@ -475,18 +500,20 @@ func TestFeatureInstallRequiresExactRunReleaseAndSystemActor(t *testing.T) {
 	unit := &run.DeliveryUnits[0]
 	unit.Phase = deliveryrun.DeliveryUnitComplete
 	unit.ActiveRole = ""
-	unit.ModelGitRevision = gitRevision
-	unit.BackendGitRevision = gitRevision
 	unit.IntegratedGitRevision = gitRevision
-	unit.InteractionStatus = deliveryrun.DeliveryGatePassed
-	unit.ModelStatus = deliveryrun.DeliveryGatePassed
-	unit.FrontendStatus = deliveryrun.DeliveryGatePassed
-	unit.BackendStatus = deliveryrun.DeliveryGatePassed
-	unit.ContractStatus = deliveryrun.DeliveryGatePassed
-	unit.JourneyStatus = deliveryrun.DeliveryGatePassed
-	unit.ModelEvidence = backendGuideEvidence("delivery_unit.model.verify")
-	unit.ContractEvidence = backendGuideEvidence("delivery_unit.contract.verify")
-	unit.JourneyEvidence = backendGuideEvidence("delivery_unit.journey.complete")
+	unit.ImplementationStatus = deliveryrun.DeliveryGatePassed
+	unit.VerificationStatus = deliveryrun.DeliveryGatePassed
+	unit.VerificationEvidence = backendGuideEvidence("delivery_unit.verify")
+	unit.VerificationEvidence.WorkspaceID = run.WorkspaceID
+	unit.VerificationEvidence.ProductID = run.Product.ID
+	unit.VerificationEvidence.FeatureRevision = run.Feature.Source.FeatureRevision
+	unit.VerificationEvidence.RepositoryIdentity = "github.com/domainry/product-fixture"
+	unit.VerificationEvidence.GitRevision = gitRevision
+	unit.VerificationEvidence.CheckSuite = "domainry-integrated-verification"
+	unit.VerificationEvidence.CheckVersion = "1"
+	unit.VerificationEvidence.ExecutedBy = "integrated-verifier"
+	unit.VerificationEvidence.OccurredAt = deployedAt
+	unit.VerificationEvidence.EvidenceRefs = []string{"workspace:" + gitRevision + "#evidence:integrated-verification.json"}
 	run.ActiveDeliveryUnitID = ""
 	base := product.Revisions[len(product.Revisions)-1]
 	run.ExecutableRevision = &deliveryrun.ExecutableProductRevision{
@@ -611,37 +638,33 @@ func TestVerifiedExistingSourceInstallsBaselineWithoutDeployment(t *testing.T) {
 }
 
 func backendGuideEvidence(command string) *deliveryrun.BackendGuideEvidence {
-	evidence := &deliveryrun.BackendGuideEvidence{ModelPath: "backend/model.json", ModelSHA256: strings.Repeat("d", 64)}
-	switch command {
-	case "delivery_unit.model.verify":
-		evidence.SingleBackendModel = true
-		evidence.StrictModelValidation = true
-		evidence.CrossReferencesResolved = true
-		evidence.GoBehaviorRegistry = true
-		evidence.NoExecutableBehaviorJSON = true
-	case "delivery_unit.contract.verify":
-		evidence.ProjectHTTP = true
-		evidence.HandlerUnitOfWork = true
-		evidence.HandlerIdempotency = true
-		evidence.DefinitionsRegistered = true
-		evidence.RuntimeBootstrap = true
-		evidence.NoProjectSchemaSQL = true
-		evidence.BackendGoModOnly = true
-		evidence.NoRootGoMod = true
-		evidence.NoGoWork = true
-		evidence.NoCompilerBuilder = true
-		evidence.NoGeneratedRuntimeContract = true
-		evidence.AuthWorkspacePermission = true
-		evidence.DataAuditPersistence = true
-		evidence.EmptyDatabaseInitPassed = true
-		evidence.SameModelRestartPassed = true
-		evidence.IncrementalModelRestartPassed = true
-	case "delivery_unit.journey.complete":
-		evidence.MockJourneyPassed = true
-		evidence.RuntimeJourneyPassed = true
-	default:
+	if command != "delivery_unit.verify" {
 		return nil
 	}
+	evidence := &deliveryrun.BackendGuideEvidence{ModelPath: "backend/model.json", ModelSHA256: strings.Repeat("d", 64)}
+	evidence.SingleBackendModel = true
+	evidence.StrictModelValidation = true
+	evidence.CrossReferencesResolved = true
+	evidence.GoBehaviorRegistry = true
+	evidence.NoExecutableBehaviorJSON = true
+	evidence.ProjectHTTP = true
+	evidence.HandlerUnitOfWork = true
+	evidence.HandlerIdempotency = true
+	evidence.DefinitionsRegistered = true
+	evidence.RuntimeBootstrap = true
+	evidence.NoProjectSchemaSQL = true
+	evidence.BackendGoModOnly = true
+	evidence.NoRootGoMod = true
+	evidence.NoGoWork = true
+	evidence.NoCompilerBuilder = true
+	evidence.NoGeneratedRuntimeContract = true
+	evidence.AuthWorkspacePermission = true
+	evidence.DataAuditPersistence = true
+	evidence.EmptyDatabaseInitPassed = true
+	evidence.SameModelRestartPassed = true
+	evidence.IncrementalModelRestartPassed = true
+	evidence.MockJourneyPassed = true
+	evidence.RuntimeJourneyPassed = true
 	return evidence
 }
 
@@ -707,39 +730,65 @@ func TestFeatureRevisionNormalizesCoreCollections(t *testing.T) {
 func newProduct(t *testing.T) delivery.Product {
 	t.Helper()
 	product := newQueuedProduct(t)
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.start", map[string]any{})
-	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.frontend.complete", frontendEvidence())
+	confirmInitialFeature(t, &product)
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.start", map[string]any{})
+	mustApplyProduct(t, &product, agent("rd-agent"), "product.engineering.prepare.complete", frontendEvidence())
 	systemActor := delivery.Actor{ID: "foundation-installer", Kind: delivery.ActorSystem}
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence())
-	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence())
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.started", foundationStartEvidence(product))
+	mustApplyProduct(t, &product, systemActor, "product.engineering.foundation.completed", foundationCompleteEvidence(product))
+	product.Features = []delivery.Feature{}
 	return product
 }
 
 func frontendEvidence() map[string]any {
-	return map[string]any{
+	evidence := map[string]any{
 		"code_revision": "workspace:frontend-foundation", "artifact_ref": "deck-artifact://sha256/frontend-foundation",
 		"design_contract_ref": "deck-evidence://sha256/design", "login_entry": "frontend/src/pages/Login.tsx", "shell_entry": "frontend/src/AppShell.tsx", "preview_entry": "frontend/dist/index.html",
 	}
+	for key, value := range foundationDesignEvidence() {
+		evidence[key] = value
+	}
+	return evidence
 }
 
-func foundationStartEvidence() map[string]any {
+func foundationDesignEvidence() map[string]any {
+	return map[string]any{
+		"model": map[string]any{
+			"schema_version": 1,
+			"project":        map[string]any{"key": "booking", "name": "Booking product"},
+			"roles":          []map[string]any{{"key": "administrator", "name": "Administrator"}},
+			"objects":        []any{},
+		},
+		"capabilities":       []string{"report"},
+		"module_deployments": []map[string]any{{"capability": "report", "mode": "module"}},
+	}
+}
+
+func foundationStartEvidence(product delivery.Product) map[string]any {
 	return map[string]any{
 		"application_delivery_sha256": strings.Repeat("a", 64),
+		"foundation_design_sha256":    product.Engineering.FoundationDesign.DesignSHA256,
 		"idempotency_key":             strings.Repeat("b", 64),
 	}
 }
 
-func foundationCompleteEvidence() map[string]any {
+func foundationCompleteEvidence(product delivery.Product) map[string]any {
 	return map[string]any{
 		"application_delivery_sha256": strings.Repeat("a", 64),
 		"foundation_release_sha256":   strings.Repeat("c", 64),
 		"foundation_package_sha256":   strings.Repeat("d", 64),
-		"model_sha256":                strings.Repeat("e", 64),
+		"model_sha256":                product.Engineering.FoundationDesign.ModelSHA256,
 		"idempotency_key":             strings.Repeat("b", 64),
 		"code_revision":               strings.Repeat("1", 40),
 		"verification_sha256":         strings.Repeat("2", 64),
 		"identity_baseline_result":    "passed",
 	}
+}
+
+func confirmInitialFeature(t *testing.T, product *delivery.Product) {
+	t.Helper()
+	mustApplyProduct(t, product, agent("pm-agent"), "feature.discovery.replace", featureDraftPayload("feature-initial", "INIT-001"))
+	mustApplyProduct(t, product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-initial", "draft_version": 1})
 }
 
 func newQueuedProduct(t *testing.T) delivery.Product {

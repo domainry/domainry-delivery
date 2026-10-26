@@ -321,10 +321,12 @@ func ProductProjectionFor(product Product) ProductProjection {
 		add(commandFeatureDiscoveryOpen, "")
 		add(commandFeatureDiscoveryReplace, "")
 		switch product.Engineering.Status {
-		case EngineeringFrontendQueued:
-			add(commandProductFrontendStart, product.ID)
-		case EngineeringFrontendInitializing:
-			add(commandProductFrontendFinish, product.ID)
+		case EngineeringPreparationQueued:
+			if len(confirmedFoundationScope(&product)) > 0 {
+				add(commandProductEngineeringPrepareStart, product.ID)
+			}
+		case EngineeringPreparing:
+			add(commandProductEngineeringPrepareFinish, product.ID)
 		case EngineeringFoundationPending:
 			add(commandProductFoundationStart, product.ID)
 		case EngineeringFoundationInstalling:

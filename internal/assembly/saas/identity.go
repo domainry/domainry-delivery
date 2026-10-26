@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	bridgeconfig "github.com/domainry/domainry-identity-bridge/module/config"
 	bridgemodule "github.com/domainry/domainry-identity-bridge/module"
+	bridgeconfig "github.com/domainry/domainry-identity-bridge/module/config"
 	identity "github.com/domainry/domainry-identity-sdk"
 
 	"github.com/domainry/domainry-delivery/internal/application"

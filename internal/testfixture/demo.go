@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-delivery/internal/domain/conversation"
 	"github.com/domainry/domainry-delivery/internal/domain/deliveryrun"
 	delivery "github.com/domainry/domainry-delivery/internal/domain/product"
 )
@@ -29,7 +30,7 @@ func DemoProduct(now time.Time) delivery.Product {
 		ID: DemoProductID, WorkspaceID: DemoWorkspaceID, Name: "GreenFit Location Operations", Code: "GREENFIT",
 		Goal: "Make booking, cancellation, capacity control, and exception approval executable and traceable.", Industry: "Fitness and wellness",
 		Engineering: delivery.ProductEngineering{
-			Mode: delivery.EngineeringInitialize, Status: delivery.EngineeringReady, FrontendCodeRevision: "workspace:demo-engineering", FrontendArtifactRef: "deck-artifact://sha256/demo-engineering",
+			Mode: delivery.EngineeringInitialize, Status: delivery.EngineeringReady, PreparationCodeRevision: "workspace:demo-engineering", PreparationArtifactRef: "deck-artifact://sha256/demo-engineering",
 			DesignContractRef: "deck-evidence://sha256/demo-design", LoginEntry: "frontend/src/pages/Login.tsx", ShellEntry: "frontend/src/AppShell.tsx", PreviewEntry: "frontend/dist/index.html",
 			ApplicationDeliverySHA256: strings.Repeat("a", 64), FoundationReleaseSHA256: strings.Repeat("b", 64), FoundationPackageSHA256: strings.Repeat("c", 64),
 			FoundationModelSHA256: strings.Repeat("d", 64), FoundationIdempotencyKey: strings.Repeat("e", 64), FoundationCodeRevision: strings.Repeat("f", 40),
@@ -219,6 +220,38 @@ func demoFeatureSpecification(featureID, title, summary string, acceptance []str
 
 func cloneStrings(values []string) []string {
 	return append([]string(nil), values...)
+}
+
+func InitialFeatureCommandPayload(workspaceID, productID string) map[string]any {
+	sourceID := "https://example.com/evidence/initial-journey"
+	return map[string]any{
+		"feature_id": "feature-initial", "code": "INIT-001", "title": "Initial product journey", "summary": "The first confirmed journey defines the Product foundation scope.",
+		"priority": "high", "baseline_product_revision": 1,
+		"discovery": map[string]any{
+			"focus":       map[string]any{"topic": "Initial product journey", "scenario_id": "initial-journey", "dialogue_move": "summarize_and_confirm", "rationale": "The initial business outcome is confirmed before engineering starts."},
+			"evidence":    []map[string]any{{"id": "initial-evidence", "kind": "fact", "statement": "The initial journey must be executable.", "status": "confirmed", "source_ids": []string{sourceID}, "related_ids": []string{"initial-action"}}},
+			"scenarios":   []map[string]any{{"id": "initial-journey", "title": "Complete the initial journey", "actor_ids": []string{"operator"}, "trigger": "The operator starts the journey", "current_flow": []string{"Use disconnected tools"}, "pain_points": []string{"The outcome is not traceable"}, "target_outcome": "Complete the outcome in one Product", "failure_modes": []string{"The outcome is incomplete"}, "status": "confirmed"}},
+			"assumptions": []any{}, "conflicts": []any{}, "options": []any{}, "open_questions": []any{},
+		},
+		"specification": map[string]any{
+			"intent": map[string]any{"problem": "The initial outcome is not executable.", "desired_outcome": "Complete the initial outcome in the Product.", "success_measures": []string{"The confirmed journey completes end to end."}},
+			"scope":  map[string]any{"in": []string{"The confirmed initial journey"}, "out": []string{"Unconfirmed future journeys"}},
+			"scenarios": []map[string]any{{
+				"id": "initial-journey", "title": "Complete the initial journey", "actor_ids": []string{"operator"}, "trigger": "The operator starts the journey",
+				"preconditions": []string{"The operator is authenticated"}, "main_flow": []string{"Start the journey", "Complete the outcome"}, "alternate_flows": []string{"Return an actionable business error"}, "outcome": "The outcome is recorded.",
+			}},
+			"impacts": []map[string]any{{"id": "initial-impact", "operation": "add", "target_kind": "action", "target_id": "initial-action", "summary": "Add the initial Product action.", "details": []string{"Implement the confirmed journey."}}},
+			"authorization": map[string]any{
+				"mode": "establish_baseline", "authentication": "required", "permission_model": "fixed",
+				"roles":                []map[string]any{{"id": "operator", "name": "Operator", "actor_ids": []string{"operator"}, "responsibilities": []string{"Complete the initial journey"}, "capabilities": []string{"Execute the initial action"}, "data_scopes": []string{"Assigned records"}, "source_ids": []string{sourceID}}},
+				"grants":               []map[string]any{{"id": "initial-grant", "role_ids": []string{"operator"}, "capability_id": "initial-action", "capability": "Execute the initial action", "scenario_ids": []string{"initial-journey"}, "action_ids": []string{"initial-action"}, "data_scopes": []string{"Assigned records"}, "conditions": []string{}}},
+				"permission_admin_ids": []string{}, "assignment_rules": []string{},
+			},
+			"acceptance": []map[string]any{{"id": "initial-acceptance", "title": "The journey completes", "given": []string{"An authenticated operator"}, "when": "The operator completes the journey", "then": []string{"The outcome is recorded"}}},
+		},
+		"decisions": []any{},
+		"source":    map[string]any{"conversation_id": conversation.ConversationID(workspaceID, productID, "feature-initial"), "run_id": "run-initial", "source_ids": []string{sourceID}, "decision_ids": []string{}},
+	}
 }
 
 func DemoDeliveryRun(now time.Time) deliveryrun.DeliveryRun {

@@ -32,13 +32,10 @@ func TestPlaneBackendGuideFixtureCompletesTheAuthoritativeDeliveryUnit(t *testin
 	}
 
 	run := testfixture.DemoDeliveryRun(time.Now().UTC())
-	applyFixturePhase(t, &run, agent("frontend-agent"), "delivery_unit.interaction.complete", "interaction_modeling", fixture.GitRevision, nil)
-	applyFixturePhase(t, &run, agent("backend-agent"), "delivery_unit.model.complete", "domain_modeling", fixture.GitRevision, nil)
-	applyFixturePhase(t, &run, delivery.Actor{ID: "model-verifier", Kind: delivery.ActorSystem}, "delivery_unit.model.verify", "model_verification", fixture.GitRevision, fixture.Checks["delivery_unit.model.verify"])
-	applyFixturePhase(t, &run, agent("frontend-agent"), "delivery_unit.frontend.complete", "frontend_implementation", fixture.GitRevision, nil)
-	applyFixturePhase(t, &run, agent("backend-agent"), "delivery_unit.backend.complete", "backend_implementation", fixture.GitRevision, nil)
-	applyFixturePhase(t, &run, delivery.Actor{ID: "contract-verifier", Kind: delivery.ActorSystem}, "delivery_unit.contract.verify", "contract_verification", fixture.GitRevision, fixture.Checks["delivery_unit.contract.verify"])
-	applyFixturePhase(t, &run, delivery.Actor{ID: "journey-verifier", Kind: delivery.ActorSystem}, "delivery_unit.journey.complete", "journey_testing", fixture.GitRevision, fixture.Checks["delivery_unit.journey.complete"])
+	applyFixturePhase(t, &run, agent("engineer"), "delivery_unit.implementation.complete", "implementation", fixture.GitRevision, nil)
+	evidence := backendGuideEvidence("delivery_unit.verify")
+	bindBackendGuideEvidence(&run, evidence, fixture.GitRevision, "integrated-verifier")
+	applyFixturePhase(t, &run, delivery.Actor{ID: "integrated-verifier", Kind: delivery.ActorSystem}, "delivery_unit.verify", "verification", fixture.GitRevision, evidence)
 
 	projection := delivery.ProjectionFor(run)
 	if run.Stage != delivery.StageTesting || run.ActiveDeliveryUnitID != "" || len(run.DeliveryUnits) != 1 || run.DeliveryUnits[0].Phase != delivery.DeliveryUnitComplete {
@@ -48,12 +45,8 @@ func TestPlaneBackendGuideFixtureCompletesTheAuthoritativeDeliveryUnit(t *testin
 		t.Fatalf("Plane backend guide gate is not satisfied: %#v", projection.Workflow.ReleaseGates)
 	}
 	unit := run.DeliveryUnits[0]
-	for evidence, actorID := range map[*delivery.BackendGuideEvidence]string{
-		unit.ModelEvidence: "model-verifier", unit.ContractEvidence: "contract-verifier", unit.JourneyEvidence: "journey-verifier",
-	} {
-		if evidence == nil || evidence.ExecutedBy != actorID || evidence.OccurredAt.IsZero() {
-			t.Fatalf("trusted command context did not stamp evidence provenance: %#v", evidence)
-		}
+	if unit.VerificationEvidence == nil || unit.VerificationEvidence.ExecutedBy != "integrated-verifier" || unit.VerificationEvidence.OccurredAt.IsZero() {
+		t.Fatalf("trusted command context did not stamp evidence provenance: %#v", unit.VerificationEvidence)
 	}
 }
 

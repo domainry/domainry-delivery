@@ -222,13 +222,8 @@ func (handler *Handler) decodeCommand(writer http.ResponseWriter, request *http.
 		handler.writeError(writer, request, &domain.Error{Class: apperror.KindBadRequest, Code: "request_invalid", Message: "The request must contain exactly one JSON object."})
 		return deliverysdk.Command{}, false
 	}
-	if err := command.Validate(); err != nil {
-		var contractError *deliverysdk.Error
-		if errors.As(err, &contractError) {
-			handler.writeError(writer, request, &domain.Error{Class: apperror.ErrorKind(contractError.Class), Code: contractError.Code, Message: contractError.Message, Details: contractError.Details})
-		} else {
-			handler.writeError(writer, request, &domain.Error{Class: apperror.KindBadRequest, Code: "request_invalid", Message: "The Delivery command is invalid."})
-		}
+	if len(command.Payload) == 0 {
+		handler.writeError(writer, request, domain.Invalid("payload_invalid"))
 		return deliverysdk.Command{}, false
 	}
 	normalized, err := utcjson.NormalizeInput(command.Payload)

@@ -2,11 +2,9 @@ package deliveryrun
 
 func activeRoleForPhase(phase DeliveryUnitPhase) string {
 	switch phase {
-	case DeliveryUnitInteractionModeling, DeliveryUnitFrontendImplementation:
-		return "frontend"
-	case DeliveryUnitDomainModeling, DeliveryUnitBackendImplementation:
-		return "backend"
-	case DeliveryUnitModelVerification, DeliveryUnitContractVerification, DeliveryUnitJourneyTesting:
+	case DeliveryUnitImplementation:
+		return "engineer"
+	case DeliveryUnitVerification:
 		return "system"
 	case DeliveryUnitPlanned, DeliveryUnitComplete:
 		return ""
@@ -16,20 +14,10 @@ func activeRoleForPhase(phase DeliveryUnitPhase) string {
 
 func commandForPhase(phase DeliveryUnitPhase) (string, ActorKind) {
 	switch phase {
-	case DeliveryUnitInteractionModeling:
-		return commandInteractionComplete, ActorAgent
-	case DeliveryUnitDomainModeling:
-		return commandModelComplete, ActorAgent
-	case DeliveryUnitModelVerification:
-		return commandModelVerify, ActorSystem
-	case DeliveryUnitBackendImplementation:
-		return commandBackendComplete, ActorAgent
-	case DeliveryUnitFrontendImplementation:
-		return commandFrontendComplete, ActorAgent
-	case DeliveryUnitContractVerification:
-		return commandContractVerify, ActorSystem
-	case DeliveryUnitJourneyTesting:
-		return commandJourneyComplete, ActorSystem
+	case DeliveryUnitImplementation:
+		return commandImplementationComplete, ActorAgent
+	case DeliveryUnitVerification:
+		return commandVerificationComplete, ActorSystem
 	case DeliveryUnitPlanned, DeliveryUnitComplete:
 		return "", ""
 	}

@@ -137,7 +137,7 @@ func recordExecutableRevision(run *DeliveryRun, command Command, now time.Time) 
 
 func deliveryUnitsMatchModelHash(run *DeliveryRun, modelSHA256 string) bool {
 	for _, unit := range run.DeliveryUnits {
-		if unit.ModelEvidence == nil || strings.ToLower(strings.TrimSpace(unit.ModelEvidence.ModelSHA256)) != modelSHA256 {
+		if unit.VerificationEvidence == nil || strings.ToLower(strings.TrimSpace(unit.VerificationEvidence.ModelSHA256)) != modelSHA256 {
 			return false
 		}
 	}
@@ -450,11 +450,11 @@ func authorizeHumanCommand(run *DeliveryRun, command Command) error {
 
 func AgentContextFor(run DeliveryRun) AgentContext {
 	projection := ProjectionFor(run)
-	// Historical model comparisons belong to the read model. Keep the latest
-	// receipt in Agent context without copying an ever-growing history into it.
+	// Verification evidence belongs to the read model and is intentionally
+	// omitted from the bounded Agent context.
 	run.DeliveryUnits = append([]DeliveryUnit(nil), run.DeliveryUnits...)
 	for index := range run.DeliveryUnits {
-		run.DeliveryUnits[index].ModelRepairImpactHistory = nil
+		run.DeliveryUnits[index].VerificationEvidence = nil
 	}
 	available := make([]AvailableAction, 0)
 	commands := make([]string, 0)

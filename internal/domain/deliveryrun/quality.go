@@ -100,7 +100,7 @@ func routeVerificationFailure(run *DeliveryRun, deliveryUnitID, owner string, re
 		return Invalid("quality_delivery_unit_missing")
 	}
 	switch owner {
-	case "interaction", "model", "frontend", "backend":
+	case "engineer", "interaction", "model", "frontend", "backend":
 		routeDeliveryUnitGap(unit, owner, repairTargets)
 	}
 	run.ActiveDeliveryUnitID = unit.ID
@@ -147,7 +147,7 @@ func verifiedJourneyRevision(run *DeliveryRun) (string, bool) {
 		return "", false
 	}
 	for _, unit := range run.DeliveryUnits {
-		if unit.Phase != DeliveryUnitComplete || unit.JourneyStatus != DeliveryGatePassed || strings.TrimSpace(unit.IntegratedGitRevision) == "" {
+		if unit.Phase != DeliveryUnitComplete || unit.VerificationStatus != DeliveryGatePassed || strings.TrimSpace(unit.IntegratedGitRevision) == "" {
 			return "", false
 		}
 	}

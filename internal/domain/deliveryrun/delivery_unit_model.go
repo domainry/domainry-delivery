@@ -9,15 +9,10 @@ import (
 type DeliveryUnitPhase string
 
 const (
-	DeliveryUnitPlanned                DeliveryUnitPhase = "planned"
-	DeliveryUnitInteractionModeling    DeliveryUnitPhase = "interaction_modeling"
-	DeliveryUnitDomainModeling         DeliveryUnitPhase = "domain_modeling"
-	DeliveryUnitModelVerification      DeliveryUnitPhase = "model_verification"
-	DeliveryUnitFrontendImplementation DeliveryUnitPhase = "frontend_implementation"
-	DeliveryUnitBackendImplementation  DeliveryUnitPhase = "backend_implementation"
-	DeliveryUnitContractVerification   DeliveryUnitPhase = "contract_verification"
-	DeliveryUnitJourneyTesting         DeliveryUnitPhase = "journey_testing"
-	DeliveryUnitComplete               DeliveryUnitPhase = "complete"
+	DeliveryUnitPlanned        DeliveryUnitPhase = "planned"
+	DeliveryUnitImplementation DeliveryUnitPhase = "implementation"
+	DeliveryUnitVerification   DeliveryUnitPhase = "verification"
+	DeliveryUnitComplete       DeliveryUnitPhase = "complete"
 )
 
 type DeliveryGateStatus string
@@ -37,44 +32,28 @@ const (
 )
 
 const (
-	commandInteractionComplete = commanddomain.DeliveryUnitInteractionComplete
-	commandModelComplete       = commanddomain.DeliveryUnitModelComplete
-	commandModelVerify         = commanddomain.DeliveryUnitModelVerify
-	commandBackendComplete     = commanddomain.DeliveryUnitBackendComplete
-	commandFrontendComplete    = commanddomain.DeliveryUnitFrontendComplete
-	commandContractVerify      = commanddomain.DeliveryUnitContractVerify
-	commandGapReport           = commanddomain.DeliveryUnitGapReport
-	commandJourneyComplete     = commanddomain.DeliveryUnitJourneyComplete
+	commandImplementationComplete = commanddomain.DeliveryUnitImplementationComplete
+	commandVerificationComplete   = commanddomain.DeliveryUnitVerify
+	commandGapReport              = commanddomain.DeliveryUnitGapReport
 )
 
 type DeliveryUnit struct {
-	ID                               string                      `json:"id"`
-	Title                            string                      `json:"title"`
-	DependsOn                        []string                    `json:"depends_on"`
-	Phase                            DeliveryUnitPhase           `json:"phase"`
-	ActiveRole                       string                      `json:"active_role,omitempty"`
-	ModelGitRevision                 string                      `json:"model_git_revision,omitempty"`
-	BackendGitRevision               string                      `json:"backend_git_revision,omitempty"`
-	IntegratedGitRevision            string                      `json:"integrated_git_revision,omitempty"`
-	InvalidatedIntegratedGitRevision string                      `json:"invalidated_integrated_git_revision,omitempty"`
-	InteractionStatus                DeliveryGateStatus          `json:"interaction_status"`
-	ModelStatus                      DeliveryGateStatus          `json:"model_status"`
-	BackendStatus                    DeliveryGateStatus          `json:"backend_status"`
-	FrontendStatus                   DeliveryGateStatus          `json:"frontend_status"`
-	ContractStatus                   DeliveryGateStatus          `json:"contract_status"`
-	JourneyStatus                    DeliveryGateStatus          `json:"journey_status"`
-	ModelEvidence                    *BackendGuideEvidence       `json:"model_evidence,omitempty"`
-	ModelRepairImpact                *ModelRepairImpact          `json:"model_repair_impact,omitempty"`
-	ModelRepairImpactHistory         []ModelRepairImpact         `json:"model_repair_impact_history,omitempty"`
-	ContractEvidence                 *BackendGuideEvidence       `json:"contract_evidence,omitempty"`
-	JourneyEvidence                  *BackendGuideEvidence       `json:"journey_evidence,omitempty"`
-	LatestGate                       *DeliveryGateResult         `json:"latest_gate,omitempty"`
-	DevelopmentTodos                 []DevelopmentTodo           `json:"development_todos"`
-	DevelopmentRepairItems           []DevelopmentRepairWorkItem `json:"development_repair_items"`
+	ID                     string                      `json:"id"`
+	Title                  string                      `json:"title"`
+	DependsOn              []string                    `json:"depends_on"`
+	Phase                  DeliveryUnitPhase           `json:"phase"`
+	ActiveRole             string                      `json:"active_role,omitempty"`
+	IntegratedGitRevision  string                      `json:"integrated_git_revision,omitempty"`
+	ImplementationStatus   DeliveryGateStatus          `json:"implementation_status"`
+	VerificationStatus     DeliveryGateStatus          `json:"verification_status"`
+	VerificationEvidence   *BackendGuideEvidence       `json:"verification_evidence,omitempty"`
+	LatestGate             *DeliveryGateResult         `json:"latest_gate,omitempty"`
+	DevelopmentTodos       []DevelopmentTodo           `json:"development_todos"`
+	DevelopmentRepairItems []DevelopmentRepairWorkItem `json:"development_repair_items"`
 }
 
-// DevelopmentTodo is one fixed development phase. The seven phases are created
-// by Delivery and are never generated or expanded by an Agent.
+// DevelopmentTodo is a coarse delivery boundary. The Engineer decides the
+// internal work order from the current Journey and repository evidence.
 type DevelopmentTodo struct {
 	ID             string                     `json:"id"`
 	Sequence       int                        `json:"sequence"`
@@ -192,13 +171,12 @@ type deliveryUnitImplementationPayload struct {
 }
 
 type deliveryUnitVerificationPayload struct {
-	DeliveryUnitID    string                `json:"delivery_unit_id"`
-	Phase             DeliveryUnitPhase     `json:"phase"`
-	GitRevision       string                `json:"git_revision"`
-	Summary           string                `json:"summary"`
-	EvidenceRefs      []string              `json:"evidence_refs"`
-	BackendGuide      *BackendGuideEvidence `json:"backend_guide"`
-	ModelRepairImpact *ModelRepairImpact    `json:"model_repair_impact"`
+	DeliveryUnitID string                `json:"delivery_unit_id"`
+	Phase          DeliveryUnitPhase     `json:"phase"`
+	GitRevision    string                `json:"git_revision"`
+	Summary        string                `json:"summary"`
+	EvidenceRefs   []string              `json:"evidence_refs"`
+	BackendGuide   *BackendGuideEvidence `json:"backend_guide"`
 }
 
 type deliveryUnitGapPayload struct {
@@ -214,13 +192,12 @@ type deliveryUnitGapPayload struct {
 // deliveryUnitResult is the normalized domain input after one of the three
 // strict wire payloads above has been decoded. It is not a transport DTO.
 type deliveryUnitResult struct {
-	DeliveryUnitID    string
-	Phase             DeliveryUnitPhase
-	GitRevision       string
-	Summary           string
-	EvidenceRefs      []string
-	Diagnostics       []GateDiagnostic
-	FailureOwner      string
-	ModelRepairImpact *ModelRepairImpact
-	BackendGuide      *BackendGuideEvidence
+	DeliveryUnitID string
+	Phase          DeliveryUnitPhase
+	GitRevision    string
+	Summary        string
+	EvidenceRefs   []string
+	Diagnostics    []GateDiagnostic
+	FailureOwner   string
+	BackendGuide   *BackendGuideEvidence
 }

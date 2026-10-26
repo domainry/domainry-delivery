@@ -9,32 +9,23 @@ import (
 )
 
 func newDeliveryUnits(feature FeatureSnapshot, mode DeliveryMode, sourceRevision string) ([]DeliveryUnit, string) {
+	phase := DeliveryUnitImplementation
+	implementationStatus := DeliveryGatePending
+	integratedRevision := ""
+	todos := newDevelopmentTodos(feature.ID)
 	if mode == DeliveryModeExistingSourceVerification {
-		unit := DeliveryUnit{
-			ID: feature.ID, Title: feature.Title, DependsOn: []string{},
-			Phase: DeliveryUnitModelVerification, ActiveRole: activeRoleForPhase(DeliveryUnitModelVerification),
-			InteractionStatus: DeliveryGatePassed, ModelStatus: DeliveryGatePending,
-			BackendStatus: DeliveryGatePassed, FrontendStatus: DeliveryGatePassed,
-			ContractStatus: DeliveryGatePending, JourneyStatus: DeliveryGatePending,
-			BackendGitRevision:     sourceRevision,
-			DevelopmentTodos:       existingSourceVerificationTodos(feature.ID),
-			DevelopmentRepairItems: []DevelopmentRepairWorkItem{},
-		}
-		return []DeliveryUnit{unit}, unit.ID
+		phase = DeliveryUnitVerification
+		implementationStatus = DeliveryGatePassed
+		integratedRevision = sourceRevision
+		todos = existingSourceVerificationTodos(feature.ID)
 	}
 	unit := DeliveryUnit{
-		ID:                     feature.ID,
-		Title:                  feature.Title,
-		DependsOn:              []string{},
-		Phase:                  DeliveryUnitInteractionModeling,
-		ActiveRole:             activeRoleForPhase(DeliveryUnitInteractionModeling),
-		InteractionStatus:      DeliveryGatePending,
-		ModelStatus:            DeliveryGatePending,
-		BackendStatus:          DeliveryGatePending,
-		FrontendStatus:         DeliveryGatePending,
-		ContractStatus:         DeliveryGatePending,
-		JourneyStatus:          DeliveryGatePending,
-		DevelopmentTodos:       newDevelopmentTodos(feature.ID),
+		ID: feature.ID, Title: feature.Title, DependsOn: []string{},
+		Phase: phase, ActiveRole: activeRoleForPhase(phase),
+		IntegratedGitRevision:  integratedRevision,
+		ImplementationStatus:   implementationStatus,
+		VerificationStatus:     DeliveryGatePending,
+		DevelopmentTodos:       todos,
 		DevelopmentRepairItems: []DevelopmentRepairWorkItem{},
 	}
 	return []DeliveryUnit{unit}, unit.ID
@@ -48,11 +39,10 @@ func deliveryUnitActions(run *DeliveryRun) ([]AvailableAction, bool) {
 	if unit == nil {
 		return lifecycleActions(run), true
 	}
-	command, actorKind := commandForPhase(unit.Phase)
+	command, _ := commandForPhase(unit.Phase)
 	if command == "" {
 		return []AvailableAction{}, true
 	}
-	_ = actorKind // catalog is the single source of projected actor metadata.
 	actions := []AvailableAction{catalogAction(command, unit.ID)}
 	if phaseCanReportGap(unit.Phase) {
 		actions = append(actions, catalogAction(commandGapReport, unit.ID))
@@ -62,20 +52,20 @@ func deliveryUnitActions(run *DeliveryRun) ([]AvailableAction, bool) {
 
 func deliveryUnitReleaseGates(run *DeliveryRun) []ReleaseGate {
 	completed := 0
-	journeys := 0
+	verified := 0
 	for _, unit := range run.DeliveryUnits {
 		if unit.Phase == DeliveryUnitComplete {
 			completed++
 		}
-		if unit.JourneyStatus == DeliveryGatePassed {
-			journeys++
+		if unit.VerificationStatus == DeliveryGatePassed {
+			verified++
 		}
 	}
 	gates := []ReleaseGate{
 		{Code: "feature_frozen", Label: "FeatureRevision frozen", Detail: run.Feature.ID, OK: run.Feature.ID != "" && run.Feature.Source.FeatureRevision > 0},
 		{Code: "delivery_units_completed", Label: "Delivery units completed", Detail: fmt.Sprintf("%d / %d", completed, len(run.DeliveryUnits)), OK: len(run.DeliveryUnits) > 0 && completed == len(run.DeliveryUnits)},
-		{Code: "journeys_passed", Label: "Real journeys passed", Detail: fmt.Sprintf("%d / %d", journeys, len(run.DeliveryUnits)), OK: len(run.DeliveryUnits) > 0 && journeys == len(run.DeliveryUnits)},
-		{Code: "backend_guide_verified", Label: "Plane backend guide verified", Detail: fmt.Sprintf("%d delivery units", len(run.DeliveryUnits)), OK: backendGuideEvidenceReady(run)},
+		{Code: "journeys_passed", Label: "Integrated journeys passed", Detail: fmt.Sprintf("%d / %d", verified, len(run.DeliveryUnits)), OK: len(run.DeliveryUnits) > 0 && verified == len(run.DeliveryUnits)},
+		{Code: "backend_guide_verified", Label: "Domainry source contract verified", Detail: fmt.Sprintf("%d delivery units", len(run.DeliveryUnits)), OK: backendGuideEvidenceReady(run)},
 		{Code: "product_revision_bound", Label: "Executable ProductRevision bound", Detail: executableRevisionDetail(run), OK: executableRevisionReady(run)},
 	}
 	gates = append(gates, qualityReleaseGate(run), acceptanceReleaseGate(run))
@@ -90,9 +80,7 @@ func backendGuideEvidenceReady(run *DeliveryRun) bool {
 		return false
 	}
 	for _, unit := range run.DeliveryUnits {
-		if validateBackendGuideEvidenceForRun(run, commandModelVerify, unit.ModelEvidence, unit.ModelGitRevision) != nil ||
-			validateBackendGuideEvidenceForRun(run, commandContractVerify, unit.ContractEvidence, unit.IntegratedGitRevision) != nil ||
-			validateBackendGuideEvidenceForRun(run, commandJourneyComplete, unit.JourneyEvidence, unit.IntegratedGitRevision) != nil {
+		if validateBackendGuideEvidenceForRun(run, unit.VerificationEvidence, unit.IntegratedGitRevision) != nil {
 			return false
 		}
 	}
@@ -150,44 +138,12 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 		return true, err
 	}
 	if payload.BackendGuide != nil {
-		// Execution identity and time are trusted command context, never
-		// client-authored evidence. Overwrite both before domain validation and
-		// persistence so a system adapter cannot impersonate another verifier.
 		payload.BackendGuide.ExecutedBy = command.Actor.ID
 		payload.BackendGuide.OccurredAt = now
 	}
 	payload.EvidenceRefs = cleanStrings(payload.EvidenceRefs)
 	if err := validateDeliveryUnitPayload(run, unit, command, payload); err != nil {
 		return true, err
-	}
-	if command.Type == commandContractVerify &&
-		(unit.InteractionStatus != DeliveryGatePassed || unit.ModelStatus != DeliveryGatePassed || unit.FrontendStatus != DeliveryGatePassed || unit.BackendStatus != DeliveryGatePassed) {
-		return true, Invalid("delivery_unit_prerequisites_incomplete")
-	}
-	if command.Type == commandJourneyComplete && unit.ContractStatus != DeliveryGatePassed {
-		return true, Invalid("delivery_unit_prerequisites_incomplete")
-	}
-	if command.Type == commandContractVerify || command.Type == commandJourneyComplete {
-		for _, repair := range unit.DevelopmentRepairItems {
-			if repair.Status == DevelopmentTodoCompleted || repair.Phase == unit.Phase {
-				continue
-			}
-			if command.Type == commandContractVerify && repair.Phase == DeliveryUnitJourneyTesting {
-				continue
-			}
-			return true, Invalid("delivery_unit_repairs_incomplete")
-		}
-	}
-	if unit.Phase == DeliveryUnitJourneyTesting && strings.TrimSpace(payload.GitRevision) != unit.IntegratedGitRevision {
-		return true, Invalid("delivery_unit_integrated_revision_conflict")
-	}
-	// Environment repairs can reverify the same source. Require the completed
-	// implementation to still bind that revision; a newer Backend result must
-	// never be replaced by the invalidated source. Contract and Journey evidence
-	// are independently rerun before the unit can complete.
-	if command.Type == commandContractVerify && strings.TrimSpace(payload.GitRevision) == unit.InvalidatedIntegratedGitRevision &&
-		(unit.FrontendStatus != DeliveryGatePassed || unit.BackendStatus != DeliveryGatePassed || unit.BackendGitRevision != strings.TrimSpace(payload.GitRevision)) {
-		return true, Invalid("delivery_unit_revision_not_advanced")
 	}
 	status := DeliveryGatePassed
 	if command.Type == commandGapReport {
@@ -209,34 +165,24 @@ func applyDeliveryUnitCommand(run *DeliveryRun, command Command, now time.Time) 
 
 func decodeDeliveryUnitResult(command string, raw []byte) (deliveryUnitResult, error) {
 	switch command {
-	case commandInteractionComplete, commandModelComplete, commandBackendComplete, commandFrontendComplete:
+	case commandImplementationComplete:
 		var payload deliveryUnitImplementationPayload
 		if err := decode(raw, &payload); err != nil {
 			return deliveryUnitResult{}, err
 		}
-		return deliveryUnitResult{
-			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs,
-		}, nil
-	case commandModelVerify, commandContractVerify, commandJourneyComplete:
+		return deliveryUnitResult{DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase, GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs}, nil
+	case commandVerificationComplete:
 		var payload deliveryUnitVerificationPayload
 		if err := decode(raw, &payload); err != nil {
 			return deliveryUnitResult{}, err
 		}
-		return deliveryUnitResult{
-			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, BackendGuide: payload.BackendGuide, ModelRepairImpact: payload.ModelRepairImpact,
-		}, nil
+		return deliveryUnitResult{DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase, GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, BackendGuide: payload.BackendGuide}, nil
 	case commandGapReport:
 		var payload deliveryUnitGapPayload
 		if err := decode(raw, &payload); err != nil {
 			return deliveryUnitResult{}, err
 		}
-		return deliveryUnitResult{
-			DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase,
-			GitRevision: payload.GitRevision, Summary: payload.Summary,
-			EvidenceRefs: payload.EvidenceRefs, Diagnostics: payload.Diagnostics, FailureOwner: payload.FailureOwner,
-		}, nil
+		return deliveryUnitResult{DeliveryUnitID: payload.DeliveryUnitID, Phase: payload.Phase, GitRevision: payload.GitRevision, Summary: payload.Summary, EvidenceRefs: payload.EvidenceRefs, Diagnostics: payload.Diagnostics, FailureOwner: payload.FailureOwner}, nil
 	default:
 		return deliveryUnitResult{}, Invalid("delivery_unit_command_invalid")
 	}
@@ -267,50 +213,37 @@ func validateDeliveryUnitPayload(run *DeliveryRun, unit *DeliveryUnit, command C
 		return Invalid("delivery_unit_diagnostics_invalid")
 	}
 	for _, diagnostic := range payload.Diagnostics {
-		diagnostic.Code = strings.TrimSpace(diagnostic.Code)
-		diagnostic.Severity = strings.TrimSpace(diagnostic.Severity)
-		diagnostic.Path = strings.TrimSpace(diagnostic.Path)
-		diagnostic.Message = strings.TrimSpace(diagnostic.Message)
-		diagnostic.Owner = strings.TrimSpace(diagnostic.Owner)
-		diagnostic.Category = strings.TrimSpace(diagnostic.Category)
-		diagnostic.Remediation = strings.TrimSpace(diagnostic.Remediation)
-		if diagnostic.Code == "" || len(diagnostic.Code) > 128 || diagnostic.Severity != "error" || diagnostic.Path == "" || len(diagnostic.Path) > 1024 || diagnostic.Message == "" || len(diagnostic.Message) > 2000 || diagnostic.Owner == "" || len(diagnostic.Owner) > 128 || diagnostic.Category == "" || len(diagnostic.Category) > 128 || len(diagnostic.Remediation) > 2000 {
+		if strings.TrimSpace(diagnostic.Code) == "" || len(strings.TrimSpace(diagnostic.Code)) > 128 || strings.TrimSpace(diagnostic.Severity) != "error" || strings.TrimSpace(diagnostic.Path) == "" || len(strings.TrimSpace(diagnostic.Path)) > 1024 || strings.TrimSpace(diagnostic.Message) == "" || len(strings.TrimSpace(diagnostic.Message)) > 2000 || strings.TrimSpace(diagnostic.Owner) == "" || len(strings.TrimSpace(diagnostic.Owner)) > 128 || strings.TrimSpace(diagnostic.Category) == "" || len(strings.TrimSpace(diagnostic.Category)) > 128 || len(strings.TrimSpace(diagnostic.Remediation)) > 2000 {
 			return Invalid("delivery_unit_diagnostics_invalid")
 		}
 	}
 	if command.Type == commandGapReport {
-		if !validDeliveryGapOwner(payload.FailureOwner) || len(payload.Diagnostics) == 0 {
+		if !validDeliveryGapOwner(payload.FailureOwner) || len(payload.Diagnostics) == 0 || payload.BackendGuide != nil {
 			return Invalid("delivery_unit_gap_invalid")
 		}
-	} else if payload.FailureOwner != "" {
+		return nil
+	}
+	if payload.FailureOwner != "" || len(payload.Diagnostics) != 0 {
 		return Invalid("delivery_unit_gap_invalid")
 	}
-	if err := validateModelRepairImpact(unit, command.Type, payload); err != nil {
-		return err
-	}
-	if err := validateBackendGuideEvidenceForRun(run, command.Type, payload.BackendGuide, payload.GitRevision); err != nil {
-		return err
+	if command.Type == commandVerificationComplete {
+		if payload.GitRevision != unit.IntegratedGitRevision {
+			return Invalid("delivery_unit_integrated_revision_conflict")
+		}
+		return validateBackendGuideEvidenceForRun(run, payload.BackendGuide, payload.GitRevision)
 	}
 	if payload.BackendGuide != nil {
-		evidence := payload.BackendGuide
-		if (command.Type == commandContractVerify || command.Type == commandJourneyComplete) &&
-			(unit.ModelEvidence == nil || !strings.EqualFold(strings.TrimSpace(evidence.ModelSHA256), strings.TrimSpace(unit.ModelEvidence.ModelSHA256))) {
-			return Invalid("backend_evidence_model_mismatch")
-		}
+		return Invalid("backend_guide_evidence_unexpected")
 	}
 	return nil
 }
 
-func validateBackendGuideEvidenceForRun(run *DeliveryRun, command string, evidence *BackendGuideEvidence, gitRevision string) error {
-	if run.Mode == DeliveryModeExistingSourceVerification && command == commandContractVerify {
-		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.HistoricalSourceContract || !evidence.ModelContractPresent || !evidence.RuntimeEntrypointPresent || !evidence.BackendModulePresent || !evidence.FrontendPackagePresent || !evidence.FrontendProjectClientPresent || !evidence.SourceRevisionUnchanged {
-			return Invalid("historical_source_contract_evidence_invalid")
-		}
-	} else if err := validateBackendGuideEvidence(command, evidence); err != nil {
-		return err
+func validateBackendGuideEvidenceForRun(run *DeliveryRun, evidence *BackendGuideEvidence, gitRevision string) error {
+	if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.SingleBackendModel || !evidence.StrictModelValidation || !evidence.CrossReferencesResolved || !evidence.GoBehaviorRegistry || !evidence.NoExecutableBehaviorJSON || !evidence.ProjectHTTP || !evidence.HandlerUnitOfWork || !evidence.HandlerIdempotency || !evidence.DefinitionsRegistered || !evidence.RuntimeBootstrap || !evidence.NoProjectSchemaSQL || !evidence.BackendGoModOnly || !evidence.NoRootGoMod || !evidence.NoGoWork || !evidence.NoCompilerBuilder || !evidence.NoGeneratedRuntimeContract || !evidence.AuthWorkspacePermission || !evidence.DataAuditPersistence || !evidence.EmptyDatabaseInitPassed || !evidence.SameModelRestartPassed || !evidence.IncrementalModelRestartPassed || !evidence.MockJourneyPassed || !evidence.RuntimeJourneyPassed {
+		return Invalid("integrated_verification_evidence_invalid")
 	}
-	if evidence == nil {
-		return nil
+	if run.Mode == DeliveryModeExistingSourceVerification && (!evidence.HistoricalSourceContract || !evidence.ModelContractPresent || !evidence.RuntimeEntrypointPresent || !evidence.BackendModulePresent || !evidence.FrontendPackagePresent || !evidence.FrontendProjectClientPresent || !evidence.SourceRevisionUnchanged) {
+		return Invalid("historical_source_contract_evidence_invalid")
 	}
 	gitRevision = strings.TrimSpace(gitRevision)
 	if strings.TrimSpace(evidence.WorkspaceID) != run.WorkspaceID || strings.TrimSpace(evidence.ProductID) != run.Product.ID || evidence.FeatureRevision != run.Feature.Source.FeatureRevision || strings.TrimSpace(evidence.GitRevision) != gitRevision {
@@ -322,115 +255,47 @@ func validateBackendGuideEvidenceForRun(run *DeliveryRun, command string, eviden
 	return nil
 }
 
-func validateBackendGuideEvidence(command string, evidence *BackendGuideEvidence) error {
-	switch command {
-	case commandModelVerify:
-		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.SingleBackendModel || !evidence.StrictModelValidation || !evidence.CrossReferencesResolved || !evidence.GoBehaviorRegistry || !evidence.NoExecutableBehaviorJSON {
-			return Invalid("backend_model_evidence_invalid")
-		}
-	case commandContractVerify:
-		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.ProjectHTTP || !evidence.HandlerUnitOfWork || !evidence.HandlerIdempotency || !evidence.DefinitionsRegistered || !evidence.RuntimeBootstrap || !evidence.NoProjectSchemaSQL || !evidence.BackendGoModOnly || !evidence.NoRootGoMod || !evidence.NoGoWork || !evidence.NoCompilerBuilder || !evidence.NoGeneratedRuntimeContract || !evidence.AuthWorkspacePermission || !evidence.DataAuditPersistence || !evidence.EmptyDatabaseInitPassed || !evidence.SameModelRestartPassed || !evidence.IncrementalModelRestartPassed {
-			return Invalid("backend_contract_evidence_invalid")
-		}
-	case commandJourneyComplete:
-		if evidence == nil || strings.TrimSpace(evidence.ModelPath) != "backend/model.json" || !sha256ValuePattern.MatchString(strings.ToLower(strings.TrimSpace(evidence.ModelSHA256))) || !evidence.MockJourneyPassed || !evidence.RuntimeJourneyPassed {
-			return Invalid("backend_journey_evidence_invalid")
-		}
-	case commandGapReport:
-		// Failed gates carry diagnostics; passing evidence is intentionally absent.
-		if evidence != nil {
-			return Invalid("backend_guide_evidence_unexpected")
-		}
-	default:
-		if evidence != nil {
-			return Invalid("backend_guide_evidence_unexpected")
-		}
-	}
-	return nil
-}
-
 func validCodeRevision(revision string) bool {
 	return domain.ValidCodeRevision(revision)
 }
 
 func advanceDeliveryUnit(run *DeliveryRun, unit *DeliveryUnit, command string, payload deliveryUnitResult) {
-	revision := strings.TrimSpace(payload.GitRevision)
 	switch command {
-	case commandInteractionComplete:
-		unit.InteractionStatus = DeliveryGatePassed
-		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
-	case commandModelComplete:
-		unit.ModelStatus = DeliveryGatePending
-		queueRepairValidation(unit, DeliveryUnitModelVerification, revision)
-		setDeliveryUnitPhase(unit, DeliveryUnitModelVerification)
-	case commandModelVerify:
-		if payload.ModelRepairImpact != nil && payload.ModelRepairImpact.SourceImpact == "implementation_contract" {
-			queueModelChangeRepairs(unit, payload.BackendGuide.ModelSHA256)
-		}
-		unit.ModelStatus = DeliveryGatePassed
-		unit.ModelGitRevision = revision
-		unit.ModelEvidence = clone(payload.BackendGuide)
-		unit.ModelRepairImpact = clone(payload.ModelRepairImpact)
-		if payload.ModelRepairImpact != nil {
-			unit.ModelRepairImpactHistory = append(unit.ModelRepairImpactHistory, *payload.ModelRepairImpact)
-		}
-		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
-	case commandFrontendComplete:
-		unit.FrontendStatus = DeliveryGatePassed
-		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
-	case commandBackendComplete:
-		unit.BackendStatus = DeliveryGatePassed
-		unit.BackendGitRevision = revision
-		setDeliveryUnitPhase(unit, nextRequiredDevelopmentPhase(unit))
-	case commandContractVerify:
-		unit.ContractStatus = DeliveryGatePassed
-		unit.IntegratedGitRevision = revision
-		unit.InvalidatedIntegratedGitRevision = ""
-		unit.ContractEvidence = clone(payload.BackendGuide)
-		setDeliveryUnitPhase(unit, DeliveryUnitJourneyTesting)
-	case commandGapReport:
-		routeDeliveryUnitGap(unit, payload.FailureOwner, repairTargetsFromDiagnostics(payload.Diagnostics, payload.FailureOwner))
-	case commandJourneyComplete:
-		unit.JourneyStatus = DeliveryGatePassed
-		unit.JourneyEvidence = clone(payload.BackendGuide)
+	case commandImplementationComplete:
+		unit.ImplementationStatus = DeliveryGatePassed
+		unit.IntegratedGitRevision = strings.TrimSpace(payload.GitRevision)
+		setDeliveryUnitPhase(unit, DeliveryUnitVerification)
+	case commandVerificationComplete:
+		unit.VerificationStatus = DeliveryGatePassed
+		unit.VerificationEvidence = clone(payload.BackendGuide)
 		setDeliveryUnitPhase(unit, DeliveryUnitComplete)
 		activateNextDeliveryUnit(run)
+	case commandGapReport:
+		routeDeliveryUnitGap(unit, payload.FailureOwner, repairTargetsFromDiagnostics(payload.Diagnostics, payload.FailureOwner))
 	}
 }
 
 func routeDeliveryUnitGap(unit *DeliveryUnit, owner string, repairTargets []developmentRepairTarget) {
-	if unit.IntegratedGitRevision != "" {
-		unit.InvalidatedIntegratedGitRevision = unit.IntegratedGitRevision
-	}
-	// Gate validity and recorded results are independent. The failure owner
-	// selects the first repair, not a blanket invalidation of later work.
-	unit.ContractStatus = DeliveryGatePending
-	unit.JourneyStatus = DeliveryGatePending
-	firstPhase := repairPhaseForOwner(owner)
-	invalidateRepairPhase(unit, firstPhase)
+	unit.ImplementationStatus = DeliveryGateNeedsChange
+	unit.VerificationStatus = DeliveryGateNeedsChange
 	for _, target := range repairTargets {
-		phase := target.Phase
-		if phase == "" {
-			phase = firstPhase
-		}
-		invalidateRepairPhase(unit, phase)
-		reopenDevelopmentRepairTodos(unit, phase, []developmentRepairTarget{target})
+		reopenDevelopmentRepairTodos(unit, DeliveryUnitImplementation, []developmentRepairTarget{target})
 	}
-	revision := unit.IntegratedGitRevision
-	if unit.LatestGate != nil {
-		revision = unit.LatestGate.GitRevision
+	if len(repairTargets) == 0 {
+		reopenDevelopmentRepairTodos(unit, DeliveryUnitImplementation, []developmentRepairTarget{{
+			Phase: DeliveryUnitImplementation, SourceKind: "verification_gap", SourceID: owner,
+			Title: "Repair integrated verification gap", Detail: "The integrated verification must be repaired by the same Engineer.",
+		}})
 	}
-	queueRepairValidation(unit, DeliveryUnitContractVerification, revision)
-	queueRepairValidation(unit, DeliveryUnitJourneyTesting, revision)
-	setDeliveryUnitPhase(unit, firstPhase)
+	setDeliveryUnitPhase(unit, DeliveryUnitImplementation)
 }
 
 func validDeliveryGapOwner(owner string) bool {
-	return owner == "interaction" || owner == "model" || owner == "backend" || owner == "frontend"
+	return owner == "engineer"
 }
 
 func phaseCanReportGap(phase DeliveryUnitPhase) bool {
-	return phase == DeliveryUnitModelVerification || phase == DeliveryUnitBackendImplementation || phase == DeliveryUnitContractVerification || phase == DeliveryUnitJourneyTesting
+	return phase == DeliveryUnitVerification
 }
 
 func activateNextDeliveryUnit(run *DeliveryRun) {
@@ -439,7 +304,7 @@ func activateNextDeliveryUnit(run *DeliveryRun) {
 		if unit.Phase != DeliveryUnitPlanned || !deliveryUnitDependenciesComplete(run, unit) {
 			continue
 		}
-		setDeliveryUnitPhase(unit, DeliveryUnitInteractionModeling)
+		setDeliveryUnitPhase(unit, DeliveryUnitImplementation)
 		run.ActiveDeliveryUnitID = unit.ID
 		return
 	}
@@ -480,12 +345,5 @@ func setDeliveryUnitPhase(unit *DeliveryUnit, phase DeliveryUnitPhase) {
 }
 
 func isDeliveryUnitCommand(command string) bool {
-	switch command {
-	case commandInteractionComplete, commandModelComplete, commandModelVerify,
-		commandBackendComplete, commandFrontendComplete, commandContractVerify,
-		commandGapReport, commandJourneyComplete:
-		return true
-	default:
-		return false
-	}
+	return command == commandImplementationComplete || command == commandVerificationComplete || command == commandGapReport
 }

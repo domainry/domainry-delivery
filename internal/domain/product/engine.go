@@ -1,6 +1,7 @@
 package product
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -8,20 +9,20 @@ import (
 )
 
 const (
-	commandProductCreate           = commanddomain.ProductCreate
-	commandProductDelete           = commanddomain.ProductDelete
-	commandProductRestore          = commanddomain.ProductRestore
-	commandProductFrontendStart    = commanddomain.ProductFrontendStart
-	commandProductFrontendFinish   = commanddomain.ProductFrontendComplete
-	commandProductFoundationStart  = commanddomain.ProductFoundationStarted
-	commandProductFoundationFinish = commanddomain.ProductFoundationComplete
-	commandProductFoundationFail   = commanddomain.ProductFoundationFailed
-	commandFeatureDiscoveryOpen    = commanddomain.FeatureDiscoveryOpen
-	commandFeatureDiscoveryReplace = commanddomain.FeatureDiscoveryReplace
-	commandFeatureDelete           = commanddomain.FeatureDelete
-	commandFeatureConfirm          = commanddomain.FeatureConfirm
-	commandFeatureRebase           = commanddomain.FeatureRebase
-	commandFeatureDelivery         = commanddomain.FeatureDeliveryStart
+	commandProductCreate                   = commanddomain.ProductCreate
+	commandProductDelete                   = commanddomain.ProductDelete
+	commandProductRestore                  = commanddomain.ProductRestore
+	commandProductEngineeringPrepareStart  = commanddomain.ProductEngineeringPrepareStart
+	commandProductEngineeringPrepareFinish = commanddomain.ProductEngineeringPrepareComplete
+	commandProductFoundationStart          = commanddomain.ProductFoundationStarted
+	commandProductFoundationFinish         = commanddomain.ProductFoundationComplete
+	commandProductFoundationFail           = commanddomain.ProductFoundationFailed
+	commandFeatureDiscoveryOpen            = commanddomain.FeatureDiscoveryOpen
+	commandFeatureDiscoveryReplace         = commanddomain.FeatureDiscoveryReplace
+	commandFeatureDelete                   = commanddomain.FeatureDelete
+	commandFeatureConfirm                  = commanddomain.FeatureConfirm
+	commandFeatureRebase                   = commanddomain.FeatureRebase
+	commandFeatureDelivery                 = commanddomain.FeatureDeliveryStart
 )
 
 func NewProduct(workspaceID, productID string, command Command, now time.Time) (Product, error) {
@@ -103,7 +104,7 @@ func initialProductEngineering(mode EngineeringMode, sourceRevision, sourceRef s
 		if sourceRevision != "" || sourceRef != "" {
 			return ProductEngineering{}, Invalid("product_engineering_source_unexpected")
 		}
-		return ProductEngineering{Mode: mode, Status: EngineeringFrontendQueued}, nil
+		return ProductEngineering{Mode: mode, Status: EngineeringPreparationQueued}, nil
 	case EngineeringAdoptExistingSource:
 		if !validCodeRevision(sourceRevision) || sourceRef == "" {
 			return ProductEngineering{}, Invalid("product_engineering_source_incomplete")
@@ -145,16 +146,16 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 		} else {
 			product.Status = ProductShaping
 		}
-	case commandProductFrontendStart:
+	case commandProductEngineeringPrepareStart:
 		if command.Actor.Kind != ActorAgent {
 			return Invalid("agent_execution_required")
 		}
-		err = startProductFrontend(product, command, now)
-	case commandProductFrontendFinish:
+		err = startProductEngineeringPreparation(product, command, now)
+	case commandProductEngineeringPrepareFinish:
 		if command.Actor.Kind != ActorAgent {
 			return Invalid("agent_execution_required")
 		}
-		err = completeProductFrontend(product, command, now)
+		err = completeProductEngineeringPreparation(product, command, now)
 	case commandProductFoundationStart:
 		if command.Actor.Kind != ActorSystem {
 			return Invalid("system_execution_required")
@@ -205,27 +206,35 @@ func ApplyProduct(product *Product, command Command, now time.Time) error {
 	return nil
 }
 
-func startProductFrontend(product *Product, command Command, now time.Time) error {
-	if product.Engineering.Status != EngineeringFrontendQueued {
-		return Invalid("product_frontend_not_queued")
+func startProductEngineeringPreparation(product *Product, command Command, now time.Time) error {
+	if product.Engineering.Status != EngineeringPreparationQueued {
+		return Invalid("product_engineering_not_queued")
 	}
-	product.Engineering.Status = EngineeringFrontendInitializing
-	product.Engineering.FrontendStartedBy = command.Actor.ID
-	product.Engineering.FrontendStartedAt = &now
+	initialScope := confirmedFoundationScope(product)
+	if len(initialScope) == 0 {
+		return Invalid("product_initial_scope_missing")
+	}
+	product.Engineering.Status = EngineeringPreparing
+	product.Engineering.InitialFeatureRevisions = initialScope
+	product.Engineering.PreparationStartedBy = command.Actor.ID
+	product.Engineering.PreparationStartedAt = &now
 	return nil
 }
 
-func completeProductFrontend(product *Product, command Command, now time.Time) error {
-	if product.Engineering.Status != EngineeringFrontendInitializing {
-		return Invalid("product_frontend_not_initializing")
+func completeProductEngineeringPreparation(product *Product, command Command, now time.Time) error {
+	if product.Engineering.Status != EngineeringPreparing {
+		return Invalid("product_engineering_not_preparing")
 	}
 	var payload struct {
-		CodeRevision      string `json:"code_revision"`
-		ArtifactRef       string `json:"artifact_ref"`
-		DesignContractRef string `json:"design_contract_ref"`
-		LoginEntry        string `json:"login_entry"`
-		ShellEntry        string `json:"shell_entry"`
-		PreviewEntry      string `json:"preview_entry"`
+		CodeRevision      string                       `json:"code_revision"`
+		ArtifactRef       string                       `json:"artifact_ref"`
+		DesignContractRef string                       `json:"design_contract_ref"`
+		LoginEntry        string                       `json:"login_entry"`
+		ShellEntry        string                       `json:"shell_entry"`
+		PreviewEntry      string                       `json:"preview_entry"`
+		Model             json.RawMessage              `json:"model"`
+		Capabilities      []string                     `json:"capabilities"`
+		ModuleDeployments []FoundationModuleDeployment `json:"module_deployments"`
 	}
 	if err := decode(command.Payload, &payload); err != nil {
 		return err
@@ -237,17 +246,24 @@ func completeProductFrontend(product *Product, command Command, now time.Time) e
 	payload.ShellEntry = strings.TrimSpace(payload.ShellEntry)
 	payload.PreviewEntry = strings.TrimSpace(payload.PreviewEntry)
 	if payload.CodeRevision == "" || payload.ArtifactRef == "" || payload.DesignContractRef == "" || payload.LoginEntry == "" || payload.ShellEntry == "" || payload.PreviewEntry == "" {
-		return Invalid("product_frontend_evidence_incomplete")
+		return Invalid("product_engineering_evidence_incomplete")
+	}
+	design, err := prepareFoundationDesign(product, foundationDesignInput{
+		Model: payload.Model, Capabilities: payload.Capabilities, ModuleDeployments: payload.ModuleDeployments,
+	}, command.Actor.ID, now)
+	if err != nil {
+		return err
 	}
 	product.Engineering.Status = EngineeringFoundationPending
-	product.Engineering.FrontendCodeRevision = payload.CodeRevision
-	product.Engineering.FrontendArtifactRef = payload.ArtifactRef
+	product.Engineering.PreparationCodeRevision = payload.CodeRevision
+	product.Engineering.PreparationArtifactRef = payload.ArtifactRef
 	product.Engineering.DesignContractRef = payload.DesignContractRef
 	product.Engineering.LoginEntry = payload.LoginEntry
 	product.Engineering.ShellEntry = payload.ShellEntry
 	product.Engineering.PreviewEntry = payload.PreviewEntry
-	product.Engineering.FrontendCompletedBy = command.Actor.ID
-	product.Engineering.FrontendCompletedAt = &now
+	product.Engineering.PreparationCompletedBy = command.Actor.ID
+	product.Engineering.PreparationCompletedAt = &now
+	product.Engineering.FoundationDesign = design
 	return nil
 }
 
@@ -257,15 +273,22 @@ func startProductFoundation(product *Product, command Command, now time.Time) er
 	}
 	var payload struct {
 		ApplicationDeliverySHA256 string `json:"application_delivery_sha256"`
+		FoundationDesignSHA256    string `json:"foundation_design_sha256"`
 		IdempotencyKey            string `json:"idempotency_key"`
 	}
 	if err := decode(command.Payload, &payload); err != nil {
 		return err
 	}
 	payload.ApplicationDeliverySHA256 = strings.ToLower(strings.TrimSpace(payload.ApplicationDeliverySHA256))
+	payload.FoundationDesignSHA256 = strings.ToLower(strings.TrimSpace(payload.FoundationDesignSHA256))
 	payload.IdempotencyKey = strings.ToLower(strings.TrimSpace(payload.IdempotencyKey))
-	if !sha256ValuePattern.MatchString(payload.ApplicationDeliverySHA256) || !sha256ValuePattern.MatchString(payload.IdempotencyKey) {
+	if !sha256ValuePattern.MatchString(payload.ApplicationDeliverySHA256) ||
+		!sha256ValuePattern.MatchString(payload.FoundationDesignSHA256) ||
+		!sha256ValuePattern.MatchString(payload.IdempotencyKey) {
 		return Invalid("product_foundation_identity_invalid")
+	}
+	if product.Engineering.FoundationDesign == nil || product.Engineering.FoundationDesign.DesignSHA256 != payload.FoundationDesignSHA256 {
+		return Invalid("product_foundation_design_mismatch")
 	}
 	if product.Engineering.ApplicationDeliverySHA256 != "" &&
 		(product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey) &&
@@ -316,7 +339,10 @@ func completeProductFoundation(product *Product, command Command, now time.Time)
 		!validCodeRevision(payload.CodeRevision) || payload.IdentityBaselineResult != "passed" {
 		return Invalid("product_foundation_evidence_invalid")
 	}
-	if product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 || product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey {
+	if product.Engineering.ApplicationDeliverySHA256 != payload.ApplicationDeliverySHA256 ||
+		product.Engineering.FoundationIdempotencyKey != payload.IdempotencyKey ||
+		product.Engineering.FoundationDesign == nil ||
+		product.Engineering.FoundationDesign.ModelSHA256 != payload.ModelSHA256 {
 		return Invalid("product_foundation_identity_mismatch")
 	}
 	product.Engineering.Status = EngineeringReady
@@ -336,15 +362,18 @@ func failProductFoundation(product *Product, command Command) error {
 		return Invalid("product_foundation_not_installing")
 	}
 	var payload struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code        string `json:"code"`
+		Message     string `json:"message"`
+		Disposition string `json:"disposition"`
 	}
 	if err := decode(command.Payload, &payload); err != nil {
 		return err
 	}
 	payload.Code = strings.TrimSpace(payload.Code)
 	payload.Message = strings.TrimSpace(payload.Message)
-	if payload.Code == "" || len(payload.Code) > 128 || payload.Message == "" || len(payload.Message) > 2000 {
+	payload.Disposition = strings.TrimSpace(payload.Disposition)
+	if payload.Code == "" || len(payload.Code) > 128 || payload.Message == "" || len(payload.Message) > 2000 ||
+		(payload.Disposition != "retry_same_design" && payload.Disposition != "revise_design") {
 		return Invalid("product_foundation_failure_invalid")
 	}
 	product.Engineering.Status = EngineeringFoundationPending
@@ -352,5 +381,9 @@ func failProductFoundation(product *Product, command Command) error {
 	product.Engineering.FoundationIdempotencyKey = ""
 	product.Engineering.FoundationFailureCode = payload.Code
 	product.Engineering.FoundationFailureMessage = payload.Message
+	if payload.Disposition == "revise_design" {
+		product.Engineering.FoundationDesign = nil
+		product.Engineering.Status = EngineeringPreparing
+	}
 	return nil
 }

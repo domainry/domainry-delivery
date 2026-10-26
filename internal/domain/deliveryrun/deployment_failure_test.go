@@ -36,7 +36,7 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
 				"release_id": releaseID, "outcome": "failure", "environment_ref": "production",
 				"launch_url": "", "receipt_ref": "verdent://deployments/deploy-1/versions/version-1",
-				"failure_kind": "source", "failure_owner": "backend", "delivery_unit_id": run.DeliveryUnits[0].ID,
+				"failure_kind": "source", "failure_owner": "engineer", "delivery_unit_id": run.DeliveryUnits[0].ID,
 				"diagnostics": []map[string]any{{
 					"code": "cloud_deployment_build_failed", "severity": "error", "path": "backend",
 					"message": "go build failed in the cloud image build", "owner": "backend", "category": "cloud_build",
@@ -45,14 +45,14 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			})
 
 			unit := run.DeliveryUnits[0]
-			if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitBackendImplementation {
-				t.Fatalf("deployment failure did not reactivate the backend repair phase: stage=%s active=%q phase=%s", run.Stage, run.ActiveDeliveryUnitID, unit.Phase)
+			if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != unit.ID || unit.Phase != delivery.DeliveryUnitImplementation {
+				t.Fatalf("deployment failure did not reactivate the Engineer loop: stage=%s active=%q phase=%s", run.Stage, run.ActiveDeliveryUnitID, unit.Phase)
 			}
-			if unit.FrontendStatus != delivery.DeliveryGatePassed || unit.BackendStatus != delivery.DeliveryGateNeedsChange || unit.ContractStatus != delivery.DeliveryGatePending || unit.JourneyStatus != delivery.DeliveryGatePending {
-				t.Fatalf("deployment repair reset unrelated work or failed to invalidate downstream gates: %#v", unit)
+			if unit.ImplementationStatus != delivery.DeliveryGateNeedsChange || unit.VerificationStatus != delivery.DeliveryGateNeedsChange {
+				t.Fatalf("deployment repair did not invalidate the integrated result: %#v", unit)
 			}
-			if len(unit.DevelopmentRepairItems) != 3 || unit.DevelopmentRepairItems[0].SourceKind != "cloud_deployment" {
-				t.Fatalf("deployment failure did not create the targeted repair and independent final gate tasks: %#v", unit.DevelopmentRepairItems)
+			if len(unit.DevelopmentRepairItems) != 1 || unit.DevelopmentRepairItems[0].SourceKind != "cloud_deployment" {
+				t.Fatalf("deployment failure did not create the targeted Engineer repair: %#v", unit.DevelopmentRepairItems)
 			}
 			if len(run.ReleaseChecks) != 0 {
 				t.Fatalf("old release checks survived a source repair: %#v", run.ReleaseChecks)
@@ -65,14 +65,13 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 				t.Fatalf("failed deployment receipt did not retain its repair evidence: %#v", run.Releases[0])
 			}
 			projection := delivery.ProjectionFor(run)
-			if !hasProjectedAction(projection, "delivery_unit.backend.complete", unit.ID) || hasProjectedAction(projection, "release.prepare", "") {
+			if !hasProjectedAction(projection, "delivery_unit.implementation.complete", unit.ID) || hasProjectedAction(projection, "release.prepare", "") {
 				t.Fatalf("workflow did not hand the targeted repair to RD: %#v", projection.Workflow.AvailableActions)
 			}
 			repairedRevision := strings.Repeat("b", 40)
-			advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.backend.complete", "backend_implementation", repairedRevision)
+			advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.implementation.complete", "implementation", repairedRevision)
 			verifier := delivery.Actor{ID: "verification-runner", Kind: delivery.ActorSystem}
-			advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", repairedRevision)
-			advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", repairedRevision)
+			advanceUnitAtRevision(t, &run, verifier, "delivery_unit.verify", "verification", repairedRevision)
 			if !hasProjectedAction(delivery.ProjectionFor(run), "product_revision.record", "") {
 				t.Fatal("verified deployment repair did not offer executable revision recording")
 			}
@@ -111,14 +110,14 @@ func TestFailedSourceDeploymentRoutesOnlyTheOwningPhaseBackToRDAgent(t *testing.
 			mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
 				"release_id": replacementID, "outcome": "failure", "environment_ref": "production",
 				"launch_url": "", "receipt_ref": "verdent://deployments/deploy-1/versions/version-2",
-				"failure_kind": "source", "failure_owner": "backend", "delivery_unit_id": run.DeliveryUnits[0].ID,
+				"failure_kind": "source", "failure_owner": "engineer", "delivery_unit_id": run.DeliveryUnits[0].ID,
 				"diagnostics": []map[string]any{{
 					"code": "cloud_deployment_build_failed", "severity": "error", "path": "backend",
 					"message": "the repaired source still fails the cloud build", "owner": "backend", "category": "cloud_build",
 					"remediation": "Continue the targeted backend repair without rerunning unrelated phases.",
 				}},
 			})
-			if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != run.DeliveryUnits[0].ID || run.DeliveryUnits[0].Phase != delivery.DeliveryUnitBackendImplementation || run.Releases[1].Status != delivery.ReleaseFailed {
+			if run.Stage != delivery.StageAcceptance || run.ActiveDeliveryUnitID != run.DeliveryUnits[0].ID || run.DeliveryUnits[0].Phase != delivery.DeliveryUnitImplementation || run.Releases[1].Status != delivery.ReleaseFailed {
 				t.Fatalf("replacement Release failure was not routed back to the owning repair phase: stage=%s active=%q unit=%#v release=%#v", run.Stage, run.ActiveDeliveryUnitID, run.DeliveryUnits[0], run.Releases[1])
 			}
 		})
@@ -184,7 +183,7 @@ func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
 	mustApply(t, &run, delivery.Actor{ID: "deployment-adapter", Kind: delivery.ActorSystem}, "release.deploy_result", map[string]any{
 		"release_id": releaseID, "outcome": "failure", "environment_ref": "production",
 		"receipt_ref":  "verdent://deployments/deploy-1/versions/version-1",
-		"failure_kind": "source", "failure_owner": "backend", "delivery_unit_id": run.DeliveryUnits[0].ID,
+		"failure_kind": "source", "failure_owner": "engineer", "delivery_unit_id": run.DeliveryUnits[0].ID,
 		"diagnostics": []map[string]any{{
 			"code": "cloud_deployment_build_failed", "severity": "error", "path": "backend",
 			"message": "go build failed in the cloud image build", "owner": "backend", "category": "cloud_build",
@@ -193,10 +192,9 @@ func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
 	})
 
 	deploymentRevision := strings.Repeat("b", 40)
-	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.backend.complete", "backend_implementation", deploymentRevision)
+	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.implementation.complete", "implementation", deploymentRevision)
 	verifier := delivery.Actor{ID: "verification-runner", Kind: delivery.ActorSystem}
-	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", deploymentRevision)
-	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", deploymentRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.verify", "verification", deploymentRevision)
 	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 		"content": run.ExecutableRevision.Content, "evidence_ref": "workspace:" + deploymentRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": deploymentRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,
@@ -204,14 +202,13 @@ func TestDeploymentRepairThatFindsProductDefectReopensAcceptance(t *testing.T) {
 	qualityAction := delivery.ProjectionFor(run).Workflow.AvailableActions[0]
 	mustApply(t, &run, agent("qa-agent"), "quality.record", map[string]any{
 		"test_case_id": qualityAction.TargetID, "git_revision": deploymentRevision, "result": "fail",
-		"note": "The deployment retest exposed a frontend product defect.", "failure_owner": "frontend",
+		"note": "The deployment retest exposed a frontend product defect.", "failure_owner": "engineer",
 		"evidence_refs": []string{"workspace:" + deploymentRevision + "#evidence:evidence/quality/failure.md"},
 	})
 
 	productRevision := strings.Repeat("c", 40)
-	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.frontend.complete", "frontend_implementation", productRevision)
-	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.contract.verify", "contract_verification", productRevision)
-	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.journey.complete", "journey_testing", productRevision)
+	advanceUnitAtRevision(t, &run, agent("rd-agent"), "delivery_unit.implementation.complete", "implementation", productRevision)
+	advanceUnitAtRevision(t, &run, verifier, "delivery_unit.verify", "verification", productRevision)
 	mustApply(t, &run, agent("rd-agent"), "product_revision.record", map[string]any{
 		"content": run.ExecutableRevision.Content, "evidence_ref": "workspace:" + productRevision + "#evidence:evidence/product-revision.json",
 		"code_revision": productRevision, "model_sha256": run.ExecutableRevision.ModelSHA256,

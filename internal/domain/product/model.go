@@ -1,6 +1,9 @@
 package product
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type ProductStatus string
 
@@ -22,8 +25,8 @@ const (
 type EngineeringStatus string
 
 const (
-	EngineeringFrontendQueued       EngineeringStatus = "frontend_queued"
-	EngineeringFrontendInitializing EngineeringStatus = "frontend_initializing"
+	EngineeringPreparationQueued    EngineeringStatus = "preparation_queued"
+	EngineeringPreparing            EngineeringStatus = "preparing"
 	EngineeringFoundationPending    EngineeringStatus = "foundation_pending"
 	EngineeringFoundationInstalling EngineeringStatus = "foundation_installing"
 	EngineeringReady                EngineeringStatus = "ready"
@@ -61,34 +64,63 @@ type Product struct {
 // ProductEngineering records whether Delivery initializes an empty project or
 // adopts an existing source baseline before the business Feature lifecycle.
 type ProductEngineering struct {
-	Mode                         EngineeringMode   `json:"mode"`
-	Status                       EngineeringStatus `json:"status"`
-	SourceRevision               string            `json:"source_revision,omitempty"`
-	SourceRef                    string            `json:"source_ref,omitempty"`
-	FrontendCodeRevision         string            `json:"frontend_code_revision,omitempty"`
-	FrontendArtifactRef          string            `json:"frontend_artifact_ref,omitempty"`
-	DesignContractRef            string            `json:"design_contract_ref,omitempty"`
-	LoginEntry                   string            `json:"login_entry,omitempty"`
-	ShellEntry                   string            `json:"shell_entry,omitempty"`
-	PreviewEntry                 string            `json:"preview_entry,omitempty"`
-	FrontendStartedBy            string            `json:"frontend_started_by,omitempty"`
-	FrontendStartedAt            *time.Time        `json:"frontend_started_at,omitempty"`
-	FrontendCompletedBy          string            `json:"frontend_completed_by,omitempty"`
-	FrontendCompletedAt          *time.Time        `json:"frontend_completed_at,omitempty"`
-	ApplicationDeliverySHA256    string            `json:"application_delivery_sha256,omitempty"`
-	FoundationReleaseSHA256      string            `json:"foundation_release_sha256,omitempty"`
-	FoundationPackageSHA256      string            `json:"foundation_package_sha256,omitempty"`
-	FoundationModelSHA256        string            `json:"foundation_model_sha256,omitempty"`
-	FoundationIdempotencyKey     string            `json:"foundation_idempotency_key,omitempty"`
-	FoundationCodeRevision       string            `json:"foundation_code_revision,omitempty"`
-	FoundationVerificationSHA256 string            `json:"foundation_verification_sha256,omitempty"`
-	IdentityBaselineResult       string            `json:"identity_baseline_result,omitempty"`
-	FoundationStartedBy          string            `json:"foundation_started_by,omitempty"`
-	FoundationStartedAt          *time.Time        `json:"foundation_started_at,omitempty"`
-	FoundationCompletedBy        string            `json:"foundation_completed_by,omitempty"`
-	FoundationCompletedAt        *time.Time        `json:"foundation_completed_at,omitempty"`
-	FoundationFailureCode        string            `json:"foundation_failure_code,omitempty"`
-	FoundationFailureMessage     string            `json:"foundation_failure_message,omitempty"`
+	Mode                         EngineeringMode             `json:"mode"`
+	Status                       EngineeringStatus           `json:"status"`
+	SourceRevision               string                      `json:"source_revision,omitempty"`
+	SourceRef                    string                      `json:"source_ref,omitempty"`
+	PreparationCodeRevision      string                      `json:"preparation_code_revision,omitempty"`
+	PreparationArtifactRef       string                      `json:"preparation_artifact_ref,omitempty"`
+	DesignContractRef            string                      `json:"design_contract_ref,omitempty"`
+	LoginEntry                   string                      `json:"login_entry,omitempty"`
+	ShellEntry                   string                      `json:"shell_entry,omitempty"`
+	PreviewEntry                 string                      `json:"preview_entry,omitempty"`
+	PreparationStartedBy         string                      `json:"preparation_started_by,omitempty"`
+	PreparationStartedAt         *time.Time                  `json:"preparation_started_at,omitempty"`
+	PreparationCompletedBy       string                      `json:"preparation_completed_by,omitempty"`
+	PreparationCompletedAt       *time.Time                  `json:"preparation_completed_at,omitempty"`
+	InitialFeatureRevisions      []FoundationFeatureRevision `json:"initial_feature_revisions,omitempty"`
+	FoundationDesign             *FoundationDesign           `json:"foundation_design,omitempty"`
+	ApplicationDeliverySHA256    string                      `json:"application_delivery_sha256,omitempty"`
+	FoundationReleaseSHA256      string                      `json:"foundation_release_sha256,omitempty"`
+	FoundationPackageSHA256      string                      `json:"foundation_package_sha256,omitempty"`
+	FoundationModelSHA256        string                      `json:"foundation_model_sha256,omitempty"`
+	FoundationIdempotencyKey     string                      `json:"foundation_idempotency_key,omitempty"`
+	FoundationCodeRevision       string                      `json:"foundation_code_revision,omitempty"`
+	FoundationVerificationSHA256 string                      `json:"foundation_verification_sha256,omitempty"`
+	IdentityBaselineResult       string                      `json:"identity_baseline_result,omitempty"`
+	FoundationStartedBy          string                      `json:"foundation_started_by,omitempty"`
+	FoundationStartedAt          *time.Time                  `json:"foundation_started_at,omitempty"`
+	FoundationCompletedBy        string                      `json:"foundation_completed_by,omitempty"`
+	FoundationCompletedAt        *time.Time                  `json:"foundation_completed_at,omitempty"`
+	FoundationFailureCode        string                      `json:"foundation_failure_code,omitempty"`
+	FoundationFailureMessage     string                      `json:"foundation_failure_message,omitempty"`
+}
+
+// FoundationFeatureRevision freezes the confirmed business scope used by the
+// one-time Source Foundation without copying Feature content into engineering state.
+type FoundationFeatureRevision struct {
+	FeatureID       string `json:"feature_id"`
+	FeatureRevision uint64 `json:"feature_revision"`
+}
+
+// FoundationDesign is the immutable input selected for one Foundation attempt.
+// It is replaceable only while Foundation is pending and is not a long-lived
+// Product capability registry.
+type FoundationDesign struct {
+	ProductRevision         uint64                       `json:"product_revision"`
+	InitialFeatureRevisions []FoundationFeatureRevision  `json:"initial_feature_revisions"`
+	Model                   json.RawMessage              `json:"model"`
+	ModelSHA256             string                       `json:"model_sha256"`
+	Capabilities            []string                     `json:"capabilities"`
+	ModuleDeployments       []FoundationModuleDeployment `json:"module_deployments"`
+	DesignSHA256            string                       `json:"design_sha256"`
+	RecordedBy              string                       `json:"recorded_by"`
+	RecordedAt              time.Time                    `json:"recorded_at"`
+}
+
+type FoundationModuleDeployment struct {
+	Capability string `json:"capability"`
+	Mode       string `json:"mode"`
 }
 
 // ProductDeployment is the trusted launch destination of the currently

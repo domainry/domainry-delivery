@@ -70,18 +70,23 @@ DeliveryRun JSON, acceptance event stream, or SQL BLOB columns.
 Product commands come from the typed command catalog:
 
 - `product.create`, `product.delete`, `product.restore`
-- `product.engineering.frontend.start`,
-  `product.engineering.frontend.complete`
+- `product.engineering.prepare.start`,
+  `product.engineering.prepare.complete`
 - `product.engineering.foundation.started`,
   `product.engineering.foundation.completed`,
   `product.engineering.foundation.failed`
 - `feature.discovery.open`, `feature.discovery.replace`, `feature.delete`, `feature.confirm`, `feature.rebase`
 - `feature.delivery.start` through the DeliveryRun creation endpoint
 
-Frontend completion is a technical initialization gate backed by the recorded
-artifact, design contract and entry points. A verified completion exposes
-Foundation installation directly; user review happens later in the executable
-acceptance environment.
+Engineering preparation starts only after at least one Feature revision is
+confirmed and freezes those exact revisions as the initial Foundation scope.
+One full-stack Engineer establishes the visual direction, Shell, routes, typed
+HTTP contract, initial Model, capability owners, and module/SaaS deployment
+choices, then submits them together with `product.engineering.prepare.complete`.
+The bounded, content-addressed result opens the one-time Foundation installation
+to the system. A failed installation either retries the same immutable input or
+returns to the same Engineer preparation loop, so an engineering error never
+becomes a user-owned recovery state.
 
 Feature confirmation freezes the complete discovery and specification as one
 immutable FeatureRevision against its exact ProductRevision baseline. Starting
@@ -101,10 +106,7 @@ POST /api/v1/workspaces/{workspace_id}/delivery-runs/{delivery_run_id}/commands
 
 Agent commands:
 
-- `delivery_unit.interaction.complete`
-- `delivery_unit.model.complete`
-- `delivery_unit.frontend.complete`
-- `delivery_unit.backend.complete`
+- `delivery_unit.implementation.complete`
 - `product_revision.record`
 - `quality.record`
 - `acceptance.bug.triage`
@@ -112,10 +114,8 @@ Agent commands:
 
 Trusted system commands:
 
-- `delivery_unit.model.verify`
-- `delivery_unit.contract.verify`
+- `delivery_unit.verify`
 - `delivery_unit.gap.report`
-- `delivery_unit.journey.complete`
 - `acceptance.environment.ready`
 - `acceptance.bug.fix.ready`
 - `release.deploy_result`, `release.reissue`
@@ -130,13 +130,23 @@ The server projection is authoritative for `available_actions` and
 `release_gates`. Clients must reread it immediately before a mutation and must
 not reproduce the state machine.
 
-Delivery creates exactly seven fixed development items when a DeliveryUnit is
-created: interaction modeling, domain modeling, model verification, frontend
-implementation, backend implementation, contract verification, and the real
-Runtime journey. Accepting a phase command completes that fixed item and starts
-the next one; the agent does not initialize or subdivide this sequence.
+Delivery creates one implementation item and one trusted verification item for
+each DeliveryUnit. The full-stack Engineer chooses the internal work order from
+the confirmed Journey, current Product source, installed capabilities, and the
+latest diagnostics. Delivery records the coarse authority boundary and evidence;
+it does not persist interaction/model/frontend/backend substages.
 
-`delivery_unit.gap.report` preserves unaffected completed phases and their
+`delivery_unit.gap.report` preserves the failed verification evidence and
+returns the same Journey to its full-stack Engineer. It does not create a
+frontend/backend owner state. The Engineer decides the repair order from the
+diagnostics and current source, then resubmits the integrated revision.
+
+The two DeliveryUnit boundaries are intentionally coarse: adaptive full-stack
+implementation and trusted integrated verification. Model checks, contract
+checks, and real Runtime Journeys run inside verification; they are not
+separate Agent phases.
+
+`delivery_unit.gap.report` preserves unaffected completed work and its
 evidence. Delivery derives stable repair identities from the routed diagnostic
 owner, code, category, and path, then creates or reopens only internal repair
 items in the owning phase. A repeated failure for the same diagnostic reuses
@@ -149,7 +159,7 @@ are revalidated; the complete development sequence is not replayed.
 {
   "client_id": "0199...",
   "expected_revision": 7,
-  "type": "delivery_unit.backend.complete",
+  "type": "delivery_unit.implementation.complete",
   "payload": {}
 }
 ```

@@ -15,45 +15,40 @@ const (
 )
 
 const (
-	ProductCreate             = "product.create"
-	ProductDelete             = "product.delete"
-	ProductRestore            = "product.restore"
-	ProductFrontendStart      = "product.engineering.frontend.start"
-	ProductFrontendComplete   = "product.engineering.frontend.complete"
-	ProductFoundationStarted  = "product.engineering.foundation.started"
-	ProductFoundationComplete = "product.engineering.foundation.completed"
-	ProductFoundationFailed   = "product.engineering.foundation.failed"
-	FeatureDiscoveryOpen      = "feature.discovery.open"
-	FeatureDiscoveryReplace   = "feature.discovery.replace"
-	FeatureDelete             = "feature.delete"
-	FeatureConfirm            = "feature.confirm"
-	FeatureRebase             = "feature.rebase"
-	FeatureDeliveryStart      = "feature.delivery.start"
+	ProductCreate                     = "product.create"
+	ProductDelete                     = "product.delete"
+	ProductRestore                    = "product.restore"
+	ProductEngineeringPrepareStart    = "product.engineering.prepare.start"
+	ProductEngineeringPrepareComplete = "product.engineering.prepare.complete"
+	ProductFoundationStarted          = "product.engineering.foundation.started"
+	ProductFoundationComplete         = "product.engineering.foundation.completed"
+	ProductFoundationFailed           = "product.engineering.foundation.failed"
+	FeatureDiscoveryOpen              = "feature.discovery.open"
+	FeatureDiscoveryReplace           = "feature.discovery.replace"
+	FeatureDelete                     = "feature.delete"
+	FeatureConfirm                    = "feature.confirm"
+	FeatureRebase                     = "feature.rebase"
+	FeatureDeliveryStart              = "feature.delivery.start"
 
-	DeliveryUnitInteractionComplete = "delivery_unit.interaction.complete"
-	DeliveryUnitModelComplete       = "delivery_unit.model.complete"
-	DeliveryUnitModelVerify         = "delivery_unit.model.verify"
-	DeliveryUnitBackendComplete     = "delivery_unit.backend.complete"
-	DeliveryUnitFrontendComplete    = "delivery_unit.frontend.complete"
-	DeliveryUnitContractVerify      = "delivery_unit.contract.verify"
-	DeliveryUnitGapReport           = "delivery_unit.gap.report"
-	DeliveryUnitJourneyComplete     = "delivery_unit.journey.complete"
-	ProductRevisionRecord           = "product_revision.record"
-	QualityRecord                   = "quality.record"
-	AcceptanceEnvironmentReady      = "acceptance.environment.ready"
-	AcceptanceBugReport             = "acceptance.bug.report"
-	AcceptanceBugTriage             = "acceptance.bug.triage"
-	AcceptanceBugFixReady           = "acceptance.bug.fix.ready"
-	AcceptanceBugResolve            = "acceptance.bug.resolve"
-	AcceptanceBugReopen             = "acceptance.bug.reopen"
-	AcceptanceConfirm               = "acceptance.confirm"
-	ReleaseChecksReplace            = "release_checks.replace"
-	ReleaseCheckRecord              = "release_check.record"
-	ReleasePrepare                  = "release.prepare"
-	ReleaseReissue                  = "release.reissue"
-	ReleaseApprove                  = "release.approve"
-	ReleaseDeployResult             = "release.deploy_result"
-	ReleaseReconcile                = "release.reconcile"
+	DeliveryUnitImplementationComplete = "delivery_unit.implementation.complete"
+	DeliveryUnitVerify                 = "delivery_unit.verify"
+	DeliveryUnitGapReport              = "delivery_unit.gap.report"
+	ProductRevisionRecord              = "product_revision.record"
+	QualityRecord                      = "quality.record"
+	AcceptanceEnvironmentReady         = "acceptance.environment.ready"
+	AcceptanceBugReport                = "acceptance.bug.report"
+	AcceptanceBugTriage                = "acceptance.bug.triage"
+	AcceptanceBugFixReady              = "acceptance.bug.fix.ready"
+	AcceptanceBugResolve               = "acceptance.bug.resolve"
+	AcceptanceBugReopen                = "acceptance.bug.reopen"
+	AcceptanceConfirm                  = "acceptance.confirm"
+	ReleaseChecksReplace               = "release_checks.replace"
+	ReleaseCheckRecord                 = "release_check.record"
+	ReleasePrepare                     = "release.prepare"
+	ReleaseReissue                     = "release.reissue"
+	ReleaseApprove                     = "release.approve"
+	ReleaseDeployResult                = "release.deploy_result"
+	ReleaseReconcile                   = "release.reconcile"
 )
 
 type Definition struct {
@@ -76,25 +71,20 @@ func buildCatalog() map[string]Definition {
 		}
 	}
 	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorAgent}, []string{"development", "testing", "acceptance", "release"}, map[string]string{
-		DeliveryUnitInteractionComplete: "DeliveryUnitPhaseResult",
-		DeliveryUnitModelComplete:       "DeliveryUnitPhaseResult",
-		DeliveryUnitBackendComplete:     "DeliveryUnitPhaseResult",
-		DeliveryUnitFrontendComplete:    "DeliveryUnitPhaseResult",
-		ProductRevisionRecord:           "ProductRevisionRecord",
-		QualityRecord:                   "QualityResult",
-		AcceptanceBugTriage:             "AcceptanceBugTriage",
-		ReleaseChecksReplace:            "ReleaseCheckSet",
-		ReleaseCheckRecord:              "ReleaseCheckResult",
+		DeliveryUnitImplementationComplete: "DeliveryUnitImplementation",
+		ProductRevisionRecord:              "ProductRevisionRecord",
+		QualityRecord:                      "QualityResult",
+		AcceptanceBugTriage:                "AcceptanceBugTriage",
+		ReleaseChecksReplace:               "ReleaseCheckSet",
+		ReleaseCheckRecord:                 "ReleaseCheckResult",
 	})
 	register(TargetDeliveryRun, "delivery_deployment.record", "DeliveryRunProjection", []domain.ActorKind{domain.ActorSystem}, []string{"development", "acceptance", "release"}, map[string]string{
-		DeliveryUnitModelVerify:     "ModelVerification",
-		DeliveryUnitContractVerify:  "ContractVerification",
-		DeliveryUnitGapReport:       "VerificationGap",
-		DeliveryUnitJourneyComplete: "JourneyVerification",
-		AcceptanceEnvironmentReady:  "AcceptanceEnvironment",
-		AcceptanceBugFixReady:       "AcceptanceBugFix",
-		ReleaseReissue:              "EntityReference",
-		ReleaseDeployResult:         "DeploymentResult",
+		DeliveryUnitVerify:         "IntegratedVerification",
+		DeliveryUnitGapReport:      "VerificationGap",
+		AcceptanceEnvironmentReady: "AcceptanceEnvironment",
+		AcceptanceBugFixReady:      "AcceptanceBugFix",
+		ReleaseReissue:             "EntityReference",
+		ReleaseDeployResult:        "DeploymentResult",
 	})
 	register(TargetDeliveryRun, "delivery_run.write", "DeliveryRunProjection", []domain.ActorKind{domain.ActorHuman}, []string{"acceptance", "release"}, map[string]string{
 		AcceptanceBugReport:  "AcceptanceBugReport",
@@ -112,9 +102,9 @@ func buildCatalog() map[string]Definition {
 		FeatureDiscoveryReplace: "FeatureDiscoveryRevision",
 	})
 	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorAgent}, []string{"active"}, map[string]string{
-		ProductFrontendStart:    "Empty",
-		ProductFrontendComplete: "FrontendFoundationEvidence",
-		FeatureDeliveryStart:    "DeliveryStart",
+		ProductEngineeringPrepareStart:    "Empty",
+		ProductEngineeringPrepareComplete: "EngineeringPreparation",
+		FeatureDeliveryStart:              "DeliveryStart",
 	})
 	register(TargetProduct, "delivery_product.write", "ProductProjection", []domain.ActorKind{domain.ActorHuman}, []string{"active"}, map[string]string{
 		ProductDelete:        "ProductDelete",

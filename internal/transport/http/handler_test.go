@@ -13,6 +13,7 @@ import (
 	"github.com/domainry/domainry-delivery/internal/application"
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
+	"github.com/domainry/domainry-delivery/internal/testfixture"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
 	"github.com/domainry/domainry-foundation/httpresponse"
 )
@@ -59,7 +60,7 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1/agent-context", nil).WithContext(requestContext)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"feature.discovery.replace"`) || strings.Contains(response.Body.String(), `"product.engineering.frontend.start"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"feature.discovery.replace"`) || strings.Contains(response.Body.String(), `"product.engineering.prepare.start"`) {
 		t.Fatalf("agent context status=%d body=%s", response.Code, response.Body.String())
 	}
 }
@@ -135,7 +136,7 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		context.Background(), "workspace-1", delivery.Actor{ID: "deck", Kind: delivery.ActorSystem},
 		application.PermissionDeploymentRecord,
 	)
-	dispatch := func(requestContext context.Context, clientID string, expectedRevision uint64, commandType string, payload map[string]any, expectedStatus int) {
+	dispatch := func(requestContext context.Context, clientID string, expectedRevision uint64, commandType string, payload map[string]any, expectedStatus int) []byte {
 		t.Helper()
 		body, marshalErr := json.Marshal(map[string]any{
 			"client_id": clientID, "expected_revision": expectedRevision, "type": commandType, "payload": payload,
@@ -149,6 +150,7 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		if response.Code != expectedStatus {
 			t.Fatalf("%s status=%d body=%s", commandType, response.Code, response.Body.String())
 		}
+		return response.Body.Bytes()
 	}
 
 	dispatch(humanContext, "create-product", 0, "product.create", map[string]any{
@@ -158,46 +160,60 @@ func TestVerifiedFrontendCompletionProjectsFoundationInstallation(t *testing.T) 
 		"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
 		"decisions":   []any{},
 	}, http.StatusCreated)
-	dispatch(agentContext, "frontend-start", 1, "product.engineering.frontend.start", map[string]any{}, http.StatusOK)
-	dispatch(agentContext, "frontend-complete", 2, "product.engineering.frontend.complete", map[string]any{
+	dispatch(agentContext, "initial-feature", 1, "feature.discovery.replace", testfixture.InitialFeatureCommandPayload("workspace-1", "product-1"), http.StatusOK)
+	dispatch(humanContext, "confirm-initial-feature", 2, "feature.confirm", map[string]any{"feature_id": "feature-initial", "draft_version": 1}, http.StatusOK)
+	dispatch(agentContext, "engineering-start", 3, "product.engineering.prepare.start", map[string]any{}, http.StatusOK)
+	designResponse := dispatch(agentContext, "engineering-complete", 4, "product.engineering.prepare.complete", map[string]any{
 		"code_revision": "workspace:frontend", "artifact_ref": "artifact://frontend", "design_contract_ref": "evidence://design",
 		"login_entry": "frontend/login.tsx", "shell_entry": "frontend/shell.tsx", "preview_entry": "frontend/dist/index.html",
+		"model": map[string]any{
+			"schema_version": 1,
+			"project":        map[string]any{"key": "booking", "name": "Booking Product"},
+			"roles":          []map[string]any{{"key": "administrator", "name": "Administrator"}},
+			"objects": map[string]any{
+				"inspection": map[string]any{
+					"fields": map[string]any{"inspected_at": "datetime!"},
+				},
+			},
+		},
+		"capabilities":       []string{"report"},
+		"module_deployments": []map[string]any{{"capability": "report", "mode": "module"}},
 	}, http.StatusOK)
-
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(humanContext)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("get status=%d body=%s", response.Code, response.Body.String())
-	}
-	var projection struct {
+	var designed struct {
+		Product struct {
+			Engineering struct {
+				FoundationDesign struct {
+					DesignSHA256 string `json:"design_sha256"`
+					ModelSHA256  string `json:"model_sha256"`
+				} `json:"foundation_design"`
+			} `json:"engineering"`
+		} `json:"product"`
 		AvailableActions []delivery.AvailableAction `json:"available_actions"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &projection); err != nil {
+	if err := json.Unmarshal(designResponse, &designed); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.ContainsFunc(projection.AvailableActions, func(action delivery.AvailableAction) bool {
+	if designed.Product.Engineering.FoundationDesign.DesignSHA256 == "" || !slices.ContainsFunc(designed.AvailableActions, func(action delivery.AvailableAction) bool {
 		return action.Command == "product.engineering.foundation.started" && action.ActorKind == delivery.ActorSystem
 	}) {
-		t.Fatalf("foundation installation was not projected: %#v", projection.AvailableActions)
+		t.Fatalf("foundation installation was not exposed after design: %#v", designed)
 	}
-
-	dispatch(systemContext, "foundation-start", 3, "product.engineering.foundation.started", map[string]any{
-		"application_delivery_sha256": strings.Repeat("a", 64), "idempotency_key": strings.Repeat("b", 64),
+	dispatch(systemContext, "foundation-start", 5, "product.engineering.foundation.started", map[string]any{
+		"application_delivery_sha256": strings.Repeat("a", 64), "foundation_design_sha256": designed.Product.Engineering.FoundationDesign.DesignSHA256, "idempotency_key": strings.Repeat("b", 64),
 	}, http.StatusOK)
-	dispatch(systemContext, "foundation-complete", 4, "product.engineering.foundation.completed", map[string]any{
+	dispatch(systemContext, "foundation-complete", 6, "product.engineering.foundation.completed", map[string]any{
 		"application_delivery_sha256": strings.Repeat("a", 64),
 		"foundation_release_sha256":   strings.Repeat("c", 64),
 		"foundation_package_sha256":   strings.Repeat("d", 64),
-		"model_sha256":                strings.Repeat("e", 64),
+		"model_sha256":                designed.Product.Engineering.FoundationDesign.ModelSHA256,
 		"idempotency_key":             strings.Repeat("b", 64),
 		"code_revision":               "workspace-0123456789abcdef",
 		"verification_sha256":         strings.Repeat("f", 64),
 		"identity_baseline_result":    "passed",
 	}, http.StatusOK)
 
-	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(humanContext)
-	response = httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(humanContext)
+	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"ready"`) {
 		t.Fatalf("Foundation completion did not cross the public SDK and domain boundaries: status=%d body=%s", response.Code, response.Body.String())

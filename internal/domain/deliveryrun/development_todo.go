@@ -7,13 +7,8 @@ import (
 )
 
 var orderedDevelopmentPhases = []DeliveryUnitPhase{
-	DeliveryUnitInteractionModeling,
-	DeliveryUnitDomainModeling,
-	DeliveryUnitModelVerification,
-	DeliveryUnitFrontendImplementation,
-	DeliveryUnitBackendImplementation,
-	DeliveryUnitContractVerification,
-	DeliveryUnitJourneyTesting,
+	DeliveryUnitImplementation,
+	DeliveryUnitVerification,
 }
 
 func newDevelopmentTodos(unitID string) []DevelopmentTodo {
@@ -45,11 +40,7 @@ func newDevelopmentTodos(unitID string) []DevelopmentTodo {
 }
 
 func existingSourceVerificationTodos(unitID string) []DevelopmentTodo {
-	phases := []DeliveryUnitPhase{
-		DeliveryUnitModelVerification,
-		DeliveryUnitContractVerification,
-		DeliveryUnitJourneyTesting,
-	}
+	phases := []DeliveryUnitPhase{DeliveryUnitVerification}
 	todos := make([]DevelopmentTodo, 0, len(phases))
 	for index, phase := range phases {
 		status := DevelopmentTodoNotStarted
@@ -129,7 +120,7 @@ func repairTargetsFromDiagnostics(diagnostics []GateDiagnostic, failureOwner str
 		}
 		seen[digest] = true
 		targets = append(targets, developmentRepairTarget{
-			Phase: repairPhaseForOwner(owner), SourceKind: "verification_gap", SourceID: digest,
+			Phase: DeliveryUnitImplementation, SourceKind: "verification_gap", SourceID: digest,
 			Title:  "Repair " + category + " verification gap",
 			Detail: strings.TrimSpace(diagnostic.Message) + "\nEvidence path: " + path,
 		})

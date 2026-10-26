@@ -14,11 +14,8 @@ func TestQualityRepairRebindsRevisionBeforeAcceptanceOpens(t *testing.T) {
 	repairedCode := strings.Repeat("b", 40)
 	unit := &run.DeliveryUnits[0]
 	unit.IntegratedGitRevision = repairedCode
-	unit.BackendGitRevision = repairedCode
-	for _, evidence := range []*delivery.BackendGuideEvidence{unit.ContractEvidence, unit.JourneyEvidence} {
-		evidence.GitRevision = repairedCode
-		evidence.EvidenceRefs = []string{"workspace:" + repairedCode + "#evidence:backend-guide.json"}
-	}
+	unit.VerificationEvidence.GitRevision = repairedCode
+	unit.VerificationEvidence.EvidenceRefs = []string{"workspace:" + repairedCode + "#evidence:backend-guide.json"}
 	if run.AcceptanceReview != nil {
 		t.Fatal("fixture already opened acceptance")
 	}

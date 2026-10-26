@@ -51,7 +51,7 @@ func SummaryFor(run DeliveryRun) Summary {
 	} else {
 		journeysPassed := 0
 		for _, unit := range run.DeliveryUnits {
-			if unit.JourneyStatus == DeliveryGatePassed {
+			if unit.VerificationStatus == DeliveryGatePassed {
 				journeysPassed++
 			}
 		}

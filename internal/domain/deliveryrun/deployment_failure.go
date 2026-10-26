@@ -36,7 +36,7 @@ func validateDeploymentFailureRouting(run *DeliveryRun, outcome DeploymentOutcom
 		diagnostic.Owner = strings.TrimSpace(diagnostic.Owner)
 		diagnostic.Category = strings.TrimSpace(diagnostic.Category)
 		diagnostic.Remediation = strings.TrimSpace(diagnostic.Remediation)
-		if diagnostic.Code == "" || len(diagnostic.Code) > 128 || diagnostic.Severity != "error" || diagnostic.Path == "" || len(diagnostic.Path) > 1024 || diagnostic.Message == "" || len(diagnostic.Message) > 2000 || diagnostic.Owner != failureOwner || diagnostic.Category == "" || len(diagnostic.Category) > 128 || len(diagnostic.Remediation) > 2000 {
+		if diagnostic.Code == "" || len(diagnostic.Code) > 128 || diagnostic.Severity != "error" || diagnostic.Path == "" || len(diagnostic.Path) > 1024 || diagnostic.Message == "" || len(diagnostic.Message) > 2000 || diagnostic.Owner == "" || len(diagnostic.Owner) > 128 || diagnostic.Category == "" || len(diagnostic.Category) > 128 || len(diagnostic.Remediation) > 2000 {
 			return Invalid("deployment_failure_diagnostics_invalid")
 		}
 	}

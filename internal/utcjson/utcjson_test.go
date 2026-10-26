@@ -2,6 +2,7 @@ package utcjson
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -44,5 +45,28 @@ func TestCommandInputRejectsStringTimestamps(t *testing.T) {
 	}
 	if _, err := NormalizeInput([]byte(`{"occurred_at":1789787045000}`)); err != nil {
 		t.Fatalf("numeric timestamp was rejected: %v", err)
+	}
+}
+
+func TestCommandInputPreservesModelFieldDefinitionsEndingInAt(t *testing.T) {
+	raw := []byte(`{"model":{"objects":{"inspection":{"fields":{"inspected_at":"datetime!"}}}}}`)
+	normalized, err := NormalizeInput(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(normalized, &got); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, map[string]any{
+		"model": map[string]any{
+			"objects": map[string]any{
+				"inspection": map[string]any{
+					"fields": map[string]any{"inspected_at": "datetime!"},
+				},
+			},
+		},
+	}) {
+		t.Fatalf("normalized model = %#v", got)
 	}
 }

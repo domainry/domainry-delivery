@@ -60,7 +60,10 @@ func walk(value any, fromMilliseconds bool) (any, error) {
 						node[key] = time.UnixMilli(milliseconds).UTC().Format(time.RFC3339Nano)
 						continue
 					}
-					if _, ok := child.(string); ok {
+					if encoded, ok := child.(string); ok {
+						if _, err := time.Parse(time.RFC3339Nano, encoded); err != nil {
+							continue
+						}
 						return nil, fmt.Errorf("%s must be integer UTC Unix milliseconds", key)
 					}
 				} else if encoded, ok := child.(string); ok {
