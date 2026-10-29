@@ -120,7 +120,7 @@ func featureDecisionIDsForSources(decisions []FeatureDecision, sourceIDs []strin
 // every business fact and decision in the draft must close over the immutable
 // source identities supplied by the producer. Delivery preserves those opaque
 // references and does not read the Agent owner during its write transaction.
-func validateFeatureLineageReferences(discovery FeatureDiscovery, specification FeatureSpecification, decisions []FeatureDecision, sources []FeatureSource) error {
+func validateFeatureLineageReferences(discovery FeatureDiscovery, specification FeatureSpecification, sourceCoverage *FeatureSourceCoverage, decisions []FeatureDecision, sources []FeatureSource) error {
 	registered := map[string]bool{}
 	for _, source := range sources {
 		for _, sourceID := range source.SourceIDs {
@@ -148,6 +148,9 @@ func validateFeatureLineageReferences(discovery FeatureDiscovery, specification 
 	}
 	for _, decision := range decisions {
 		used = append(used, decision.SourceIDs...)
+	}
+	if sourceCoverage != nil {
+		used = append(used, sourceCoverage.SourceID)
 	}
 	for _, sourceID := range cleanStrings(used) {
 		if !registered[sourceID] {

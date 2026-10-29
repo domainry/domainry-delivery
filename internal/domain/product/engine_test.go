@@ -891,6 +891,74 @@ func TestEveryFeatureRequiresExplicitAuthorization(t *testing.T) {
 	}
 }
 
+func TestSourceReconstructedFeatureCannotBecomeReadyWithoutCompleteMappedCoverage(t *testing.T) {
+	product := newProduct(t)
+	workspaceSource := "source://workspace-snapshot/revision-source-1"
+	incomplete := featureDraftPayload("feature-source", "F-001")
+	incompleteSource := incomplete["source"].(map[string]any)
+	incompleteSource["source_ids"] = []string{"source-interview", workspaceSource}
+	err := applyProduct(&product, agent("pm-agent"), "feature.discovery.replace", incomplete)
+	domainError, ok := err.(*delivery.Error)
+	if !ok || domainError.Code != "feature_source_coverage_required" {
+		t.Fatalf("workspace source without coverage was not rejected: %#v", err)
+	}
+
+	coverage := map[string]any{
+		"source_id": workspaceSource,
+		"status":    "incomplete",
+		"areas": []map[string]any{{
+			"id": "booking-cancellation", "title": "Booking cancellation", "summary": "The current source defines the booking cancellation journey and its user-visible outcome.", "kind": "workflow",
+			"source_paths": []string{"backend/model.json", "frontend/src/pages/Bookings.tsx"},
+			"findings": []map[string]any{
+				{"source_path": "backend/model.json", "summary": "Defines cancellation actions, permissions, and persistent booking state.", "status": "confirmed", "supporting_paths": []string{}},
+				{"source_path": "frontend/src/pages/Bookings.tsx", "summary": "Exposes the guarded cancellation interaction and resulting status to the user.", "status": "confirmed", "supporting_paths": []string{}},
+			},
+			"primary_scenario_id": "cancel-booking", "primary_impact_id": "impact-cancel", "primary_acceptance_id": "accept-cancel",
+			"scenario_ids": []string{"cancel-booking"}, "impact_ids": []string{"impact-cancel"},
+			"grant_ids": []string{"grant-cancel"}, "acceptance_ids": []string{"accept-cancel"},
+			"status": "covered",
+		}},
+	}
+	checkpoint := featureDraftPayload("feature-source", "F-001")
+	checkpointSource := checkpoint["source"].(map[string]any)
+	checkpointSource["run_id"] = "run-source-2"
+	checkpointSource["source_ids"] = []string{"source-interview", workspaceSource}
+	checkpoint["source_coverage"] = coverage
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", checkpoint)
+	checkpointDraft := product.Features[0].Draft
+	if checkpointDraft == nil || checkpointDraft.Readiness.Status != "shaping" || checkpointDraft.NextQuestion != "" || !contains(checkpointDraft.Readiness.BlockingSections, "source_coverage") {
+		t.Fatalf("incomplete source checkpoint was not saved for automatic continuation: %#v", checkpointDraft)
+	}
+
+	complete := featureDraftPayload("feature-source", "F-001")
+	completeSource := complete["source"].(map[string]any)
+	completeSource["run_id"] = "run-source-3"
+	completeSource["source_ids"] = []string{"source-interview", workspaceSource}
+	coverage["status"] = "complete"
+	complete["source_coverage"] = coverage
+
+	mustApplyProduct(t, &product, agent("pm-agent"), "feature.discovery.replace", complete)
+	draft := product.Features[0].Draft
+	if draft == nil || draft.Readiness.Status != "ready" || draft.SourceCoverage == nil {
+		t.Fatalf("complete source coverage did not become reviewable: %#v", draft)
+	}
+
+	draft.SourceCoverage = nil
+	projection := delivery.ProductProjectionFor(product)
+	projectedDraft := projection.Product.Features[0].Draft
+	if projectedDraft == nil || projectedDraft.Readiness.Status != "shaping" || !contains(projectedDraft.Readiness.BlockingSections, "source_coverage") {
+		t.Fatalf("projection exposed stale source readiness: %#v", projectedDraft)
+	}
+	if hasAction(projection.AvailableActions, "feature.confirm", "feature-source", delivery.ActorHuman) {
+		t.Fatalf("projection exposed confirmation without source coverage: %#v", projection.AvailableActions)
+	}
+	err = applyProduct(&product, human("product-owner"), "feature.confirm", map[string]any{"feature_id": "feature-source", "draft_version": draft.Version})
+	domainError, ok = err.(*delivery.Error)
+	if !ok || domainError.Code != "feature_source_coverage_required" {
+		t.Fatalf("confirmation accepted stale source readiness: %#v", err)
+	}
+}
+
 func TestFeatureDeleteRequiresHumanAndOnlyRemovesDraft(t *testing.T) {
 	product := newProduct(t)
 	draft := featureDraftPayload("feature-draft", "F-001")

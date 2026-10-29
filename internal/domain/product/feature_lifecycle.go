@@ -64,16 +64,17 @@ func nextFeatureCode(product *Product) string {
 
 func replaceFeatureDiscovery(product *Product, command Command, now time.Time) error {
 	var payload struct {
-		FeatureID               string               `json:"feature_id"`
-		Code                    string               `json:"code"`
-		Title                   string               `json:"title"`
-		Summary                 string               `json:"summary"`
-		Priority                string               `json:"priority"`
-		BaselineProductRevision uint64               `json:"baseline_product_revision"`
-		Discovery               FeatureDiscovery     `json:"discovery"`
-		Specification           FeatureSpecification `json:"specification"`
-		Decisions               []FeatureDecision    `json:"decisions"`
-		Source                  FeatureSource        `json:"source"`
+		FeatureID               string                 `json:"feature_id"`
+		Code                    string                 `json:"code"`
+		Title                   string                 `json:"title"`
+		Summary                 string                 `json:"summary"`
+		Priority                string                 `json:"priority"`
+		BaselineProductRevision uint64                 `json:"baseline_product_revision"`
+		Discovery               FeatureDiscovery       `json:"discovery"`
+		Specification           FeatureSpecification   `json:"specification"`
+		SourceCoverage          *FeatureSourceCoverage `json:"source_coverage"`
+		Decisions               []FeatureDecision      `json:"decisions"`
+		Source                  FeatureSource          `json:"source"`
 	}
 	if err := decode(command.Payload, &payload); err != nil {
 		return err
@@ -85,6 +86,7 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	payload.Priority = strings.TrimSpace(payload.Priority)
 	payload.Discovery = normalizeFeatureDiscovery(payload.Discovery)
 	payload.Specification = normalizeFeatureSpecification(payload.Specification)
+	payload.SourceCoverage = normalizeFeatureSourceCoverage(payload.SourceCoverage)
 	payload.Decisions = normalizeFeatureDecisions(payload.Decisions)
 	payload.Source = normalizeFeatureSource(payload.Source)
 	if payload.FeatureID == "" || payload.Code == "" {
@@ -108,22 +110,32 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	if err := validateCurrentFeatureSourceDecisions(payload.Source, payload.Decisions); err != nil {
 		return err
 	}
+	feature := FindFeature(product, payload.FeatureID)
+	sourceCoverageRequired := featureSourceRequiresCoverage(payload.Source)
+	if feature != nil && feature.Draft != nil {
+		for _, source := range feature.Draft.Sources {
+			sourceCoverageRequired = sourceCoverageRequired || featureSourceRequiresCoverage(source)
+		}
+	}
+	if sourceCoverageRequired && payload.SourceCoverage == nil {
+		return Invalid("feature_source_coverage_required")
+	}
 	nextQuestion := selectNextFeatureQuestion(payload.Discovery.OpenQuestions)
-	readiness, err := assessFeatureReadiness(payload.Title, payload.Summary, payload.Discovery, payload.Specification, payload.Decisions, nextQuestion, featureAuthorizationPolicyFor(product, payload.FeatureID))
+	readiness, err := assessFeatureReadiness(payload.Title, payload.Summary, payload.Discovery, payload.Specification, payload.SourceCoverage, payload.Decisions, nextQuestion, featureAuthorizationPolicyFor(product, payload.FeatureID))
 	if err != nil {
 		return err
 	}
-	if readiness.Status != "ready" && nextQuestion == "" {
+	sourceReconstructionInProgress := payload.SourceCoverage != nil && payload.SourceCoverage.Status == "incomplete"
+	if readiness.Status != "ready" && nextQuestion == "" && !sourceReconstructionInProgress {
 		return Invalid("feature_next_question_required")
 	}
-	feature := FindFeature(product, payload.FeatureID)
 	sources := []FeatureSource{}
 	if feature != nil && feature.Draft != nil {
 		sources = clone(feature.Draft.Sources)
 	}
 	sources = appendFeatureSource(sources, payload.Source)
 	sources = reconcileFeatureSourceDecisions(sources, payload.Decisions)
-	if err := validateFeatureLineageReferences(payload.Discovery, payload.Specification, payload.Decisions, sources); err != nil {
+	if err := validateFeatureLineageReferences(payload.Discovery, payload.Specification, payload.SourceCoverage, payload.Decisions, sources); err != nil {
 		return err
 	}
 	if feature == nil {
@@ -148,12 +160,21 @@ func replaceFeatureDiscovery(product *Product, command Command, now time.Time) e
 	feature.Draft = &FeatureDraftState{
 		Version: draftVersion, Title: payload.Title, Summary: payload.Summary, Priority: payload.Priority,
 		BaselineProductRevision: payload.BaselineProductRevision, Discovery: clone(payload.Discovery),
-		Specification: clone(payload.Specification), Decisions: clone(payload.Decisions), Readiness: readiness,
+		Specification: clone(payload.Specification), SourceCoverage: clone(payload.SourceCoverage), Decisions: clone(payload.Decisions), Readiness: readiness,
 		NextQuestion: nextQuestion, Sources: sources, UpdatedBy: command.Actor.ID, UpdatedAt: now,
 	}
 	feature.Status = FeatureDraft
 	feature.UpdatedAt = now
 	return nil
+}
+
+func featureSourceRequiresCoverage(source FeatureSource) bool {
+	for _, sourceID := range source.SourceIDs {
+		if strings.HasPrefix(sourceID, "source://workspace-snapshot/") {
+			return true
+		}
+	}
+	return false
 }
 
 func deleteFeature(product *Product, command Command) error {
@@ -214,6 +235,9 @@ func confirmFeature(product *Product, command Command, now time.Time) error {
 		return Invalid("feature_draft_stale")
 	}
 	draft := feature.Draft
+	if featureDraftRequiresSourceCoverage(draft) && draft.SourceCoverage == nil {
+		return Invalid("feature_source_coverage_required")
+	}
 	if draft.BaselineProductRevision != product.CurrentDefinitionRevision || draft.BaselineProductRevision != product.CurrentReleaseRevision {
 		return Invalid("feature_baseline_stale")
 	}
@@ -225,7 +249,8 @@ func confirmFeature(product *Product, command Command, now time.Time) error {
 		Number: number, Title: draft.Title, Summary: draft.Summary, Priority: draft.Priority,
 		BaselineProductRevision: draft.BaselineProductRevision, Discovery: clone(draft.Discovery),
 		Specification: clone(draft.Specification), Decisions: clone(draft.Decisions),
-		Readiness: clone(draft.Readiness), Sources: clone(draft.Sources),
+		SourceCoverage: clone(draft.SourceCoverage),
+		Readiness:      clone(draft.Readiness), Sources: clone(draft.Sources),
 		CreatedBy: command.Actor.ID, CreatedAt: now,
 	})
 	feature.CurrentRevision = number
@@ -264,6 +289,7 @@ func rebaseFeature(product *Product, command Command, now time.Time) error {
 		BaselineProductRevision: product.CurrentDefinitionRevision,
 		Discovery:               clone(revision.Discovery),
 		Specification:           clone(revision.Specification),
+		SourceCoverage:          clone(revision.SourceCoverage),
 		Decisions:               clone(revision.Decisions),
 		Readiness: FeatureReadiness{
 			Status:           "shaping",
@@ -313,6 +339,21 @@ func productFeatureRevision(product *Product, payload productFeaturePayload) (*F
 }
 
 func ProductProjectionFor(product Product) ProductProjection {
+	product = clone(product)
+	for index := range product.Features {
+		draft := product.Features[index].Draft
+		if draft == nil || !featureDraftRequiresSourceCoverage(draft) || draft.SourceCoverage != nil {
+			continue
+		}
+		draft.Readiness.Status = "shaping"
+		hasSourceCoverageBlocker := false
+		for _, blocker := range draft.Readiness.BlockingSections {
+			hasSourceCoverageBlocker = hasSourceCoverageBlocker || blocker == "source_coverage"
+		}
+		if !hasSourceCoverageBlocker {
+			draft.Readiness.BlockingSections = append(draft.Readiness.BlockingSections, "source_coverage")
+		}
+	}
 	actions := make([]AvailableAction, 0)
 	add := func(command, targetID string) {
 		actions = append(actions, catalogAction(command, targetID))
@@ -365,6 +406,15 @@ func ProductProjectionFor(product Product) ProductProjection {
 	return ProductProjection{Product: product, AvailableActions: actions}
 }
 
+func featureDraftRequiresSourceCoverage(draft *FeatureDraftState) bool {
+	for _, source := range draft.Sources {
+		if featureSourceRequiresCoverage(source) {
+			return true
+		}
+	}
+	return false
+}
+
 func nextDeliverySequence(product *Product) uint64 {
 	var highest uint64
 	for _, feature := range product.Features {
@@ -410,7 +460,7 @@ func ProductAgentContextFor(product Product) ProductAgentContext {
 		}
 	}
 	return ProductAgentContext{
-		Product: product, AllowedAgentCommands: commands, AvailableActions: actions,
+		Product: projection.Product, AllowedAgentCommands: commands, AvailableActions: actions,
 		HumanOnlyCommands: commanddomain.KeysFor(commanddomain.TargetProduct, ActorHuman), SystemOnlyCommands: commanddomain.KeysFor(commanddomain.TargetProduct, ActorSystem),
 		SourcePolicy: "Product engineering initialization is outside the business Feature lifecycle and is never represented as a synthetic requirement. Its frontend phase creates the industry-informed design contract, sign-in presentation, responsive shell, and real build. Its one-time foundation phase installs a signed Go source foundation around the single backend/model.json and verifies the exact Application Delivery, release, package, model, verified source snapshot, local check, and Identity baseline evidence. Plane is not used again after this installation. Feature discovery must distinguish sourced evidence, PM inference, assumptions, conflicts, options, and human decisions. Delivery ranks candidate questions and freezes all contributing Conversation, Run, source, and decision references only when the Product owner confirms the Feature. Product-wide facts belong to ProductDefinition; a Feature records only the business delta. Business implementation belongs to a DeliveryRun owned by RD, QA, and OP.",
 	}

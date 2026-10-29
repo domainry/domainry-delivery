@@ -80,6 +80,19 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 		"source_ids":      []string{sourceRef, "https://example.com/evidence/initial-journey"},
 		"decision_ids":    []string{},
 	}
+	featurePayload["source_coverage"] = map[string]any{
+		"source_id": sourceRef,
+		"status":    "complete",
+		"areas": []map[string]any{{
+			"id": "initial-journey-source", "title": "Initial journey", "summary": "The current source defines the complete initial journey behavior.", "kind": "workflow",
+			"source_paths":        []string{"backend/model.json"},
+			"findings":            []map[string]any{{"source_path": "backend/model.json", "summary": "Defines the initial journey object, action, and permission contract.", "status": "confirmed", "supporting_paths": []string{}}},
+			"primary_scenario_id": "initial-journey", "primary_impact_id": "initial-impact", "primary_acceptance_id": "initial-acceptance",
+			"scenario_ids": []string{"initial-journey"}, "impact_ids": []string{"initial-impact"},
+			"grant_ids": []string{"initial-grant"}, "acceptance_ids": []string{"initial-acceptance"},
+			"status": "covered",
+		}},
+	}
 	command = map[string]any{
 		"client_id": "feature-source-1", "expected_revision": 1,
 		"type":    "feature.discovery.replace",

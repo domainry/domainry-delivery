@@ -39,7 +39,7 @@ func TestFeatureSpecificationRecordSourcesRequireRegisteredProvenance(t *testing
 		Acceptance: []FeatureAcceptanceScenario{{SourceIDs: []string{"source-valid"}}},
 	}
 	sources := []FeatureSource{{SourceIDs: []string{"source-valid"}}}
-	if err := validateFeatureLineageReferences(FeatureDiscovery{}, specification, nil, sources); err != nil {
+	if err := validateFeatureLineageReferences(FeatureDiscovery{}, specification, nil, nil, sources); err != nil {
 		t.Fatalf("registered record sources should be accepted: %v", err)
 	}
 	for _, target := range []string{"scenario", "impact", "acceptance"} {
@@ -52,7 +52,7 @@ func TestFeatureSpecificationRecordSourcesRequireRegisteredProvenance(t *testing
 		case "acceptance":
 			changed.Acceptance = []FeatureAcceptanceScenario{{SourceIDs: []string{"source-invented"}}}
 		}
-		if err := validateFeatureLineageReferences(FeatureDiscovery{}, changed, nil, sources); err == nil || err.Error() != "feature_source_reference_unverified" {
+		if err := validateFeatureLineageReferences(FeatureDiscovery{}, changed, nil, nil, sources); err == nil || err.Error() != "feature_source_reference_unverified" {
 			t.Fatalf("%s must reject unregistered source, got %v", target, err)
 		}
 	}

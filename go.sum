@@ -44,6 +44,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/domainry/domainry-delivery-sdk v0.1.34 h1:uxa9a/1UuASoR2zBB/VEIoQbUOgKQqLTe/oyHsj1his=
 github.com/domainry/domainry-delivery-sdk v0.1.34/go.mod h1:bIYy6JaQN3vzjasl62jF1fMIipLcA3PSylD35eQSKvU=
+github.com/domainry/domainry-delivery-sdk v0.1.35 h1:SQP4sLZtGv8YrSlRfByyv3EovYxjLxkxeuGEyQLWB5Q=
+github.com/domainry/domainry-delivery-sdk v0.1.35/go.mod h1:bIYy6JaQN3vzjasl62jF1fMIipLcA3PSylD35eQSKvU=
 github.com/domainry/domainry-foundation v0.2.18 h1:OHIg2WsZvHA9/CqBInajdz2ga/cw6Mxmoj5RfRvx1Y8=
 github.com/domainry/domainry-foundation v0.2.18/go.mod h1:gWwPHYvr28OkDqiLnQVCn18YyYd7zZUSVv0d/Q2VjG4=
 github.com/domainry/domainry-identity-bridge v0.1.26 h1:OpkhPCeKGiPrv1lQTbG6uFrAPsDMv5D8J7gBjzd1Gv4=

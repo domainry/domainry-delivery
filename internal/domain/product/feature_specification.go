@@ -94,7 +94,45 @@ type featureAuthorizationPolicy struct {
 	KnownRoleIDs map[string]bool
 }
 
-func assessFeatureReadiness(title, summary string, discovery FeatureDiscovery, specification FeatureSpecification, decisions []FeatureDecision, nextQuestion string, authorizationPolicy featureAuthorizationPolicy) (FeatureReadiness, error) {
+func normalizeFeatureSourceCoverage(coverage *FeatureSourceCoverage) *FeatureSourceCoverage {
+	if coverage == nil {
+		return nil
+	}
+	coverage.SourceID = strings.TrimSpace(coverage.SourceID)
+	coverage.Status = strings.TrimSpace(coverage.Status)
+	if coverage.Areas == nil {
+		coverage.Areas = []FeatureSourceCoverageArea{}
+	}
+	for index := range coverage.Areas {
+		area := &coverage.Areas[index]
+		area.ID = strings.TrimSpace(area.ID)
+		area.Title = strings.TrimSpace(area.Title)
+		area.Summary = strings.TrimSpace(area.Summary)
+		area.Kind = strings.TrimSpace(area.Kind)
+		area.SourcePaths = cleanStrings(area.SourcePaths)
+		if area.Findings == nil {
+			area.Findings = []FeatureSourceFinding{}
+		}
+		for findingIndex := range area.Findings {
+			finding := &area.Findings[findingIndex]
+			finding.SourcePath = strings.TrimSpace(finding.SourcePath)
+			finding.Summary = strings.TrimSpace(finding.Summary)
+			finding.Status = strings.TrimSpace(finding.Status)
+			finding.SupportingPaths = cleanStrings(finding.SupportingPaths)
+		}
+		area.PrimaryScenarioID = strings.TrimSpace(area.PrimaryScenarioID)
+		area.PrimaryImpactID = strings.TrimSpace(area.PrimaryImpactID)
+		area.PrimaryAcceptanceID = strings.TrimSpace(area.PrimaryAcceptanceID)
+		area.ScenarioIDs = cleanStrings(area.ScenarioIDs)
+		area.ImpactIDs = cleanStrings(area.ImpactIDs)
+		area.GrantIDs = cleanStrings(area.GrantIDs)
+		area.AcceptanceIDs = cleanStrings(area.AcceptanceIDs)
+		area.Status = strings.TrimSpace(area.Status)
+	}
+	return coverage
+}
+
+func assessFeatureReadiness(title, summary string, discovery FeatureDiscovery, specification FeatureSpecification, sourceCoverage *FeatureSourceCoverage, decisions []FeatureDecision, nextQuestion string, authorizationPolicy featureAuthorizationPolicy) (FeatureReadiness, error) {
 	blocking := make([]string, 0)
 	blocked := map[string]bool{}
 	addBlocker := func(value string) {
@@ -130,6 +168,11 @@ func assessFeatureReadiness(title, summary string, discovery FeatureDiscovery, s
 	if err := assessFeatureAcceptance(specification.Acceptance, addBlocker); err != nil {
 		return FeatureReadiness{}, err
 	}
+	if sourceCoverage != nil {
+		if err := assessFeatureSourceCoverage(*sourceCoverage, specification, addBlocker); err != nil {
+			return FeatureReadiness{}, err
+		}
+	}
 	if nextQuestion != "" {
 		addBlocker("open_question")
 	}
@@ -139,6 +182,159 @@ func assessFeatureReadiness(title, summary string, discovery FeatureDiscovery, s
 		status = "ready"
 	}
 	return FeatureReadiness{Status: status, BlockingSections: blocking, BlockingIssues: issues}, nil
+}
+
+func assessFeatureSourceCoverage(coverage FeatureSourceCoverage, specification FeatureSpecification, addBlocker func(string)) error {
+	if coverage.SourceID == "" || len(coverage.Areas) == 0 {
+		addBlocker("source_coverage")
+	}
+	if coverage.Status != "complete" && coverage.Status != "incomplete" {
+		return Invalid("feature_source_coverage_status_invalid")
+	}
+	scenarioIDs := map[string]bool{}
+	impactIDs := map[string]bool{}
+	grantIDs := map[string]bool{}
+	acceptanceIDs := map[string]bool{}
+	for _, scenario := range specification.Scenarios {
+		scenarioIDs[scenario.ID] = true
+	}
+	for _, impact := range specification.Impacts {
+		impactIDs[impact.ID] = true
+	}
+	for _, grant := range specification.Authorization.Grants {
+		grantIDs[grant.ID] = true
+	}
+	for _, acceptance := range specification.Acceptance {
+		acceptanceIDs[acceptance.ID] = true
+	}
+	areaIDs := map[string]bool{}
+	primaryScenarioIDs := map[string]bool{}
+	primaryImpactIDs := map[string]bool{}
+	primaryAcceptanceIDs := map[string]bool{}
+	hasUncoveredArea := false
+	for _, area := range coverage.Areas {
+		if area.ID == "" || areaIDs[area.ID] {
+			return Invalid("feature_source_coverage_area_duplicate")
+		}
+		areaIDs[area.ID] = true
+		if area.Title == "" || area.Summary == "" || !validSourceCoverageKind(area.Kind) || len(area.SourcePaths) == 0 || len(area.SourcePaths) > 8 {
+			return Invalid("feature_source_coverage_area_invalid")
+		}
+		if !validSourceFindings(area) {
+			return Invalid("feature_source_coverage_findings_invalid")
+		}
+		if !primarySourceMappingValid(area.PrimaryScenarioID, area.ScenarioIDs, scenarioIDs, primaryScenarioIDs) ||
+			!primarySourceMappingValid(area.PrimaryImpactID, area.ImpactIDs, impactIDs, primaryImpactIDs) ||
+			!primarySourceMappingValid(area.PrimaryAcceptanceID, area.AcceptanceIDs, acceptanceIDs, primaryAcceptanceIDs) {
+			return Invalid("feature_source_coverage_primary_mapping_invalid")
+		}
+		areaHasUnresolved := false
+		for _, finding := range area.Findings {
+			areaHasUnresolved = areaHasUnresolved || finding.Status == "unresolved"
+		}
+		switch area.Status {
+		case "covered":
+			if areaHasUnresolved || !sourceCoverageAreaMapped(area) {
+				addBlocker("source_coverage")
+			}
+		case "uncovered":
+			if !areaHasUnresolved {
+				return Invalid("feature_source_coverage_unresolved_mismatch")
+			}
+			hasUncoveredArea = true
+			addBlocker("source_coverage")
+		default:
+			return Invalid("feature_source_coverage_area_status_invalid")
+		}
+		if !referencesKnown(area.ScenarioIDs, scenarioIDs) || !referencesKnown(area.ImpactIDs, impactIDs) || !referencesKnown(area.GrantIDs, grantIDs) || !referencesKnown(area.AcceptanceIDs, acceptanceIDs) {
+			return Invalid("feature_source_coverage_reference_unknown")
+		}
+	}
+	if coverage.Status == "incomplete" || hasUncoveredArea {
+		addBlocker("source_coverage")
+	}
+	if coverage.Status == "complete" && hasUncoveredArea {
+		return Invalid("feature_source_coverage_completion_invalid")
+	}
+	return nil
+}
+
+func validSourceFindings(area FeatureSourceCoverageArea) bool {
+	if len(area.Findings) != len(area.SourcePaths) {
+		return false
+	}
+	areaPaths := map[string]bool{}
+	for _, path := range area.SourcePaths {
+		areaPaths[path] = true
+	}
+	findingPaths := map[string]bool{}
+	for _, finding := range area.Findings {
+		if finding.SourcePath == "" || finding.Summary == "" || !areaPaths[finding.SourcePath] || findingPaths[finding.SourcePath] {
+			return false
+		}
+		findingPaths[finding.SourcePath] = true
+		switch finding.Status {
+		case "confirmed", "unresolved", "context":
+		case "superseded":
+			if len(finding.SupportingPaths) == 0 {
+				return false
+			}
+			for _, supportingPath := range finding.SupportingPaths {
+				if supportingPath == finding.SourcePath {
+					return false
+				}
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func primarySourceMappingValid(primary string, mapped []string, known map[string]bool, used map[string]bool) bool {
+	if primary == "" || !known[primary] || used[primary] {
+		return false
+	}
+	found := false
+	for _, id := range mapped {
+		if !known[id] {
+			return false
+		}
+		found = found || id == primary
+	}
+	if !found {
+		return false
+	}
+	used[primary] = true
+	return true
+}
+
+func validSourceCoverageKind(kind string) bool {
+	return kind == "documentation" || kind == "page" || kind == "action" || kind == "workflow" || kind == "rule" || kind == "exception" || kind == "access" || kind == "integration" || kind == "automation" || kind == "quality"
+}
+
+func sourceCoverageAreaMapped(area FeatureSourceCoverageArea) bool {
+	switch area.Kind {
+	case "rule", "exception", "integration", "automation":
+		return len(area.ScenarioIDs) > 0 && len(area.ImpactIDs) > 0 && len(area.AcceptanceIDs) > 0
+	case "access":
+		return len(area.ScenarioIDs) > 0 && len(area.ImpactIDs) > 0 && len(area.GrantIDs) > 0 && len(area.AcceptanceIDs) > 0
+	case "quality":
+		return len(area.ScenarioIDs) > 0 && len(area.ImpactIDs) > 0 && len(area.AcceptanceIDs) > 0
+	case "documentation", "page", "action", "workflow":
+		return len(area.ScenarioIDs) > 0 && len(area.ImpactIDs) > 0 && len(area.AcceptanceIDs) > 0
+	default:
+		return false
+	}
+}
+
+func referencesKnown(values []string, known map[string]bool) bool {
+	for _, value := range values {
+		if !known[value] {
+			return false
+		}
+	}
+	return true
 }
 
 func assessFeatureAuthorization(authorization FeatureAuthorization, scenarios []FeatureScenario, policy featureAuthorizationPolicy, addBlocker func(string)) error {

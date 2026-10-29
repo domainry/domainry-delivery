@@ -22,34 +22,36 @@ type Feature struct {
 // It is deliberately separate from FeatureRevision: conversation turns refine
 // evidence and decisions, while only human confirmation freezes a revision.
 type FeatureDraftState struct {
-	Version                 uint64               `json:"version"`
-	Title                   string               `json:"title"`
-	Summary                 string               `json:"summary"`
-	Priority                string               `json:"priority"`
-	BaselineProductRevision uint64               `json:"baseline_product_revision"`
-	Discovery               FeatureDiscovery     `json:"discovery"`
-	Specification           FeatureSpecification `json:"specification"`
-	Decisions               []FeatureDecision    `json:"decisions"`
-	Readiness               FeatureReadiness     `json:"readiness"`
-	NextQuestion            string               `json:"next_question"`
-	Sources                 []FeatureSource      `json:"sources"`
-	UpdatedBy               string               `json:"updated_by"`
-	UpdatedAt               time.Time            `json:"updated_at"`
+	Version                 uint64                 `json:"version"`
+	Title                   string                 `json:"title"`
+	Summary                 string                 `json:"summary"`
+	Priority                string                 `json:"priority"`
+	BaselineProductRevision uint64                 `json:"baseline_product_revision"`
+	Discovery               FeatureDiscovery       `json:"discovery"`
+	Specification           FeatureSpecification   `json:"specification"`
+	SourceCoverage          *FeatureSourceCoverage `json:"source_coverage,omitempty"`
+	Decisions               []FeatureDecision      `json:"decisions"`
+	Readiness               FeatureReadiness       `json:"readiness"`
+	NextQuestion            string                 `json:"next_question"`
+	Sources                 []FeatureSource        `json:"sources"`
+	UpdatedBy               string                 `json:"updated_by"`
+	UpdatedAt               time.Time              `json:"updated_at"`
 }
 
 type FeatureRevision struct {
-	Number                  uint64               `json:"number"`
-	Title                   string               `json:"title"`
-	Summary                 string               `json:"summary"`
-	Priority                string               `json:"priority"`
-	BaselineProductRevision uint64               `json:"baseline_product_revision"`
-	Discovery               FeatureDiscovery     `json:"discovery"`
-	Specification           FeatureSpecification `json:"specification"`
-	Decisions               []FeatureDecision    `json:"decisions"`
-	Readiness               FeatureReadiness     `json:"readiness"`
-	Sources                 []FeatureSource      `json:"sources"`
-	CreatedBy               string               `json:"created_by"`
-	CreatedAt               time.Time            `json:"created_at"`
+	Number                  uint64                 `json:"number"`
+	Title                   string                 `json:"title"`
+	Summary                 string                 `json:"summary"`
+	Priority                string                 `json:"priority"`
+	BaselineProductRevision uint64                 `json:"baseline_product_revision"`
+	Discovery               FeatureDiscovery       `json:"discovery"`
+	Specification           FeatureSpecification   `json:"specification"`
+	SourceCoverage          *FeatureSourceCoverage `json:"source_coverage,omitempty"`
+	Decisions               []FeatureDecision      `json:"decisions"`
+	Readiness               FeatureReadiness       `json:"readiness"`
+	Sources                 []FeatureSource        `json:"sources"`
+	CreatedBy               string                 `json:"created_by"`
+	CreatedAt               time.Time              `json:"created_at"`
 }
 
 // FeatureDecision records an explicit business choice, the alternatives the PM
@@ -232,6 +234,43 @@ type FeatureAcceptanceScenario struct {
 	When      string   `json:"when"`
 	Then      []string `json:"then"`
 	SourceIDs []string `json:"source_ids"`
+}
+
+// FeatureSourceCoverage is the reviewable proof that a source-reconstructed
+// Feature accounts for the complete bounded source inventory. SourceID names
+// the immutable workspace snapshot; every area connects concrete source files
+// to the business records reconstructed from them.
+type FeatureSourceCoverage struct {
+	SourceID string                      `json:"source_id"`
+	Status   string                      `json:"status"`
+	Areas    []FeatureSourceCoverageArea `json:"areas"`
+}
+
+type FeatureSourceCoverageArea struct {
+	ID                  string                 `json:"id"`
+	Title               string                 `json:"title"`
+	Summary             string                 `json:"summary"`
+	Kind                string                 `json:"kind"`
+	SourcePaths         []string               `json:"source_paths"`
+	Findings            []FeatureSourceFinding `json:"findings"`
+	PrimaryScenarioID   string                 `json:"primary_scenario_id"`
+	PrimaryImpactID     string                 `json:"primary_impact_id"`
+	PrimaryAcceptanceID string                 `json:"primary_acceptance_id"`
+	ScenarioIDs         []string               `json:"scenario_ids"`
+	ImpactIDs           []string               `json:"impact_ids"`
+	GrantIDs            []string               `json:"grant_ids"`
+	AcceptanceIDs       []string               `json:"acceptance_ids"`
+	Status              string                 `json:"status"`
+}
+
+// FeatureSourceFinding records what one current first-party Product file
+// contributes to the reconstructed requirement and whether that evidence is
+// authoritative, unresolved, superseded, or contextual.
+type FeatureSourceFinding struct {
+	SourcePath      string   `json:"source_path"`
+	Summary         string   `json:"summary"`
+	Status          string   `json:"status"`
+	SupportingPaths []string `json:"supporting_paths"`
 }
 
 type FeatureReadiness struct {
