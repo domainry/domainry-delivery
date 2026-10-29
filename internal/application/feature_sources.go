@@ -35,6 +35,7 @@ func (service *Service) verifyFeatureSources(ctx context.Context, workspaceID, p
 		return err
 	}
 	baselineSource := fmt.Sprintf("product://%s/revision/%d", productID, baseline.CurrentDefinitionRevision)
+	workspaceSource := strings.TrimSpace(baseline.Engineering.SourceRef)
 	for _, sourceID := range payload.Source.SourceIDs {
 		if validExternalFeatureSource(sourceID) {
 			continue
@@ -59,7 +60,7 @@ func (service *Service) verifyFeatureSources(ctx context.Context, workspaceID, p
 			}
 			continue
 		}
-		if sourceID != baselineSource {
+		if sourceID != baselineSource && sourceID != workspaceSource {
 			return domain.Invalid("feature_source_reference_unverified")
 		}
 	}

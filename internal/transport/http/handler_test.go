@@ -12,6 +12,7 @@ import (
 
 	"github.com/domainry/domainry-delivery/internal/application"
 	delivery "github.com/domainry/domainry-delivery/internal/domain"
+	"github.com/domainry/domainry-delivery/internal/domain/conversation"
 	"github.com/domainry/domainry-delivery/internal/infrastructure/persistence/sqlite"
 	"github.com/domainry/domainry-delivery/internal/testfixture"
 	httpapi "github.com/domainry/domainry-delivery/internal/transport/http"
@@ -26,13 +27,14 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 	defer store.Close()
 	handler := httpapi.New(application.NewService(application.Ports{Products: store, Runs: store, Lifecycle: store}), "delivery-test")
 	sourceRevision := "workspace-" + strings.Repeat("a", 64)
+	sourceRef := "source://workspace-snapshot/" + sourceRevision
 
 	command := map[string]any{
 		"client_id": "create-product-1", "expected_revision": 0,
 		"type": "product.create",
 		"payload": map[string]any{
 			"name": "Booking Product", "code": "BOOKING", "goal": "Make booking operations executable", "industry": "Fitness and wellness",
-			"engineering": map[string]any{"mode": "adopt_existing_source", "source_revision": sourceRevision, "source_ref": "source://workspace-snapshot/" + sourceRevision},
+			"engineering": map[string]any{"mode": "adopt_existing_source", "source_revision": sourceRevision, "source_ref": sourceRef},
 			"story":       map[string]any{"title": "Booking Product", "summary": "Unified booking", "narrative": "A member books a session, and the location confirms and fulfills it."},
 			"definition":  map[string]any{"schema_version": 2, "actors": []any{}, "scenarios": []any{}, "objects": []any{}, "rules": []any{}, "exceptions": []any{}, "actions": []any{}, "pages": []any{}, "access": map[string]any{}, "integrations": []any{}, "automations": []any{}, "configuration": []any{}, "quality_constraints": []any{}},
 			"decisions":   []any{},
@@ -49,6 +51,10 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create status=%d body=%s", response.Code, response.Body.String())
 	}
+	storedProduct, err := store.GetProduct(requestContext, "workspace-1", "product-1")
+	if err != nil || storedProduct.Engineering.SourceRef != sourceRef {
+		t.Fatalf("stored Product source mismatch: source=%q error=%v", storedProduct.Engineering.SourceRef, err)
+	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/workspace-1/products/product-1", nil).WithContext(requestContext)
 	response = httptest.NewRecorder()
@@ -62,6 +68,29 @@ func TestExistingSourceProductCreateReadAndAgentContext(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"feature.discovery.replace"`) || strings.Contains(response.Body.String(), `"product.engineering.prepare.start"`) {
 		t.Fatalf("agent context status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	featureID := "feature-existing-source"
+	featurePayload := testfixture.InitialFeatureCommandPayload("workspace-1", "product-1")
+	featurePayload["feature_id"] = featureID
+	featurePayload["code"] = "F-SOURCE"
+	featurePayload["source"] = map[string]any{
+		"conversation_id": conversation.ConversationID("workspace-1", "product-1", featureID),
+		"run_id":          "run-existing-source-1",
+		"source_ids":      []string{sourceRef, "https://example.com/evidence/initial-journey"},
+		"decision_ids":    []string{},
+	}
+	command = map[string]any{
+		"client_id": "feature-source-1", "expected_revision": 1,
+		"type":    "feature.discovery.replace",
+		"payload": featurePayload,
+	}
+	body, _ = json.Marshal(command)
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/workspaces/workspace-1/products/product-1/commands", strings.NewReader(string(body))).WithContext(requestContext)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("registered Product source was rejected: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
