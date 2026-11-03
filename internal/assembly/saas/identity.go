@@ -39,7 +39,7 @@ func (applicationRuntime *Application) openExternalIdentity(ctx context.Context,
 	if closeErr != nil {
 		return ExternalIdentity{}, closeErr
 	}
-	if len(config.PersonalWorkspace.InitialRoleKeys) != 1 {
+	if len(config.Workspace.InitialRoleKeys) != 1 {
 		return ExternalIdentity{}, fmt.Errorf("Delivery external identity requires exactly one initial personal role")
 	}
 	handle, err := applicationRuntime.store.ExternalIdentityDatabaseHandle(ctx)
@@ -66,19 +66,25 @@ func (applicationRuntime *Application) openExternalIdentity(ctx context.Context,
 	if !ok {
 		return ExternalIdentity{}, fmt.Errorf("external Identity permission snapshot reader is required")
 	}
-	previous, err := reader.CurrentSourceSnapshot(ctx, identity.PermissionSourceSnapshotRequest{
-		Application: reference, SourceOwner: deliveryPermissionOwner,
-	})
+	snapshotRequest := identity.PermissionSourceSnapshotRequest{SourceOwner: deliveryPermissionOwner}
+	previous, err := reader.CurrentSourceSnapshot(ctx, snapshotRequest)
 	if err != nil {
 		return ExternalIdentity{}, err
+	}
+	if err = previous.ValidateFor(snapshotRequest); err != nil {
+		return ExternalIdentity{}, fmt.Errorf("validate Delivery permission snapshot: %w", err)
 	}
 	definitions := deliveryPermissionDefinitions()
-	reconcile, err := identity.NewPermissionReconcileRequest(reference, deliveryPermissionOwner, previous.SnapshotHash, definitions)
+	reconcile, err := identity.NewPermissionReconcileRequest(deliveryPermissionOwner, previous.SnapshotHash, definitions)
 	if err != nil {
 		return ExternalIdentity{}, err
 	}
-	if _, err = binding.Permissions().Reconcile(ctx, reconcile); err != nil {
+	receipt, err := binding.Permissions().Reconcile(ctx, reconcile)
+	if err != nil {
 		return ExternalIdentity{}, fmt.Errorf("publish Delivery permissions: %w", err)
+	}
+	if err = receipt.ValidateFor(reconcile); err != nil {
+		return ExternalIdentity{}, fmt.Errorf("validate Delivery permission receipt: %w", err)
 	}
 	publisher, ok := binding.(identity.ProjectRoleCatalogPublisher)
 	if !ok {
@@ -88,9 +94,9 @@ func (applicationRuntime *Application) openExternalIdentity(ctx context.Context,
 	for _, definition := range definitions {
 		grants = append(grants, identity.ProjectRolePermission{PermissionKey: definition.PermissionKey, DataScope: identity.DataScopeAll})
 	}
-	if _, err = publisher.PublishProjectRoles(ctx, identity.ProjectRoleCatalog{Application: reference, Roles: []identity.ProjectRoleDefinition{{
-		Key: config.PersonalWorkspace.InitialRoleKeys[0], Name: "Delivery owner", Audience: "user", AssignmentMode: "manual",
-		ProvisionToWorkspaces: true, Permissions: grants,
+	if _, err = publisher.PublishProjectRoles(ctx, identity.ProjectRoleCatalog{SourceOwner: deliveryPermissionOwner, Roles: []identity.ProjectRoleDefinition{{
+		Key: config.Workspace.InitialRoleKeys[0], Name: "Delivery owner", Audience: "user", AssignmentMode: "manual",
+		Permissions: grants,
 	}}}); err != nil {
 		return ExternalIdentity{}, fmt.Errorf("publish Delivery external role: %w", err)
 	}
@@ -100,10 +106,20 @@ func (applicationRuntime *Application) openExternalIdentity(ctx context.Context,
 
 func deliveryPermissionDefinitions() []identity.PermissionDefinition {
 	return []identity.PermissionDefinition{
-		{PermissionKey: application.PermissionProductRead, ResourceKey: "delivery_product", OperationKey: "read", Label: "Read products", Category: "delivery", SourceKind: "delivery"},
-		{PermissionKey: application.PermissionProductWrite, ResourceKey: "delivery_product", OperationKey: "write", Label: "Write products", Category: "delivery", SourceKind: "delivery"},
-		{PermissionKey: application.PermissionDeliveryRunRead, ResourceKey: "delivery_run", OperationKey: "read", Label: "Read delivery runs", Category: "delivery", SourceKind: "delivery"},
-		{PermissionKey: application.PermissionDeliveryRunWrite, ResourceKey: "delivery_run", OperationKey: "write", Label: "Write delivery runs", Category: "delivery", SourceKind: "delivery"},
-		{PermissionKey: application.PermissionDeploymentRecord, ResourceKey: "delivery_deployment", OperationKey: "record", Label: "Record deployments", Category: "delivery", SourceKind: "delivery"},
+		deliveryPermissionDefinition(application.PermissionProductRead, "delivery_product", "read", "Products", "Read", "Read products"),
+		deliveryPermissionDefinition(application.PermissionProductWrite, "delivery_product", "write", "Products", "Write", "Write products"),
+		deliveryPermissionDefinition(application.PermissionDeliveryRunRead, "delivery_run", "read", "Delivery runs", "Read", "Read delivery runs"),
+		deliveryPermissionDefinition(application.PermissionDeliveryRunWrite, "delivery_run", "write", "Delivery runs", "Write", "Write delivery runs"),
+		deliveryPermissionDefinition(application.PermissionDeploymentRecord, "delivery_deployment", "record", "Deployments", "Record", "Record deployments"),
+	}
+}
+
+func deliveryPermissionDefinition(permissionKey, resourceKey, operationKey, resourceLabel, operationLabel, label string) identity.PermissionDefinition {
+	return identity.PermissionDefinition{
+		PermissionKey: permissionKey, ModuleKey: "delivery", GroupKey: "delivery", ResourceKey: resourceKey, OperationKey: operationKey,
+		Label: label, Category: "Product delivery", SourceKind: "application_action", GrantMode: "direct", ScopeKind: "none", DefaultLocale: "en",
+		I18n: identity.PermissionLocalizedText{"en": {
+			ModuleLabel: "Delivery", GroupLabel: "Product delivery", ResourceLabel: resourceLabel, OperationLabel: operationLabel, Label: label,
+		}},
 	}
 }

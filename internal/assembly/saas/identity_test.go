@@ -38,7 +38,7 @@ func TestExternalIdentityCreatesOnePersistentWorkspacePerVerdentUser(t *testing.
 	databasePath := filepath.Join(directory, "delivery.db")
 	configPath := filepath.Join(directory, "identity.json")
 	configuration := map[string]any{
-		"version": "domainry-identity-bridge-config-v1", "installation_id": "delivery-test", "application_key": "delivery-test",
+		"version": "domainry-identity-bridge-config-v2", "installation_id": "delivery-test", "application_key": "delivery-test",
 		"provider": map[string]any{"key": "verdent-account", "verification": map[string]any{
 			"kind": "http_introspection", "endpoint": provider.URL + "/passport/token/validate", "method": "POST", "timeout": "1s", "max_response_bytes": 65536,
 			"credential": map[string]any{"location": "json", "name": "token"},
@@ -46,7 +46,7 @@ func TestExternalIdentityCreatesOnePersistentWorkspacePerVerdentUser(t *testing.
 				{"path": "/errCode", "equals": 0}, {"path": "/data/valid", "equals": true}, {"path": "/data/token_type", "equals": "access"},
 			}},
 		}},
-		"personal_workspace": map[string]any{"mode": "per_user", "create_on_first_access": true, "name_template": "Delivery workspace", "initial_role_keys": []string{"delivery_owner"}},
+		"workspace": map[string]any{"mode": "per_user", "create_on_first_access": true, "name_template": "Delivery workspace", "initial_role_keys": []string{"delivery_owner"}},
 	}
 	raw, err := json.Marshal(configuration)
 	if err != nil {
